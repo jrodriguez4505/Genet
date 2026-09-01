@@ -1,0 +1,12 @@
+{
+  "id": "already_exists",
+  "pace": "run",
+  "mode": "refuse_someone_else",
+  "effect": "Write the summary file",
+  "purpose": "Do not duplicate work",
+  "end_state": "File exists once",
+  "look": "The summary file is already on disk.",
+  "expect": {
+    "code": "GATE-1"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskorg://schemas/artifact",
+  "title": "Worker artifact",
+  "type": "object",
+  "required": ["claim", "evidence", "uncertainty", "channel_id", "delta_to_picture"],
+  "additionalProperties": false,
+  "properties": {
+    "claim": { "type": "string", "minLength": 1 },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "uncertainty": { "type": "string" },
+    "channel_id": { "type": "string" },
+    "delta_to_picture": { "type": "string" },
+    "requests": { "type": "array", "items": { "type": "string" } }
+  }
+}

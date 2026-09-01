@@ -1,0 +1,14 @@
+{
+  "id": "one_body",
+  "pace": "crawl",
+  "mode": "standing",
+  "effect": "Summarize the paragraph in one sentence",
+  "purpose": "Hold one reading of one source",
+  "end_state": "One sentence on paper",
+  "look": "A single public paragraph is the whole picture. No second source.",
+  "expect": {
+    "workers": 0,
+    "split": false,
+    "status": "complete"
+  }
+}

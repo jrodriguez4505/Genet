@@ -1,0 +1,18 @@
+{
+  "id": "dead_plan",
+  "pace": "walk",
+  "mode": "adapt",
+  "effect": "Draft a one-page outline",
+  "purpose": "Get the reader to the point",
+  "end_state": "Outline matches the real audience",
+  "look": "The first outline assumed experts. The reader is new.",
+  "report": "First outline is dead — audience is new, not expert",
+  "method": "start from definitions, not from jargon",
+  "axes": ["reroute"],
+  "expect": {
+    "workers": 0,
+    "split": false,
+    "status": "complete",
+    "method_contains": "definitions"
+  }
+}

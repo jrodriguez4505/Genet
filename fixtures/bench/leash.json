@@ -1,0 +1,14 @@
+{
+  "id": "leash",
+  "pace": "crawl",
+  "mode": "standing",
+  "max_calls": 1,
+  "effect": "Summarize the paragraph",
+  "purpose": "Stop before a second call",
+  "end_state": "Halted",
+  "look": "One paragraph. Still one body.",
+  "expect": {
+    "status": "abort",
+    "code": "BUDGET"
+  }
+}
