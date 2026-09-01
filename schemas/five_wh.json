@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskorg://schemas/five_wh",
+  "title": "Shared context object",
+  "type": "object",
+  "required": ["who", "what", "when", "where", "why", "how"],
+  "additionalProperties": false,
+  "properties": {
+    "who": {
+      "type": "object",
+      "required": ["head_id", "slots", "primary"],
+      "properties": {
+        "head_id": { "type": "string" },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/slot" } },
+        "primary": { "type": "string" }
+      }
+    },
+    "what": {
+      "type": "object",
+      "required": ["effect", "success_criteria"],
+      "properties": {
+        "effect": { "type": "string", "minLength": 1 },
+        "success_criteria": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    },
+    "when": {
+      "type": "object",
+      "required": ["tempo", "decision_points"],
+      "properties": {
+        "tempo": { "type": "string" },
+        "decision_points": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "where": {
+      "type": "object",
+      "required": ["current_picture", "end_state"],
+      "properties": {
+        "current_picture": { "type": "string" },
+        "end_state": { "type": "string" },
+        "projections": { "type": "array", "items": { "type": "string" } },
+        "context_sufficient": { "type": "boolean" }
+      }
+    },
+    "why": {
+      "type": "object",
+      "required": ["purpose"],
+      "properties": {
+        "purpose": { "type": "string", "minLength": 1 },
+        "open_note_ids": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "how": {
+      "type": "object",
+      "required": ["method"],
+      "properties": {
+        "method": { "type": "string" },
+        "axes": {
+          "type": "array",
+          "items": { "enum": ["parallel", "fallback", "reroute", "sequential", "reverse", "fan_in"] }
+        },
+        "abort_criteria": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "slot": {
+      "type": "object",
+      "required": ["id", "function"],
+      "properties": {
+        "id": { "type": "string" },
+        "function": { "enum": ["head", "worker", "verifier", "memory", "why"] },
+        "skill": { "enum": ["execute", "retrieve", "reason", "draft", "simulate", "observe", "verify"] },
+        "channel_id": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
