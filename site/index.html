@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Genet — small multi-agent runtime</title>
+  <meta name="description" content="Genet is a small multi-agent runtime. The roster cannot be seized. A second worker must be legal." />
+  <style>
+    :root { --bg:#141210; --ink:#efe8df; --muted:#9a9086; --line:#3a342e; --orange:#c45c26; --card:#1c1a17; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:18px/1.5 Georgia, serif; background:var(--bg); color:var(--ink); }
+    header, main, footer { max-width:720px; margin:0 auto; padding:0 24px; }
+    header { padding-top:64px; border-bottom:2px solid var(--orange); padding-bottom:28px; }
+    .kicker { color:var(--orange); font:13px/1.2 ui-sans-serif, system-ui, sans-serif; letter-spacing:.12em; text-transform:uppercase; }
+    h1 { font-size:42px; line-height:1.1; margin:12px 0 16px; }
+    h2 { font-size:22px; margin:40px 0 12px; color:var(--orange); font-family:ui-sans-serif, system-ui, sans-serif; }
+    .lede { color:var(--muted); font-size:20px; }
+    table { width:100%; border-collapse:collapse; font-family:ui-sans-serif, system-ui, sans-serif; font-size:15px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--muted); }
+    pre { font-family:ui-monospace,monospace; font-size:14px; background:var(--card); padding:16px; border:1px solid var(--line); }
+    footer { padding:48px 24px 80px; color:var(--muted); font-size:14px; font-family:ui-sans-serif, system-ui, sans-serif; }
+    .refuse { color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="kicker">Genet</div>
+    <h1>One organism.<br />Many stems.</h1>
+    <p class="lede">Genet is a clonal colony — one plant that looks like a grove. Genet is a small multi-agent runtime. The second worker must be legal.</p>
+  </header>
+  <main>
+    <h2>The idea</h2>
+    <p>A run starts as one lead with skills latent. Context turns a skill on. The goal stays put until it is revised. Inspect context before you add anyone. If the plan is already wrong, change the method.</p>
+    <h2>Graph</h2>
+    <table>
+      <tr><th>Roster</th><td>Lead builds the team. Only the lead changes the roster.</td></tr>
+      <tr><th>Goal</th><td>Effect and done-state.</td></tr>
+      <tr><th>Memory</th><td>Cues. Not a stuffed window.</td></tr>
+      <tr><th>Context</th><td>Shared board. Isolated worker packets.</td></tr>
+      <tr><th>Review</th><td>Heard and answered. Cannot take over the roster.</td></tr>
+      <tr><th>Method</th><td>Activate a skill first. Add a worker only after three gates.</td></tr>
+    </table>
+    <h2>Gates</h2>
+    <p>can someone else → should we → could we. Could-we is last on purpose.</p>
+    <h2>Try it</h2>
+    <pre>pip install -e ".[dev]"
+pytest -q
+python -m taskorg.cli run --pace crawl
+python -m taskorg.cli bench</pre>
+    <p class="refuse">Apache-2.0. Kernel, not a cloud. Not the playwright. Partnerships: open an issue.</p>
+  </main>
+  <footer>Copyright 2026 John Rodriguez. Apache-2.0. The name Genet is not licensed.</footer>
+</body>
+</html>
