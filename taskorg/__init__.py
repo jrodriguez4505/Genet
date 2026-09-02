@@ -6,6 +6,7 @@ from .loop import Engine
 from .memory_store import MemoryStore
 from .mission import Mission
 from .models import Artifact, Cue, FiveWH, GateRecord, Slot, WhyNote
+from .policy import PolicyDecision, StubPolicy, encode_board
 
 __all__ = [
     "Artifact",
@@ -16,7 +17,10 @@ __all__ = [
     "InvariantError",
     "MemoryStore",
     "Mission",
+    "PolicyDecision",
     "Slot",
+    "StubPolicy",
     "WhyNote",
     "element_at_rest",
+    "encode_board",
 ]
