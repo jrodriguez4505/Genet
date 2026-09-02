@@ -6,7 +6,9 @@ One organism. Many stems.
 
 A small multi-agent runtime. Authority lives in the graph, not in the prompt.
 
-Most stacks ask how many agents you are running. Genet asks whether a second worker was legal. Default is one active role. Split is a gated exception.
+The question is not how many agents you can run. It is whether a second one is doing new work.
+
+Most stacks treat headcount as capacity. Genet treats it as a cost. Default is one lead. A second worker is a gated exception. Quality of process over quantity of agents — possibly more efficient, and possibly more effective. That last part stays a claim until a stranger’s job says so.
 
 This Genet is software, not the playwright.
 
@@ -46,8 +48,8 @@ CLI defaults to crawl. Do not open the budget because the model sounded ready.
 ## Install
 
 ```bash
-git clone https://github.com/jrodriguez4505/Genet.git
-cd Genet
+git clone <this-repo>
+cd taskorg
 pip install -e ".[dev]"
 pytest -q
 ```
