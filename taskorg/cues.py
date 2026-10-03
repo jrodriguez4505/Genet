@@ -7,7 +7,7 @@ from .models import Cue
 def fire_auto_cues(mission: Mission) -> list[Cue]:
     minted: list[Cue] = []
     claims = [a.claim for a in mission.artifacts]
-    channels = [a.channel_id for a in mission.artifacts if a.channel_id not in ("verify", "head-integrate")]
+    channels = [a.channel_id for a in mission.artifacts if a.channel_id not in ("verify", "head-integrate", "head-plan")]
 
     if len(channels) >= 2 and len(set(channels)) >= 2:
         cue = Cue(

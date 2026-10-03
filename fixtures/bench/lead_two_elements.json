@@ -1,0 +1,17 @@
+{
+  "id": "lead_two_elements",
+  "pace": "run",
+  "mode": "mission",
+  "effect": "Answer using two independent notes",
+  "purpose": "Do not mix the two sources in one context",
+  "end_state": "Two element products integrated",
+  "look": "seam:note-a@retrieve=sources_must_not_mix seam:note-b@retrieve=sources_must_not_mix",
+  "expect": {
+    "status": "complete",
+    "workers": 2,
+    "split": true,
+    "health": "ok",
+    "isolation_flags_empty": true,
+    "method_contains": "elements"
+  }
+}

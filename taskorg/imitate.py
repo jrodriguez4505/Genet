@@ -23,6 +23,7 @@ from .policy import (
 
 
 LABELS = ("HOLD", "INSPECT", "CHANGE_METHOD", "PROPOSE_CHANNEL", "STOP")
+# ACTIVATE_SKILL / REVISE_GOAL are rare in N2 gold; map them aside.
 
 
 def gold_label(state: BoardState) -> str:

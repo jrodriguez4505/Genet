@@ -8,5 +8,14 @@
   "look": "The summary file is already on disk.",
   "expect": {
     "code": "GATE-1"
-  }
+  },
+  "exists": [
+    "out/summary.md"
+  ],
+  "seams": [
+    [
+      "summary",
+      "need a summary writer"
+    ]
+  ]
 }

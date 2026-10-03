@@ -62,26 +62,44 @@ class Mission:
             "max_seconds": budget.max_seconds,
         })
 
-    def halt(self, reason: str) -> None:
+    def halt(self, reason: str, code: str = "BUDGET") -> None:
         self.stop_reason = reason
-        self.abort()
-        self._record("halt", {"reason": reason})
-        raise InvariantError("BUDGET", reason)
+        if self.status != Status.ABORT:
+            self.abort()
+        self._record("halt", {"reason": reason, "code": code})
+        raise InvariantError(code, reason)
+
+    def usage(self) -> tuple[int, int]:
+        tokens = sum((c.get("prompt_tokens") or 0) + (c.get("completion_tokens") or 0) for c in self.calls)
+        return len(self.calls), tokens
 
     def assert_running(self) -> None:
+        """Before a call: is there room for one more?"""
         if self.status in (Status.COMPLETE, Status.ABORT):
             raise InvariantError("BUDGET", f"mission already {self.status.value}: {self.stop_reason}")
         b = self.budget
         if b is None:
             return
-        calls = len(self.calls)
-        tokens = sum((c.get("prompt_tokens") or 0) + (c.get("completion_tokens") or 0) for c in self.calls)
+        calls, tokens = self.usage()
         if calls >= b.max_calls:
             self.halt(f"max_calls {b.max_calls} reached")
         if tokens >= b.max_tokens:
             self.halt(f"max_tokens {b.max_tokens} reached")
         if b.elapsed() >= b.max_seconds:
             self.halt(f"max_seconds {b.max_seconds} reached")
+
+    def assert_within_budget(self) -> None:
+        """After a call: did it overrun? Spending the last unit of budget is legal."""
+        b = self.budget
+        if b is None:
+            return
+        calls, tokens = self.usage()
+        if calls > b.max_calls:
+            self.halt(f"max_calls {b.max_calls} exceeded")
+        if tokens > b.max_tokens:
+            self.halt(f"max_tokens {b.max_tokens} exceeded ({tokens})")
+        if b.elapsed() > b.max_seconds:
+            self.halt(f"max_seconds {b.max_seconds} exceeded")
 
     def record_call(self, call: dict) -> None:
         self.calls.append(call)
@@ -100,6 +118,11 @@ class Mission:
     def _record(self, event: str, detail: dict) -> None:
         self.log.append(LogEntry(event, detail))
 
+    def _assert_open(self) -> None:
+        """A completed or aborted board is a record. Nothing on it changes."""
+        if self.status in (Status.COMPLETE, Status.ABORT):
+            raise InvariantError("CLOSED", f"mission is {self.status.value}; the board is a record now")
+
     def _merge_picture(self, mark: str) -> None:
         mark = mark.strip()
         if not mark:
@@ -115,16 +138,31 @@ class Mission:
     def open_why_ids(self) -> list[str]:
         return [n.id for n in self.notes.values() if n.status == NoteStatus.OPEN]
 
+    # --- Who / task org ---
+
     def write_who(self, actor_id: str, new_slots: list[Slot], *, gates: GateRecord | None = None, human_override: bool = False) -> None:
+        """INV-1. Only Head or a logged human override mutates Who.
+
+        Everything is validated before the split is logged or Who is written,
+        so a refused change leaves no trace on the board.
+        """
         self.assert_running()
         if actor_id != self.picture.who_head_id and not human_override:
             raise InvariantError("INV-1", "only Head.write_who or a logged human override may change Who")
         if human_override:
             self._record("human_override_who", {"actor": actor_id})
 
-        old_workers = {s.id for s in self.picture.slots if s.function == "worker"}
+        ids = [s.id for s in new_slots]
+        if len(ids) != len(set(ids)):
+            raise InvariantError("WHO", "slot ids must be unique")
+        heads = [s for s in new_slots if s.function == "head"]
+        if len(heads) != 1:
+            raise InvariantError("WHO", "exactly one Head")
+
+        # A Worker is new if its id is new or it was re-tasked to another channel.
+        old_workers = {s.id: s.channel_id for s in self.picture.slots if s.function == "worker"}
         new_workers = [s for s in new_slots if s.function == "worker"]
-        added = [s for s in new_workers if s.id not in old_workers]
+        added = [s for s in new_workers if s.id not in old_workers or old_workers[s.id] != s.channel_id]
 
         if len(new_workers) > MAX_WORKERS:
             raise InvariantError("CAP", f"worker cap is {MAX_WORKERS}")
@@ -133,7 +171,7 @@ class Mission:
             if len(added) > 1:
                 raise InvariantError("INV-8", "one write_who adds at most one Worker; one channel, one gate record")
             if gates is None:
-                raise InvariantError("INV-8", "adding a Worker requires a three-gate record")
+                raise InvariantError("INV-8", "adding or re-tasking a Worker requires a three-gate record")
             if gates.order != GATE_ORDER:
                 raise InvariantError("INV-9", "gate order violation")
             gates.assert_legal()
@@ -157,23 +195,25 @@ class Mission:
                 },
             )
 
-        heads = [s for s in new_slots if s.function == "head"]
-        if len(heads) != 1:
-            raise InvariantError("WHO", "exactly one Head")
         self.picture.slots = list(new_slots)
         self.picture.who_head_id = heads[0].id
         self._record("write_who", {"actor": actor_id, "slots": [s.id for s in new_slots]})
 
     def worker_spawn(self, actor_id: str, new_worker: Slot) -> None:
+        """INV-2. Workers have no spawn primitive — this method exists to fail."""
         raise InvariantError("INV-2", f"{actor_id} cannot spawn; Workers have no spawn primitive")
 
+    # --- Slide (skill activation) ---
+
     def slide(self, actor_id: str, slot_id: str, skill: str, brief: str) -> None:
+        """INV-11. Skill activation is a brief-and-tools change, not a new identity."""
+        self._assert_open()
         if actor_id != self.picture.who_head_id:
             raise InvariantError("INV-1", "only Head may activate a skill")
         slot = self.picture.slot(slot_id)
         if slot.function == "why":
             raise InvariantError("INV-11", "Review is a voice, not a skill identity")
-        if skill not in QUAL_TOOLS and skill not in ("execute", "retrieve", "reason", "draft", "simulate", "observe", "verify"):
+        if skill not in QUAL_TOOLS:
             raise InvariantError("INV-11", f"unknown skill: {skill}")
         slot.skill = skill
         slot.tools = list(QUAL_TOOLS.get(skill, ["write"]))
@@ -185,7 +225,11 @@ class Mission:
         if extra:
             raise InvariantError("TOOLS", f"{slot_id} requested {extra}; allowlist is {sorted(allowed)}")
 
+    # --- Look through the door ---
+
     def update_context(self, actor_id: str, picture_update: str, *, used_existing_observe: bool = True) -> None:
+        """Update Where without spawning. INV-10."""
+        self._assert_open()
         if actor_id != self.picture.who_head_id:
             raise InvariantError("INV-1", "only Head may update Where")
         if not self.picture.step_off_picture:
@@ -198,6 +242,7 @@ class Mission:
         )
 
     def request_recon_spawn(self, actor_id: str, new_worker: Slot, gates: GateRecord) -> None:
+        """INV-10. Illegal if context is enough or an observe skill exists."""
         if self.picture.context_sufficient:
             raise InvariantError("INV-10", "already see the other side — do not spawn to recon")
         has_observe = any(s.skill == "observe" for s in self.picture.slots)
@@ -205,13 +250,22 @@ class Mission:
             raise InvariantError("INV-10", "observe skill already on the team — inspect first, do not spawn")
         self.write_who(actor_id, self.picture.slots + [new_worker], gates=gates)
 
+    # --- Why ---
+
     def submit_why(self, body: str, note_id: str, kind: str = "why") -> WhyNote:
+        self._assert_open()
+        # Ids are single-use: reusing one would overwrite a note, and with it an open plan-wrong report.
+        if note_id in self.notes:
+            raise InvariantError("WHY", f"note id already used: {note_id}")
         note = WhyNote(id=note_id, body=body, kind=kind)
         self.notes[note_id] = note
         self._record("why_submit", {"id": note_id, "kind": kind})
         return note
 
     def report_plan_wrong(self, body: str, note_id: str = "plan-wrong") -> WhyNote:
+        """INV-14. Up-net mark: scheme no longer matches Where."""
+        if note_id in self.notes:
+            raise InvariantError("WHY", f"note id already used: {note_id}")
         self.post_delta(
             Delta(
                 claim=body,
@@ -224,17 +278,21 @@ class Mission:
         return self.submit_why(body, note_id, kind="plan_wrong")
 
     def why_seize_command(self, note_id: str) -> None:
+        """Exists to fail. Why cannot change Who or halt."""
         raise InvariantError("WHY", "Why may not change Who, freeze the loop, or rewrite What")
 
     def why_halt(self) -> None:
         raise InvariantError("WHY", "Why may not freeze execution")
 
     def respond_why(self, actor_id: str, note_id: str, response: str, reason: str = "") -> None:
+        self._assert_open()
         if actor_id != self.picture.who_head_id:
             raise InvariantError("INV-3", "only Head.respond may close a Why note")
         if response not in HEAD_RESPONSES:
             raise InvariantError("WHY", f"response must be one of {HEAD_RESPONSES}")
-        note = self.notes[note_id]
+        note = self.notes.get(note_id)
+        if note is None:
+            raise InvariantError("WHY", f"unknown note: {note_id}")
         if note.kind == "plan_wrong" and response not in ("CHANGE_METHOD", "REVISE_GOAL"):
             raise InvariantError(
                 "INV-14",
@@ -242,11 +300,11 @@ class Mission:
             )
         if note.kind == "plan_wrong" and not reason.strip():
             raise InvariantError("INV-14", "plan-wrong answer must name the new vector or purpose")
+        if response == "DEFER" and not reason.strip():
+            raise InvariantError("INV-4", "DEFER requires a recorded reason")
         note.response = response
         note.reason = reason
         if response == "DEFER":
-            if not reason.strip():
-                raise InvariantError("INV-4", "DEFER requires a recorded reason")
             note.status = NoteStatus.DEFERRED
         else:
             note.status = NoteStatus.CLOSED
@@ -255,6 +313,8 @@ class Mission:
         if response == "REVISE_GOAL" and reason:
             self.picture.purpose = reason
         self._record("why_respond", {"id": note_id, "response": response, "reason": reason})
+
+    # --- Artifacts / verify ---
 
     def picture_moved(self) -> bool:
         a = (self.picture.step_off_picture or "").strip()
@@ -269,6 +329,7 @@ class Mission:
         return self.submit_why(body, "why-picture")
 
     def send_out(self, actor_id: str, claim: str) -> None:
+        """Typed report to higher / adjacent. Does not change Who."""
         self.write_net(actor_id, "out")
         self.post_delta(
             Delta(
@@ -281,6 +342,8 @@ class Mission:
         )
 
     def receive_adjacent(self, peer_id: str, claim: str) -> None:
+        """Inbound from a peer element. Logged. Not merged into our Where or Who."""
+        self._assert_open()
         if "adjacent" not in self.open_nets:
             self.open_nets.append("adjacent")
         self.deltas.append(
@@ -295,6 +358,7 @@ class Mission:
         self._record("adjacent_in", {"peer": peer_id, "claim": claim})
 
     def send_adjacent(self, actor_id: str, claim: str, peer_id: str = "adjacent") -> None:
+        """Typed mark to a peer graph. Context stays ours. Roster stays ours."""
         self.write_net(actor_id, "adjacent")
         self.post_delta(
             Delta(
@@ -307,6 +371,7 @@ class Mission:
         )
 
     def write_net(self, actor_id: str, net: str) -> None:
+        self._assert_open()
         if actor_id != self.picture.who_head_id:
             raise InvariantError("INV-13", "only Head may open a net")
         if net not in NETS:
@@ -316,6 +381,7 @@ class Mission:
         self._record("write_net", {"net": net})
 
     def post_delta(self, delta: Delta) -> None:
+        self._assert_open()
         if delta.net not in self.open_nets:
             raise InvariantError("INV-13", f"net {delta.net} is not open")
         self.deltas.append(delta)
@@ -324,6 +390,7 @@ class Mission:
         self._record("delta", {"net": delta.net, "channel": delta.channel_id, "claim": delta.claim})
 
     def accept_artifact(self, artifact: Artifact) -> None:
+        self._assert_open()
         from .schema import validate_artifact
 
         validate_artifact(artifact)
@@ -333,13 +400,17 @@ class Mission:
         self._record("artifact", {"channel": artifact.channel_id, "claim": artifact.claim})
 
     def mark_stop_rule_failed(self, field: str) -> None:
+        self._assert_open()
         self.failed_stop_rules.append(field)
         self._record("stop_rule_failed", {"field": field})
 
     def verifier_pass_with_failed_stop(self) -> None:
         raise InvariantError("INV-5", "Verifier cannot pass an artifact that fails a stop-rule field")
 
+    # --- Memory ---
+
     def mint_cue(self, cue: Cue) -> None:
+        self._assert_open()
         if not cue.expiry:
             raise InvariantError("CUE", "cue expiry is required")
         self.cues[cue.id] = cue
@@ -348,7 +419,10 @@ class Mission:
     def dump_unscoped_history_into_brief(self) -> None:
         raise InvariantError("INV-6", "Memory cannot inject unscoped history into a Worker brief")
 
+    # --- How / multi-axis ---
+
     def set_how(self, actor_id: str, method: str, axes: list[str]) -> None:
+        self._assert_open()
         if actor_id != self.picture.who_head_id:
             raise InvariantError("HOW", "only Head selects How")
         for a in axes:
@@ -358,7 +432,10 @@ class Mission:
         self.picture.axes = list(axes)
         self._record("set_how", {"method": method, "axes": axes})
 
+    # --- Complete ---
+
     def complete(self) -> None:
+        self._assert_open()
         if any(n.kind == "plan_wrong" and n.status == NoteStatus.OPEN for n in self.notes.values()):
             raise InvariantError("INV-14", "COMPLETE illegal while a plan-wrong report is unanswered")
         if self.open_why_ids():

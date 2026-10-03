@@ -1,0 +1,19 @@
+{
+  "id": "lead_exists",
+  "pace": "run",
+  "mode": "mission",
+  "effect": "Answer using two notes",
+  "purpose": "Do not redo work that exists",
+  "end_state": "Only the open note worked",
+  "exists": [
+    "out/note-a.md"
+  ],
+  "look": "seam:note-a=sources_must_not_mix seam:note-b=sources_must_not_mix",
+  "expect": {
+    "status": "complete",
+    "workers": 0,
+    "split": false,
+    "health": "ok",
+    "refused_contains": "note-a already exists in the world"
+  }
+}

@@ -7,9 +7,11 @@ from typing import Optional
 
 FUNCTIONS = ("head", "worker", "verifier", "memory", "why")
 QUALS = ("execute", "retrieve", "reason", "draft", "simulate", "observe", "verify")
+# Tool allowlist per qualification. Runnable tools (see tools.py): read, retrieve, observe.
+# write / simulate / verify have no outside effect; the result goes in the artifact.
 QUAL_TOOLS = {
     "execute": ("write",),
-    "retrieve": ("retrieve",),
+    "retrieve": ("retrieve", "read"),
     "reason": ("write",),
     "draft": ("write",),
     "simulate": ("simulate",),
@@ -83,7 +85,7 @@ class WhyNote:
 
 @dataclass
 class Delta:
-    """Typed mark on shared context. Element-net payload."""
+    """Typed mark on the living picture. Element-net payload."""
 
     claim: str
     evidence: list[str]
@@ -123,13 +125,14 @@ class GateRecord:
                 "INV-9",
                 "gates must be recorded in order: can_someone_else, should_we, could_we",
             )
-        if not self.should_we or not self.named_failure:
-            raise InvariantError("INV-8", "split requires a named failure (should we)")
+        # Checked in gate order: the first gate that fails names the refusal.
         if self.can_someone_else:
             raise InvariantError(
                 "GATE-1",
                 "can someone else is true — assign or refuse, do not spawn",
             )
+        if not self.should_we or not self.named_failure:
+            raise InvariantError("INV-8", "split requires a named failure (should we)")
         if not self.could_we or not self.channel_id:
             raise InvariantError("GATE-3", "could we failed — no independent channel")
 
@@ -160,4 +163,6 @@ class FiveWH:
         for s in self.slots:
             if s.id == slot_id:
                 return s
-        raise KeyError(slot_id)
+        from .errors import InvariantError
+
+        raise InvariantError("WHO", f"no slot {slot_id!r} on the roster")

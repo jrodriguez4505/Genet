@@ -1,0 +1,16 @@
+{
+  "id": "lead_crawl_holds",
+  "pace": "crawl",
+  "mode": "mission",
+  "effect": "Answer using two independent notes",
+  "purpose": "Spend no more than crawl allows",
+  "end_state": "One body answered",
+  "look": "seam:note-a=sources_must_not_mix seam:note-b=sources_must_not_mix",
+  "expect": {
+    "status": "complete",
+    "workers": 0,
+    "split": false,
+    "health": "ok",
+    "refused_contains": "pace crawl does not allow a split"
+  }
+}

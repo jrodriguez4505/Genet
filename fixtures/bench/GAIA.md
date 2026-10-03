@@ -18,6 +18,8 @@ To *prove a beat* you still need:
 
 Until that harness exists, do not put “beats CrewAI on GAIA” on a README.
 
+In-repo now: `taskorg compare` runs the same experiment on a synthetic suite. It holds the model, tools and budget equal, and compares one agent, an always-split crew, and Genet. That measures the task-organization effect; it is not a GAIA score.
+
 What is proven in-repo instead:
 
 - `decide()` reads World (files, channels, covered seams) and refuses spawn
