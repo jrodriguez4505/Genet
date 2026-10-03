@@ -1,12 +1,21 @@
 {
   "id": "already_exists",
-  "pace": "run",
+  "tier": "open",
   "mode": "refuse_someone_else",
-  "effect": "Write the summary file",
+  "goal": "Write the summary file",
   "purpose": "Do not duplicate work",
-  "end_state": "File exists once",
-  "look": "The summary file is already on disk.",
+  "done_when": "File exists once",
+  "context": "The summary file is already on disk.",
   "expect": {
     "code": "GATE-1"
-  }
+  },
+  "exists": [
+    "out/summary.md"
+  ],
+  "subtasks": [
+    [
+      "summary",
+      "need a summary writer"
+    ]
+  ]
 }

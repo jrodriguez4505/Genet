@@ -1,0 +1,17 @@
+{
+  "id": "lead_two_subagents",
+  "tier": "open",
+  "mode": "run",
+  "goal": "Answer using two independent notes",
+  "purpose": "Do not mix the two sources in one context",
+  "done_when": "Two sub-agent results merged",
+  "context": "subtask:note-a@retrieve=sources_must_not_mix subtask:note-b@retrieve=sources_must_not_mix",
+  "expect": {
+    "status": "complete",
+    "workers": 2,
+    "split": true,
+    "health": "ok",
+    "isolation_flags_empty": true,
+    "method_contains": "sub-agents"
+  }
+}

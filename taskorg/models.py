@@ -5,11 +5,13 @@ from enum import Enum
 from typing import Optional
 
 
-FUNCTIONS = ("head", "worker", "verifier", "memory", "why")
-QUALS = ("execute", "retrieve", "reason", "draft", "simulate", "observe", "verify")
-QUAL_TOOLS = {
+FUNCTIONS = ("lead", "worker", "verifier", "memory", "reviewer")
+SKILLS = ("execute", "retrieve", "reason", "draft", "simulate", "observe", "verify")
+# Tool allowlist per skill. Runnable tools (see tools.py): read, retrieve, observe.
+# write / simulate / verify act on nothing outside; the result goes in the artifact.
+SKILL_TOOLS = {
     "execute": ("write",),
-    "retrieve": ("retrieve",),
+    "retrieve": ("retrieve", "read"),
     "reason": ("write",),
     "draft": ("write",),
     "simulate": ("simulate",),
@@ -18,9 +20,11 @@ QUAL_TOOLS = {
 }
 AXES = ("parallel", "fallback", "reroute", "sequential", "reverse", "fan_in")
 GATE_ORDER = ("can_someone_else", "should_we", "could_we")
-HEAD_RESPONSES = ("KEEP_ROSTER", "CHANGE_METHOD", "REVISE_GOAL", "DEFER")
+LEAD_RESPONSES = ("KEEP_ROSTER", "CHANGE_METHOD", "REVISE_GOAL", "DEFER")
 MAX_WORKERS = 4
-NETS = ("element", "up", "out", "adjacent")
+# Message streams: merge (sub-agent results into shared context), escalate (to the lead),
+# report (to the operator), peer (to another run; never merged).
+STREAMS = ("merge", "escalate", "report", "peer")
 
 
 class Status(str, Enum):
@@ -47,10 +51,10 @@ class Slot:
     def __post_init__(self):
         if self.function not in FUNCTIONS:
             raise ValueError(f"unknown function: {self.function}")
-        if self.skill not in QUALS:
+        if self.skill not in SKILLS:
             raise ValueError(f"unknown skill: {self.skill}")
         if not self.tools:
-            self.tools = list(QUAL_TOOLS.get(self.skill, ("write",)))
+            self.tools = list(SKILL_TOOLS.get(self.skill, ("write",)))
 
 
 @dataclass
@@ -59,7 +63,7 @@ class Artifact:
     evidence: list[str]
     uncertainty: str
     channel_id: str
-    delta_to_picture: str
+    context_update: str
     requests: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
@@ -72,28 +76,28 @@ class Artifact:
 
 
 @dataclass
-class WhyNote:
+class ReviewNote:
     id: str
     body: str
     status: NoteStatus = NoteStatus.OPEN
     response: Optional[str] = None
     reason: Optional[str] = None
-    kind: str = "why"
+    kind: str = "review"
 
 
 @dataclass
 class Delta:
-    """Typed mark on shared context. Element-net payload."""
+    """A typed update to the shared context, carried on one stream."""
 
     claim: str
     evidence: list[str]
     uncertainty: str
     channel_id: str
-    net: str = "element"
+    stream: str = "merge"
 
     def __post_init__(self):
-        if self.net not in NETS:
-            raise ValueError(f"unknown net: {self.net}")
+        if self.stream not in STREAMS:
+            raise ValueError(f"unknown stream: {self.stream}")
 
 
 @dataclass
@@ -123,31 +127,32 @@ class GateRecord:
                 "INV-9",
                 "gates must be recorded in order: can_someone_else, should_we, could_we",
             )
-        if not self.should_we or not self.named_failure:
-            raise InvariantError("INV-8", "split requires a named failure (should we)")
+        # Checked in gate order: the first gate that fails names the refusal.
         if self.can_someone_else:
             raise InvariantError(
                 "GATE-1",
                 "can someone else is true — assign or refuse, do not spawn",
             )
+        if not self.should_we or not self.named_failure:
+            raise InvariantError("INV-8", "split requires a named failure (should we)")
         if not self.could_we or not self.channel_id:
             raise InvariantError("GATE-3", "could we failed — no independent channel")
 
 
 @dataclass
-class FiveWH:
-    who_head_id: str
+class RunState:
+    lead_id: str
     slots: list[Slot]
     primary: str
-    effect: str
+    goal: str
     success_criteria: list[str]
-    tempo: str
-    decision_points: list[str]
-    current_picture: str
-    end_state: str
+    cadence: str
+    checkpoints: list[str]
+    context: str
+    done_when: str
     purpose: str
     method: str
-    step_off_picture: str = ""
+    initial_context: str = ""
     projections: list[str] = field(default_factory=list)
     context_sufficient: bool = False
     axes: list[str] = field(default_factory=list)
@@ -160,4 +165,6 @@ class FiveWH:
         for s in self.slots:
             if s.id == slot_id:
                 return s
-        raise KeyError(slot_id)
+        from .errors import InvariantError
+
+        raise InvariantError("ROSTER", f"no slot {slot_id!r} on the roster")

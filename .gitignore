@@ -1,12 +1,28 @@
-__pycache__/
-*.pyc
-.pytest_cache/
-.venv/
-dist/
-*.egg-info/
-data/missions/*.json
+# Run output: saved runs, working memory, episodes, policy files, comparisons. Live runs stay local.
+data/runs/
+data/missions/
 data/working/
 data/episodic/
-.DS_Store
+data/policy/
+data/compare/
+Data2/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Local tool settings
+.claude/
+
+# Secrets
 .env
 *.key
+
+# macOS
+.DS_Store

@@ -1,0 +1,17 @@
+{
+  "id": "lead_single_agent",
+  "tier": "tight",
+  "mode": "run",
+  "goal": "Summarize the paragraph in one sentence",
+  "purpose": "Hold one reading of one source",
+  "done_when": "One sentence on paper",
+  "context": "A single public paragraph holds everything needed.",
+  "expect": {
+    "status": "complete",
+    "workers": 0,
+    "split": false,
+    "health": "ok",
+    "calls_max": 3,
+    "refused_contains": "single agent"
+  }
+}

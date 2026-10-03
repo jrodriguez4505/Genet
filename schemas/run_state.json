@@ -1,55 +1,55 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "taskorg://schemas/five_wh",
-  "title": "Shared context object",
+  "$id": "taskorg://schemas/run_state",
+  "title": "Run state: roster, goal, schedule, context, purpose and method",
   "type": "object",
-  "required": ["who", "what", "when", "where", "why", "how"],
+  "required": ["roster", "goal", "schedule", "context", "purpose", "method"],
   "additionalProperties": false,
   "properties": {
-    "who": {
+    "roster": {
       "type": "object",
-      "required": ["head_id", "slots", "primary"],
+      "required": ["lead_id", "slots", "primary"],
       "properties": {
-        "head_id": { "type": "string" },
+        "lead_id": { "type": "string" },
         "slots": { "type": "array", "items": { "$ref": "#/$defs/slot" } },
         "primary": { "type": "string" }
       }
     },
-    "what": {
+    "goal": {
       "type": "object",
-      "required": ["effect", "success_criteria"],
+      "required": ["goal", "success_criteria"],
       "properties": {
-        "effect": { "type": "string", "minLength": 1 },
+        "goal": { "type": "string", "minLength": 1 },
         "success_criteria": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
       }
     },
-    "when": {
+    "schedule": {
       "type": "object",
-      "required": ["tempo", "decision_points"],
+      "required": ["cadence", "checkpoints"],
       "properties": {
-        "tempo": { "type": "string" },
-        "decision_points": { "type": "array", "items": { "type": "string" } }
+        "cadence": { "type": "string" },
+        "checkpoints": { "type": "array", "items": { "type": "string" } }
       }
     },
-    "where": {
+    "context": {
       "type": "object",
-      "required": ["current_picture", "end_state"],
+      "required": ["context", "done_when"],
       "properties": {
-        "current_picture": { "type": "string" },
-        "end_state": { "type": "string" },
+        "context": { "type": "string" },
+        "done_when": { "type": "string" },
         "projections": { "type": "array", "items": { "type": "string" } },
         "context_sufficient": { "type": "boolean" }
       }
     },
-    "why": {
+    "purpose": {
       "type": "object",
       "required": ["purpose"],
       "properties": {
         "purpose": { "type": "string", "minLength": 1 },
-        "open_note_ids": { "type": "array", "items": { "type": "string" } }
+        "open_review_ids": { "type": "array", "items": { "type": "string" } }
       }
     },
-    "how": {
+    "method": {
       "type": "object",
       "required": ["method"],
       "properties": {
@@ -68,7 +68,7 @@
       "required": ["id", "function"],
       "properties": {
         "id": { "type": "string" },
-        "function": { "enum": ["head", "worker", "verifier", "memory", "why"] },
+        "function": { "enum": ["lead", "worker", "verifier", "memory", "reviewer"] },
         "skill": { "enum": ["execute", "retrieve", "reason", "draft", "simulate", "observe", "verify"] },
         "channel_id": { "type": ["string", "null"] }
       }

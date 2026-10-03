@@ -1,0 +1,19 @@
+{
+  "id": "lead_exists",
+  "tier": "open",
+  "mode": "run",
+  "goal": "Answer using two notes",
+  "purpose": "Do not redo work that exists",
+  "done_when": "Only the open note worked",
+  "exists": [
+    "out/note-a.md"
+  ],
+  "context": "subtask:note-a=sources_must_not_mix subtask:note-b=sources_must_not_mix",
+  "expect": {
+    "status": "complete",
+    "workers": 0,
+    "split": false,
+    "health": "ok",
+    "refused_contains": "note-a already exists in the world"
+  }
+}

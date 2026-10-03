@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .budget import Budget
-from .factory import element_at_rest
+from .factory import new_run
 from .gates import World
 from .imitate import ImitationPolicy, LogisticHead, _softmax
 from .models import Status
@@ -18,48 +18,48 @@ COST = -0.1
 
 
 def scenario(name: str):
-    if name == "crawl":
-        m = element_at_rest("rl-crawl", "Summarize the paragraph", "One source", "One sentence")
-        m.attach_budget(Budget.for_pace("crawl"))
-        m.picture.context_sufficient = True
+    if name == "tight":
+        m = new_run("rl-tight", "Summarize the paragraph", "One source", "One sentence")
+        m.attach_budget(Budget.for_tier("tight"))
+        m.state.context_sufficient = True
         return m, {"allow_channel": False, "expect": "HOLD"}
     if name == "exists":
-        m = element_at_rest("rl-exists", "Write the summary file", "Do not duplicate work", "File exists once")
-        m.attach_budget(Budget.for_pace("run"))
-        m.picture.context_sufficient = True
+        m = new_run("rl-exists", "Write the summary file", "Do not duplicate work", "File exists once")
+        m.attach_budget(Budget.for_tier("open"))
+        m.state.context_sufficient = True
         m.world = World(existing_files=["summary.md"], existing_channels=["summary"])
         return m, {"allow_channel": False, "expect": "HOLD"}
     if name == "thin":
-        m = element_at_rest("rl-thin", "task", "purpose", "done")
-        m.attach_budget(Budget.for_pace("crawl"))
-        m.picture.context_sufficient = False
+        m = new_run("rl-thin", "task", "purpose", "done")
+        m.attach_budget(Budget.for_tier("tight"))
+        m.state.context_sufficient = False
         return m, {"allow_channel": False, "expect": "INSPECT"}
     if name == "dead":
-        m = element_at_rest("rl-dead", "Draft an outline", "Reach the reader", "Outline fits")
-        m.attach_budget(Budget.for_pace("walk"))
-        m.picture.context_sufficient = True
-        m.report_plan_wrong("First outline assumed experts")
+        m = new_run("rl-dead", "Draft an outline", "Reach the reader", "Outline fits")
+        m.attach_budget(Budget.for_tier("normal"))
+        m.state.context_sufficient = True
+        m.request_replan("First outline assumed experts")
         return m, {"allow_channel": False, "expect": "CHANGE_METHOD"}
     if name == "open-run":
-        m = element_at_rest("rl-open", "Answer two notes", "Do not mix sources", "Integrated")
-        m.attach_budget(Budget.for_pace("run"))
-        m.picture.context_sufficient = True
+        m = new_run("rl-open", "Answer two notes", "Do not mix sources", "Integrated")
+        m.attach_budget(Budget.for_tier("open"))
+        m.state.context_sufficient = True
         return m, {"allow_channel": True, "expect": "HOLD"}
     raise ValueError(name)
 
 
-SCENARIOS = ("crawl", "exists", "thin", "dead", "open-run")
+SCENARIOS = ("tight", "exists", "thin", "dead", "open-run")
 
 
-def reward(mission, decision: PolicyDecision, meta: dict) -> float:
-    if mission.picture.worker_count() > 0:
+def reward(run, decision: PolicyDecision, meta: dict) -> float:
+    if run.state.worker_count() > 0:
         return ILLEGAL
     if decision.action == "PROPOSE_CHANNEL" and not meta.get("allow_channel"):
         return ILLEGAL
     expect = meta.get("expect")
     if expect and decision.action == expect:
         return OK
-    if decision.action == "STOP" and mission.status != Status.ACTIVE:
+    if decision.action == "STOP" and run.status != Status.ACTIVE:
         return OK
     if decision.action == "HOLD" and not meta.get("allow_channel"):
         return 0.4
@@ -76,8 +76,8 @@ class Episode:
 
 
 def step(policy, name: str) -> Episode:
-    mission, meta = scenario(name)
-    state = encode_board(mission)
+    run, meta = scenario(name)
+    state = encode_board(run)
     decision = policy.act(state)
     if decision.action == "PROPOSE_CHANNEL" and not decision.channel_id:
         decision = PolicyDecision(
@@ -85,16 +85,16 @@ def step(policy, name: str) -> Episode:
             confidence=decision.confidence,
             rationale_id=decision.rationale_id,
             channel_id="summary" if name == "exists" else "source-b",
-            named_failure="open seam",
+            named_failure="open subtask",
         )
-    apply_decision(mission, decision)
-    r = reward(mission, decision, meta)
-    illegal = r <= ILLEGAL + 0.01 or mission.picture.worker_count() > 0
+    apply_decision(run, decision)
+    r = reward(run, decision, meta)
+    illegal = r <= ILLEGAL + 0.01 or run.state.worker_count() > 0
     return Episode(
         name=name,
         action=decision.action,
         reward=r,
-        workers=mission.picture.worker_count(),
+        workers=run.state.worker_count(),
         illegal=illegal,
     )
 
@@ -129,12 +129,12 @@ def _policy_gradient(head: LogisticHead, state: BoardState, action: str, advanta
 
 
 def train(episodes: int = 80) -> tuple[ImitationPolicy, dict]:
-    """Start from imitation, nudge with sparse reward. Never a reason to grow Who."""
+    """Start from imitation, nudge with sparse reward. Never a reason to grow the roster."""
     pol = ImitationPolicy.train_default()
     for i in range(episodes):
         name = SCENARIOS[i % len(SCENARIOS)]
-        mission, meta = scenario(name)
-        state = encode_board(mission)
+        run, meta = scenario(name)
+        state = encode_board(run)
         decision = pol.act(state)
         if decision.action == "PROPOSE_CHANNEL" and not decision.channel_id:
             decision = PolicyDecision(
@@ -143,8 +143,8 @@ def train(episodes: int = 80) -> tuple[ImitationPolicy, dict]:
                 channel_id="source-b",
                 named_failure="open",
             )
-        apply_decision(mission, decision)
-        r = reward(mission, decision, meta)
+        apply_decision(run, decision)
+        r = reward(run, decision, meta)
         baseline = 0.2
         _policy_gradient(pol.head, state, decision.action, r - baseline)
     return pol, evaluate(pol, rounds=3)

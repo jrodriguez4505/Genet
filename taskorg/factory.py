@@ -1,25 +1,25 @@
-from .mission import Mission
-from .models import FiveWH, Slot
+from .run import Run
+from .models import RunState, Slot
 
 
-def element_at_rest(mission_id: str, effect: str, purpose: str, end_state: str) -> Mission:
-    """Single lead slot. Skills latent. Graph still exists."""
-    head = Slot(id="head-1", function="head", skill="execute")
+def new_run(run_id: str, goal: str, purpose: str, done_when: str) -> Run:
+    """A new run: one lead, a verifier, memory and a reviewer. Skills latent; no workers."""
+    lead = Slot(id="lead-1", function="lead", skill="execute")
     verifier = Slot(id="verifier-1", function="verifier", skill="verify")
     memory = Slot(id="memory-1", function="memory", skill="execute")
-    why = Slot(id="why-1", function="why", skill="execute")
-    picture = FiveWH(
-        who_head_id="head-1",
-        slots=[head, verifier, memory, why],
-        primary="head-1",
-        effect=effect,
+    reviewer = Slot(id="reviewer-1", function="reviewer", skill="execute")
+    state = RunState(
+        lead_id="lead-1",
+        slots=[lead, verifier, memory, reviewer],
+        primary="lead-1",
+        goal=goal,
         success_criteria=["default task", "purpose"],
-        tempo="mission",
-        decision_points=["look", "slide", "gates", "complete"],
-        current_picture="initial context",
-        end_state=end_state,
+        cadence="run",
+        checkpoints=["context", "switch_skill", "gates", "complete"],
+        context="initial context",
+        done_when=done_when,
         purpose=purpose,
         method="inspect then act",
         context_sufficient=False,
     )
-    return Mission(id=mission_id, picture=picture)
+    return Run(id=run_id, state=state)

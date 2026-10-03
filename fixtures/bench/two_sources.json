@@ -1,16 +1,25 @@
 {
   "id": "two_sources",
-  "pace": "run",
-  "mode": "split",
-  "effect": "Answer using two independent notes",
+  "tier": "open",
+  "mode": "fanout",
+  "goal": "Answer using two independent notes",
   "purpose": "Do not mix the two sources in one brief",
-  "end_state": "Two channel products integrated",
-  "look": "seam:source-a=note A is independent seam:source-b=note B is independent",
-  "seams": [
-    ["source-a", "note A is an independent source"],
-    ["source-b", "note B is an independent source"]
+  "done_when": "Two channel products integrated",
+  "context": "subtask:source-a=note A is independent subtask:source-b=note B is independent",
+  "subtasks": [
+    [
+      "source-a",
+      "note A is an independent source"
+    ],
+    [
+      "source-b",
+      "note B is an independent source"
+    ]
   ],
-  "axes": ["sequential", "fan_in"],
+  "axes": [
+    "sequential",
+    "fan_in"
+  ],
   "expect": {
     "workers": 2,
     "split": true,

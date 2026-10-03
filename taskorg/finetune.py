@@ -15,8 +15,8 @@ import json
 from pathlib import Path
 
 from .errors import InvariantError
-from .imitate import ImitationPolicy, LABELS, fit, gold_label, synthesize
-from .policy import ACTIONS, BoardState, PolicyDecision, clamp, encode_board
+from .imitate import ImitationPolicy, fit, synthesize
+from .policy import ACTIONS, BoardState, PolicyDecision, clamp
 
 
 SYSTEM = (
@@ -31,10 +31,10 @@ SYSTEM = (
 def board_prompt(state: BoardState) -> str:
     feats = {k: state.features.get(k) for k in (
         "worker_count", "context_sufficient", "allow_split", "allow_adapt",
-        "world_files", "world_channels", "plan_wrong_open", "status_active",
-        "open_why",
+        "world_files", "world_channels", "replan_open", "status_active",
+        "open_reviews",
     )}
-    extras = {k: state.extras.get(k) for k in ("effect", "purpose", "method", "pace", "status")}
+    extras = {k: state.extras.get(k) for k in ("goal", "purpose", "method", "tier", "status")}
     return json.dumps({"features": feats, "run": extras}, sort_keys=True)
 
 
@@ -60,11 +60,7 @@ def sft_row(state: BoardState, action: str) -> dict:
 
 
 def build_corpus(n: int = 240) -> list[dict]:
-    rows = []
-    for state, label in synthesize(n):
-        y = gold_label(state)
-        rows.append(sft_row(state, y))
-    return rows
+    return [sft_row(state, label) for state, label in synthesize(n)]
 
 
 def write_jsonl(path: Path, rows: list[dict] | None = None) -> Path:
@@ -88,15 +84,24 @@ def parse_action_json(text: str) -> PolicyDecision:
     start, end = raw.find("{"), raw.rfind("}")
     if start < 0 or end < 0:
         raise InvariantError("SCHEMA", "policy model returned no JSON")
-    data = json.loads(raw[start : end + 1])
+    try:
+        data = json.loads(raw[start : end + 1])
+    except json.JSONDecodeError as e:
+        raise InvariantError("SCHEMA", f"policy JSON invalid: {e}") from e
     if not isinstance(data, dict):
         raise InvariantError("SCHEMA", "policy JSON is not an object")
     action = str(data.get("action") or "").strip().upper()
     if action not in ACTIONS:
         raise InvariantError("SCHEMA", f"policy action illegal: {action}")
+    # Missing confidence defaults to 0.5; a stated 0.0 stays 0.0 and clamps to HOLD.
+    raw_conf = data.get("confidence")
+    try:
+        confidence = 0.5 if raw_conf is None else float(raw_conf)
+    except (TypeError, ValueError) as e:
+        raise InvariantError("SCHEMA", f"policy confidence not a number: {raw_conf!r}") from e
     return PolicyDecision(
         action=action,
-        confidence=float(data.get("confidence") or 0.5),
+        confidence=confidence,
         rationale_id=str(data.get("rationale_id") or "live-policy"),
         channel_id=str(data.get("channel_id") or ""),
         named_failure=str(data.get("named_failure") or ""),
@@ -106,7 +111,7 @@ def parse_action_json(text: str) -> PolicyDecision:
 
 
 class LivePolicy:
-    """Uses an LLM as proposer. Still cannot write Who."""
+    """Uses an LLM as proposer. Still cannot write the roster."""
 
     threshold = 0.35
     name = "live-policy"
@@ -131,4 +136,5 @@ def fine_tune_head(rows: list[dict] | None = None) -> ImitationPolicy:
             extras={},
         )
         pairs.append((state, row["label"]))
+    # vectors-only BoardState lacks feature dict; gold already applied as label
     return ImitationPolicy(fit(pairs, steps=350, lr=0.35))

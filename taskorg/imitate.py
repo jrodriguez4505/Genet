@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .budget import Budget
-from .factory import element_at_rest
+from .factory import new_run
 from .gates import World
 from .policy import (
     ACTIONS,
@@ -23,15 +23,16 @@ from .policy import (
 
 
 LABELS = ("HOLD", "INSPECT", "CHANGE_METHOD", "PROPOSE_CHANNEL", "STOP")
+# ACTIVATE_SKILL / REVISE_GOAL are rare in N2 gold; map them aside.
 
 
 def gold_label(state: BoardState) -> str:
-    """Hard labels the classifier must hit. Roster growth is never the gold on crawl or on an existing file."""
+    """Hard labels the classifier must hit. Roster growth is never the gold on the tight tier or on an existing file."""
     if state.get("status_active") < 1.0:
         return "STOP"
     if state.get("context_sufficient") < 1.0:
         return "INSPECT"
-    if state.get("plan_wrong_open") >= 1.0:
+    if state.get("replan_open") >= 1.0:
         return "CHANGE_METHOD"
     if state.get("world_files") >= 1.0 or state.get("world_channels") >= 1.0:
         return "HOLD"
@@ -42,18 +43,18 @@ def gold_label(state: BoardState) -> str:
     return "HOLD"
 
 
-def _mission_for(features: dict) -> BoardState:
-    pace = "run" if features.get("allow_split") else ("walk" if features.get("allow_adapt") else "crawl")
-    m = element_at_rest("syn", "Write a note", "Do not redo work", "Done")
-    m.attach_budget(Budget.for_pace(pace))
-    m.picture.context_sufficient = bool(features.get("context_sufficient"))
+def _run_for(features: dict) -> BoardState:
+    tier = "open" if features.get("allow_split") else ("normal" if features.get("allow_adapt") else "tight")
+    m = new_run("syn", "Write a note", "Do not redo work", "Done")
+    m.attach_budget(Budget.for_tier(tier))
+    m.state.context_sufficient = bool(features.get("context_sufficient"))
     if features.get("world_files") or features.get("world_channels"):
         m.world = World(
             existing_files=["notes/already.txt"] * int(features.get("world_files") or 1),
             existing_channels=["source-a"] * int(features.get("world_channels") or 1),
         )
-    if features.get("plan_wrong_open"):
-        m.report_plan_wrong("first method is dead")
+    if features.get("replan_open"):
+        m.request_replan("first method is dead")
     if features.get("status_active") == 0:
         from .models import Status
 
@@ -70,7 +71,7 @@ def synthesize(n: int = 160) -> list[tuple[BoardState, str]]:
         {"context_sufficient": 1, "allow_split": 1, "allow_adapt": 1},
         {"context_sufficient": 1, "allow_split": 0, "world_files": 1},
         {"context_sufficient": 1, "allow_split": 1, "world_files": 1, "world_channels": 1},
-        {"context_sufficient": 1, "plan_wrong_open": 1, "allow_adapt": 1},
+        {"context_sufficient": 1, "replan_open": 1, "allow_adapt": 1},
         {"context_sufficient": 1, "status_active": 0},
         {"context_sufficient": 1, "allow_split": 0, "world_channels": 1},
         {"context_sufficient": 0, "allow_split": 1, "world_files": 1},
@@ -83,11 +84,11 @@ def synthesize(n: int = 160) -> list[tuple[BoardState, str]]:
             "allow_adapt": 0,
             "world_files": 0,
             "world_channels": 0,
-            "plan_wrong_open": 0,
+            "replan_open": 0,
             "status_active": 1,
         }
         feats.update(raw)
-        state = _mission_for(feats)
+        state = _run_for(feats)
         rows.append((state, gold_label(state)))
     i = 0
     while len(rows) < n:
@@ -95,7 +96,7 @@ def synthesize(n: int = 160) -> list[tuple[BoardState, str]]:
         i += 1
         base.setdefault("context_sufficient", 1)
         base.setdefault("status_active", 1)
-        state = _mission_for(base)
+        state = _run_for(base)
         rows.append((state, gold_label(state)))
     return rows
 
@@ -270,18 +271,18 @@ def load(path: Path) -> LogisticHead:
 
 
 def traces_from_engine(tmp: Path) -> list[dict]:
-    """Run stub engine once per pace and label the log. No live key."""
+    """Run the stub engine once per tier and label the log. No live key."""
     from .loop import Engine
     from .memory_store import MemoryStore
 
     store = MemoryStore(tmp)
-    store.write_doctrine("standing", "one body first")
+    store.write_guidelines("standing", "one agent first")
     out = []
-    m = element_at_rest("im-crawl", "Complete the default task", "Keep purpose", "Done")
-    Engine(store, budget=Budget.for_pace("crawl")).run_standing_order(
+    m = new_run("im-tight", "Complete the default task", "Keep purpose", "Done")
+    Engine(store, budget=Budget.for_tier("tight")).run_single(
         m,
-        look_update="One source. Picture is enough.",
-        operator_why="Could this have been one body?",
+        context="One source. The context is enough.",
+        operator_question="Could a single agent have done this?",
     )
     out.extend(replay_log([{"event": e.event, "detail": e.detail} for e in m.log]))
     return out

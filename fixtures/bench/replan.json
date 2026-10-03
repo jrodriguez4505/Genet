@@ -1,0 +1,20 @@
+{
+  "id": "replan",
+  "tier": "normal",
+  "mode": "replan",
+  "goal": "Draft a one-page outline",
+  "purpose": "Get the reader to the point",
+  "done_when": "Outline matches the real audience",
+  "context": "The first outline assumed experts. The reader is new.",
+  "method": "start from definitions, not from jargon",
+  "axes": [
+    "reroute"
+  ],
+  "expect": {
+    "workers": 0,
+    "split": false,
+    "status": "complete",
+    "method_contains": "definitions"
+  },
+  "replan_reason": "First outline is dead \u2014 audience is new, not expert"
+}

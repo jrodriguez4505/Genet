@@ -1,0 +1,16 @@
+{
+  "id": "lead_tight_holds",
+  "tier": "tight",
+  "mode": "run",
+  "goal": "Answer using two independent notes",
+  "purpose": "Spend no more than the tight tier allows",
+  "done_when": "A single agent answered",
+  "context": "subtask:note-a=sources_must_not_mix subtask:note-b=sources_must_not_mix",
+  "expect": {
+    "status": "complete",
+    "workers": 0,
+    "split": false,
+    "health": "ok",
+    "refused_contains": "budget tier tight does not allow a split"
+  }
+}
