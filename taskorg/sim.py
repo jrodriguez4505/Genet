@@ -111,12 +111,12 @@ class SimModel(ModelAdapter):
     name = "sim"
 
     def act(self, brief: Brief) -> Artifact:
-        q = parse_question(brief.effect)
+        q = parse_question(brief.goal)
         packet = brief.packet
         if brief.slot_function == "verifier":
             product = _section(packet, "\nBRIEF\n", "VERIFIER RULE")
             return self._art("PASS" if "ANSWER:" in product else "FAIL: no ANSWER line")
-        if brief.slot_function == "head" and brief.mode == "plan":
+        if brief.slot_function == "lead" and brief.mode == "plan":
             return self._art("plan", requests=self._plan(q, crew="You lead a crew" in packet))
         known = self._known(packet, q)
         if brief.slot_function == "worker":
@@ -128,19 +128,19 @@ class SimModel(ModelAdapter):
     @staticmethod
     def _plan(q: Question, *, crew: bool) -> list[str]:
         if not crew:
-            # Gated lead: one element per company, only when there are several.
-            return [f"seam:{s}@retrieve=keep_{s.replace('-', '_')}_figures_apart" for s in q.slugs] if len(q.slugs) > 1 else []
+            # Gated lead: one sub-agent per company, only when there are several.
+            return [f"subtask:{s}@retrieve=keep_{s.replace('-', '_')}_figures_apart" for s in q.slugs] if len(q.slugs) > 1 else []
         if len(q.slugs) == 1:
             s = q.slugs[0]
-            return [f"seam:find@retrieve=find_the_figure_in_{s}.md", f"seam:check@retrieve=double_check_the_figure_in_{s}.md"]
+            return [f"subtask:find@retrieve=find_the_figure_in_{s}.md", f"subtask:check@retrieve=double_check_the_figure_in_{s}.md"]
         if len(q.slugs) <= 4:
-            return [f"seam:{s}@retrieve=read_{s}.md" for s in q.slugs]
+            return [f"subtask:{s}@retrieve=read_{s}.md" for s in q.slugs]
         parts = [q.slugs[i::4] for i in range(4)]
-        return [f"seam:part-{i + 1}@retrieve=read_" + "_and_".join(f"{s}.md" for s in part) for i, part in enumerate(parts)]
+        return [f"subtask:part-{i + 1}@retrieve=read_" + "_and_".join(f"{s}.md" for s in part) for i, part in enumerate(parts)]
 
     @staticmethod
     def _known(packet: str, q: Question) -> dict[str, float]:
-        """Figures that reached this brief: element reports in working memory, and own reads."""
+        """Figures that reached this brief: sub-agent reports in working memory, and own reads."""
         out = {}
         for s, metric, quarter, v in _REPORT.findall(packet):
             if metric == q.metric and quarter == q.quarter:
@@ -171,4 +171,4 @@ class SimModel(ModelAdapter):
 
     @staticmethod
     def _art(claim: str, requests: list[str] | None = None) -> Artifact:
-        return Artifact(claim=claim, evidence=[], uncertainty="sim", channel_id="sim", delta_to_picture="", requests=requests or [])
+        return Artifact(claim=claim, evidence=[], uncertainty="sim", channel_id="sim", context_update="", requests=requests or [])

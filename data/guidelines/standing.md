@@ -1,6 +1,5 @@
-# Genet doctrine (v1)
+# Genet guidelines (v1)
 
-- Genet in this repo is the agent kernel, not the playwright Jean Genet.
 - Structure lives in code. Prompts describe work, not authority.
 - Only the lead may change the roster.
 - Context decides which skill is active. The goal stays fixed until revised.

@@ -12,7 +12,7 @@ from taskorg.suite import FAMILIES, QUARTER_WORDS, build_suite, extract_answer, 
 
 class Oracle(StubAdapter):
     """Answers correctly. Plans like each strategy's prompt asks: a crew always
-    decomposes; a gated lead proposes one element per company only when there
+    decomposes; a gated lead proposes one sub-agent per company only when there
     are several companies."""
 
     name = "oracle"
@@ -23,13 +23,13 @@ class Oracle(StubAdapter):
         self.answer_right = answer_right
 
     def act(self, brief):
-        task = self.tasks[brief.effect]
+        task = self.tasks[brief.goal]
         requests, claim = [], ""
-        if brief.slot_function == "head" and brief.mode == "plan":
+        if brief.slot_function == "lead" and brief.mode == "plan":
             if "You lead a crew" in brief.packet:
-                requests = ["seam:find@retrieve=find_the_figure", "seam:check@retrieve=double_check_it"]
+                requests = ["subtask:find@retrieve=find_the_figure", "subtask:check@retrieve=double_check_it"]
             elif len(task.entities) > 1:
-                requests = [f"seam:{slug(e)}@retrieve=keep_companies_apart" for e in task.entities]
+                requests = [f"subtask:{slug(e)}@retrieve=keep_companies_apart" for e in task.entities]
             claim = "plan"
         elif brief.slot_function == "verifier":
             claim = self.verifier
@@ -37,7 +37,7 @@ class Oracle(StubAdapter):
             claim = f"{brief.channel_id}: figure found"
         else:
             claim = f"Done. ANSWER: {task.answer if self.answer_right else 'nobody'}"
-        return Artifact(claim=claim, evidence=[], uncertainty="oracle", channel_id="x", delta_to_picture=claim, requests=requests)
+        return Artifact(claim=claim, evidence=[], uncertainty="oracle", channel_id="x", context_update=claim, requests=requests)
 
 
 # --- suite ---
@@ -98,7 +98,7 @@ def test_strategies_organize_differently(tmp_path: Path):
     for t in suite.tasks:
         assert by[("single", t.id)].workers == 0
         assert by[("always", t.id)].workers == 2
-        # One element per company, up to the worker cap of 4; none for a single company.
+        # One sub-agent per company, up to the worker cap of 4; none for a single company.
         assert by[("genet", t.id)].workers == (min(len(t.entities), 4) if len(t.entities) > 1 else 0)
     assert all(r.correct for r in results)
     single_calls = {r.calls for r in results if r.strategy == "single"}
@@ -157,18 +157,18 @@ def test_cli_compare_rejects_unknown(capsys):
 def test_lead_covers_parts_past_the_worker_cap(tmp_path: Path):
     suite = build_suite(per_family=1, families=("breadth",))
     corpus = suite.write_corpus(tmp_path / "c")
-    from taskorg.factory import element_at_rest
-    from taskorg.compare import LOOK
+    from taskorg.factory import new_run
+    from taskorg.compare import CONTEXT
     from taskorg.loop import Engine
     from taskorg.memory_store import MemoryStore
     from taskorg.tools import Toolbox
 
-    m = element_at_rest("cap-1", suite.tasks[0].question, "p", "s")
-    m.picture.success_criteria = ["ANSWER:"]
+    m = new_run("cap-1", suite.tasks[0].question, "p", "s")
+    m.state.success_criteria = ["ANSWER:"]
     Engine(MemoryStore(tmp_path / "s"), adapter=Oracle(suite), budget=comparison_budget(),
-           toolbox=Toolbox(roots=[corpus])).run_mission(m, look_update=LOOK)
-    assert m.picture.worker_count() == 4
-    regroup = next(c for c in m.calls if c.get("mode") == "integrate")
+           toolbox=Toolbox(roots=[corpus])).run_task(m, context=CONTEXT)
+    assert m.state.worker_count() == 4
+    merge_call = next(c for c in m.calls if c.get("mode") == "integrate")
     fifth = slug(suite.tasks[0].entities[4])
-    assert f"yours to cover: {fifth}" in regroup["packet"]
-    assert m.picture.slot("head-1").skill == "retrieve"
+    assert f"yours to cover: {fifth}" in merge_call["packet"]
+    assert m.state.slot("lead-1").skill == "retrieve"

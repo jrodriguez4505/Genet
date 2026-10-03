@@ -6,18 +6,18 @@ from pathlib import Path
 
 from .budget import Budget
 from .errors import InvariantError
-from .factory import element_at_rest
-from .gates import Seam, World
+from .factory import new_run
+from .gates import Subtask, World
 from .live import pick_adapter
 from .loop import Engine
 from .memory_store import MemoryStore
-from .persist import load_mission, save_mission
+from .persist import load_run, save_run
 from .reads import attach_reads
-from .seams import parse_seams
+from .subtasks import parse_subtasks
 from .tools import Toolbox
 
 
-DEFAULT_DOCTRINE = """# Genet doctrine (v1)
+DEFAULT_GUIDELINES = """# Genet guidelines (v1)
 
 - Structure lives in code. Prompts describe work, not authority.
 - Only the lead may change the roster.
@@ -29,24 +29,25 @@ DEFAULT_DOCTRINE = """# Genet doctrine (v1)
 
 
 def _store(root) -> MemoryStore:
-    """Plain file store. Doctrine is seeded once; an operator's edits are kept."""
+    """Plain file store. Guidelines are seeded once; an operator's edits are kept."""
     store = MemoryStore(Path(root))
-    if not store.read_doctrine("standing"):
-        store.write_doctrine("standing", DEFAULT_DOCTRINE)
+    if not store.read_guidelines("standing"):
+        store.write_guidelines("standing", DEFAULT_GUIDELINES)
     return store
 
 
 def _add_budget_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--pace", default="crawl", choices=["crawl", "walk", "run"])
+    p.add_argument("--tier", default="tight", choices=["tight", "normal", "open"],
+                   help="budget tier: tight = single agent; normal = may replan; open = may fan out")
     p.add_argument("--max-calls", type=int, default=None)
     p.add_argument("--max-tokens", type=int, default=None)
     p.add_argument("--max-seconds", type=float, default=None)
     p.add_argument("--max-tokens-per-call", type=int, default=None)
 
 
-def _add_mission_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (), **defaults: str) -> None:
-    """Flags every mission command shares. defaults maps flag name (underscored) to default."""
-    for flag in ("id", "effect", "purpose", "end_state", "look"):
+def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (), **defaults: str) -> None:
+    """Flags every run command shares. defaults maps flag name (underscored) to default."""
+    for flag in ("id", "goal", "purpose", "done_when", "context"):
         name = "--" + flag.replace("_", "-")
         if flag in required:
             p.add_argument(name, required=True)
@@ -55,7 +56,7 @@ def _add_mission_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] =
     p.add_argument("--store", default="data")
     p.add_argument("--out", default=defaults["out"])
     p.add_argument("--adapter", default="stub", choices=["stub", "live"])
-    p.add_argument("--read", action="append", default=[], help="file text into working memory; not a new Worker")
+    p.add_argument("--read", action="append", default=[], help="file text into working memory; not a new sub-agent")
     p.add_argument("--criteria", action="append", default=[], help="success criterion the product must show")
     p.add_argument("--exists", action="append", default=[], help="file already on disk; its name covers a channel")
     p.add_argument("--workspace", action="append", default=[], help="directory specialists may read and search")
@@ -63,7 +64,7 @@ def _add_mission_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] =
 
 
 def _budget(args: argparse.Namespace) -> Budget:
-    b = Budget.for_pace(getattr(args, "pace", "crawl"))
+    b = Budget.for_tier(getattr(args, "tier", "tight"))
     if args.max_calls is not None:
         b.max_calls = args.max_calls
     if args.max_tokens is not None:
@@ -75,16 +76,16 @@ def _budget(args: argparse.Namespace) -> Budget:
     return b
 
 
-def _new_mission(args: argparse.Namespace, store: MemoryStore):
-    """Fresh mission: clean working memory, then operator reads, criteria, and world."""
-    mission = element_at_rest(args.id, args.effect, args.purpose, args.end_state)
-    store.reset_working(mission.id)
-    attach_reads(store, mission, args.read)
+def _new_run(args: argparse.Namespace, store: MemoryStore):
+    """Fresh run: clean working memory, then operator reads, criteria, and world."""
+    run = new_run(args.id, args.goal, args.purpose, args.done_when)
+    store.reset_working(run.id)
+    attach_reads(store, run, args.read)
     if args.criteria:
-        mission.picture.success_criteria = list(args.criteria)
+        run.state.success_criteria = list(args.criteria)
     exists = [str(p) for p in args.exists]
-    mission.world = World(existing_files=exists, existing_channels=[Path(p).stem for p in exists])
-    return mission
+    run.world = World(existing_files=exists, existing_channels=[Path(p).stem for p in exists])
+    return run
 
 
 def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
@@ -99,10 +100,10 @@ def _axes(raw: str) -> list[str]:
     return [a.strip() for a in raw.split(",") if a.strip()]
 
 
-def _save_halt(mission, out: Path, err: InvariantError) -> int:
+def _save_halt(run, out: Path, err: InvariantError) -> int:
     out = Path(out)
     try:
-        save_mission(mission, out)
+        save_run(run, out)
         saved = str(out)
     except Exception:
         saved = None
@@ -111,8 +112,8 @@ def _save_halt(mission, out: Path, err: InvariantError) -> int:
         "halt": True,
         "code": err.code,
         "error": str(err),
-        "status": getattr(mission, "status", None) and mission.status.value,
-        "stop_reason": getattr(mission, "stop_reason", ""),
+        "status": getattr(run, "status", None) and run.status.value,
+        "stop_reason": getattr(run, "stop_reason", ""),
         "saved": saved,
     }, indent=2))
     if saved:
@@ -122,107 +123,107 @@ def _save_halt(mission, out: Path, err: InvariantError) -> int:
 
 def _save_done(result, out: Path, **extra) -> int:
     out = Path(out)
-    save_mission(result.mission, out)
-    print(json.dumps(result.mission.summary() | {"product": result.product.claim} | extra, indent=2))
+    save_run(result.run, out)
+    print(json.dumps(result.run.summary() | {"product": result.product.claim} | extra, indent=2))
     print(f"\nsaved {out}")
     return 0
 
 
-def cmd_mission(args: argparse.Namespace) -> int:
-    store = _store(args.store)
-    mission = _new_mission(args, store)
-    try:
-        result = _engine(args, store).run_mission(mission, look_update=args.look, operator_why=args.why)
-    except InvariantError as e:
-        return _save_halt(mission, args.out, e)
-    gates = [
-        {"channel": v.seam.channel_id, "skill": v.seam.skill, "legal": v.legal, "refused": v.refused}
-        for v in result.verdicts or []
-    ]
-    return _save_done(result, args.out, gates=gates, answer=mission.notes["why-1"].reason)
-
-
 def cmd_run(args: argparse.Namespace) -> int:
     store = _store(args.store)
-    mission = _new_mission(args, store)
+    run = _new_run(args, store)
     try:
-        result = _engine(args, store).run_standing_order(
-            mission,
-            look_update=args.look,
-            operator_why=args.why,
-            head_response=args.response,
-            head_reason=args.reason,
+        result = _engine(args, store).run_task(run, context=args.context, operator_question=args.question)
+    except InvariantError as e:
+        return _save_halt(run, args.out, e)
+    gates = [
+        {"channel": v.subtask.channel_id, "skill": v.subtask.skill, "legal": v.legal, "refused": v.refused}
+        for v in result.verdicts or []
+    ]
+    return _save_done(result, args.out, gates=gates, answer=run.notes["question-1"].reason)
+
+
+def cmd_single(args: argparse.Namespace) -> int:
+    store = _store(args.store)
+    run = _new_run(args, store)
+    try:
+        result = _engine(args, store).run_single(
+            run,
+            context=args.context,
+            operator_question=args.question,
+            lead_response=args.response,
+            lead_reason=args.reason,
         )
     except InvariantError as e:
-        return _save_halt(mission, args.out, e)
+        return _save_halt(run, args.out, e)
     return _save_done(result, args.out)
 
 
-def cmd_split(args: argparse.Namespace) -> int:
+def cmd_fanout(args: argparse.Namespace) -> int:
     store = _store(args.store)
-    mission = _new_mission(args, store)
-    seams = parse_seams(args.look)
-    if not seams:
-        for part in args.seams.split(","):
+    run = _new_run(args, store)
+    subtasks = parse_subtasks(args.context)
+    if not subtasks:
+        for part in args.subtasks.split(","):
             if ":" not in part:
                 continue
-            head, failure = part.split(":", 1)
-            channel, _, skill = head.partition("@")
-            seams.append(Seam(channel.strip(), failure.strip(), skill=skill.strip().lower() or "execute"))
+            spec, failure = part.split(":", 1)
+            channel, _, skill = spec.partition("@")
+            subtasks.append(Subtask(channel.strip(), failure.strip(), skill=skill.strip().lower() or "execute"))
     try:
-        result = _engine(args, store).run_multi_axis(
-            mission,
-            look_update=args.look,
-            seams=seams,
+        result = _engine(args, store).run_fanout(
+            run,
+            context=args.context,
+            subtasks=subtasks,
             axes=_axes(args.axes),
-            operator_why=args.why,
-            head_response=args.response,
-            head_reason=args.reason,
+            operator_question=args.question,
+            lead_response=args.response,
+            lead_reason=args.reason,
         )
     except InvariantError as e:
-        return _save_halt(mission, args.out, e)
+        return _save_halt(run, args.out, e)
     return _save_done(result, args.out, split=result.split)
 
 
-def cmd_adapt(args: argparse.Namespace) -> int:
+def cmd_replan(args: argparse.Namespace) -> int:
     store = _store(args.store)
-    mission = _new_mission(args, store)
+    run = _new_run(args, store)
     try:
-        result = _engine(args, store).adapt_vector(
-            mission,
-            look_update=args.look,
-            report=args.report,
+        result = _engine(args, store).run_replan(
+            run,
+            context=args.context,
+            replan_reason=args.replan_reason,
             new_method=args.method,
             axes=_axes(args.axes),
         )
     except InvariantError as e:
-        return _save_halt(mission, args.out, e)
+        return _save_halt(run, args.out, e)
     return _save_done(result, args.out)
 
 
 def cmd_brief(args: argparse.Namespace) -> int:
     from .diagnostics import diagnose
-    from .schema import picture_contract
+    from .schema import state_contract
 
     store = _store(args.store)
-    mission = _new_mission(args, store)
+    run = _new_run(args, store)
     try:
-        result = _engine(args, store).run_standing_order(
-            mission,
-            look_update=args.look,
-            operator_why=args.why,
+        result = _engine(args, store).run_single(
+            run,
+            context=args.context,
+            operator_question=args.question,
         )
     except InvariantError as e:
-        return _save_halt(mission, args.out, e)
-    save_mission(result.mission, Path(args.out))
-    report = diagnose(result.mission)
+        return _save_halt(run, args.out, e)
+    save_run(result.run, Path(args.out))
+    report = diagnose(result.run)
     print(json.dumps({
         "ok": True,
-        "picture": picture_contract(result.mission.picture),
+        "state": state_contract(result.run.state),
         "product": result.product.claim if result.product else None,
-        "could_this_have_been_one": result.mission.picture.worker_count() == 0,
+        "could_this_have_been_one": result.run.state.worker_count() == 0,
         "health": report["health"],
-        "pace": report["pace"]["name"],
+        "tier": report["tier"]["name"],
         "saved": str(args.out),
     }, indent=2))
     return 0
@@ -232,87 +233,87 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="taskorg", description="Genet — small multi-agent runtime")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    m = sub.add_parser("mission", help="the lead reads the look and organizes the team; gates judge it")
-    _add_mission_args(
+    m = sub.add_parser("run", help="the lead reads the context and staffs the task; the gates judge it")
+    _add_run_args(
         m,
-        id="ms-001",
-        effect="Complete the task",
+        id="run-001",
+        goal="Complete the task",
         purpose="Keep the goal intact",
-        end_state="Task finished",
-        look="One source is the whole picture.",
-        out="data/missions/ms-001.json",
+        done_when="Task finished",
+        context="One source holds everything needed.",
+        out="data/runs/run-001.json",
     )
-    m.add_argument("--why", default="Could this have been one body?")
-    m.set_defaults(func=cmd_mission)
+    m.add_argument("--question", default="Could a single agent have done this?")
+    m.set_defaults(func=cmd_run)
 
-    r = sub.add_parser("run", help="one body: look, draft, verify")
-    _add_mission_args(
+    r = sub.add_parser("single", help="single agent: read the context, draft, verify")
+    _add_run_args(
         r,
-        id="so-001",
-        effect="Complete the default task",
+        id="single-001",
+        goal="Complete the default task",
         purpose="Keep one shared context and one plan",
-        end_state="Task recorded and review closed",
-        look="Primary path blocked. Two independent sources are visible.",
-        out="data/missions/so-001.json",
+        done_when="Task recorded and review closed",
+        context="The first path is blocked. Two independent sources are visible.",
+        out="data/runs/single-001.json",
     )
-    r.add_argument("--why", default="Why solve this with one worker instead of splitting sources?")
+    r.add_argument("--question", default="Why solve this with one agent instead of splitting the sources?")
     r.add_argument("--response", default="KEEP_ROSTER")
-    r.add_argument("--reason", default="Context is enough; no second worker required.")
-    r.set_defaults(func=cmd_run)
+    r.add_argument("--reason", default="The context is enough; no second agent required.")
+    r.set_defaults(func=cmd_single)
 
-    s = sub.add_parser("split", help="look, then gated multi-axis split on named seams")
-    _add_mission_args(
+    s = sub.add_parser("fanout", help="gated fan-out on sub-tasks the operator names")
+    _add_run_args(
         s,
-        id="mx-001",
-        effect="Complete the task",
+        id="fanout-001",
+        goal="Complete the task",
         purpose="Keep the goal intact",
-        end_state="Task finished",
-        look="Primary path blocked. source-a and source-b are independent.",
-        out="data/missions/mx-001.json",
+        done_when="Task finished",
+        context="The first path is blocked. source-a and source-b are independent.",
+        out="data/runs/fanout-001.json",
     )
-    s.add_argument("--seams", default="source-a:independent source-a channel,source-b:independent source-b channel",
-                   help="channel[@qual]:named failure, comma separated; used when --look tags no seams")
+    s.add_argument("--subtasks", default="source-a:independent source-a channel,source-b:independent source-b channel",
+                   help="channel[@skill]:named failure, comma separated; used when --context tags no sub-tasks")
     s.add_argument("--axes", default="parallel,fan_in")
-    s.add_argument("--why", default="Why keep one worker if two sources are independent?")
+    s.add_argument("--question", default="Why keep one agent if two sources are independent?")
     s.add_argument("--response", default="CHANGE_METHOD")
-    s.add_argument("--reason", default="Sources are independent. Method can fan out. Roster stays small.")
-    s.set_defaults(func=cmd_split)
+    s.add_argument("--reason", default="The sources are independent. The method can fan out. The roster stays small.")
+    s.set_defaults(func=cmd_fanout)
 
-    a = sub.add_parser("adapt", help="plan is wrong: report up and change the method")
-    _add_mission_args(
+    a = sub.add_parser("replan", help="the plan is wrong: request a replan and change the method")
+    _add_run_args(
         a,
-        id="pw-001",
-        effect="Complete the task",
+        id="replan-001",
+        goal="Complete the task",
         purpose="Keep the goal intact",
-        end_state="Task finished",
-        look="First source is a decoy. Second source is the real line.",
-        out="data/missions/pw-001.json",
+        done_when="Task finished",
+        context="The first source is stale. The second source is current.",
+        out="data/runs/replan-001.json",
     )
-    a.add_argument("--report", default="First plan is dead — first source is a decoy")
-    a.add_argument("--method", default="circumvent via source-b")
+    a.add_argument("--replan-reason", default="The first plan no longer fits: the first source is stale")
+    a.add_argument("--method", default="work from source-b")
     a.add_argument("--axes", default="reroute")
-    a.set_defaults(func=cmd_adapt)
+    a.set_defaults(func=cmd_replan)
 
-    p_b = sub.add_parser("brief", help="operator loop: effect + purpose + look → picture, How, diagnose")
-    _add_mission_args(
+    p_b = sub.add_parser("brief", help="goal + purpose + context in, run state and health out")
+    _add_run_args(
         p_b,
-        required=("effect", "purpose", "look"),
+        required=("goal", "purpose", "context"),
         id="brief-001",
-        end_state="Intent held",
-        out="data/missions/brief-001.json",
+        done_when="Goal met",
+        out="data/runs/brief-001.json",
     )
-    p_b.add_argument("--why", default="Could this have been one body?")
+    p_b.add_argument("--question", default="Could a single agent have done this?")
     p_b.set_defaults(func=cmd_brief)
 
-    p_replay = sub.add_parser("replay", help="print a saved mission log")
+    p_replay = sub.add_parser("replay", help="print a saved run log")
     p_replay.add_argument("path")
     p_replay.set_defaults(func=cmd_replay)
 
-    p_ins = sub.add_parser("inspect", help="short picture + last log events")
+    p_ins = sub.add_parser("inspect", help="run state and the last log events")
     p_ins.add_argument("path")
     p_ins.set_defaults(func=cmd_inspect)
 
-    p_board = sub.add_parser("board", help="one-screen operator picture")
+    p_board = sub.add_parser("board", help="one-screen summary of a saved run")
     p_board.add_argument("path")
     p_board.set_defaults(func=cmd_board)
 
@@ -424,26 +425,26 @@ def cmd_bench(args: argparse.Namespace) -> int:
 def cmd_diagnose(args: argparse.Namespace) -> int:
     from .diagnostics import diagnose
 
-    m = load_mission(Path(args.path))
+    m = load_run(Path(args.path))
     print(json.dumps(diagnose(m), indent=2))
     return 0
 
 
 def cmd_board(args: argparse.Namespace) -> int:
     from .diagnostics import diagnose
-    from .schema import picture_contract
+    from .schema import state_contract
 
-    m = load_mission(Path(args.path))
+    m = load_run(Path(args.path))
     report = diagnose(m)
     print(json.dumps({
         "id": m.id,
         "status": m.status.value,
-        "who": [s.id for s in m.picture.slots],
-        "workers": m.picture.worker_count(),
-        "picture": picture_contract(m.picture),
-        "open_why": m.open_why_ids(),
-        "nets": report["nets"],
-        "pace": report.get("pace", {}),
+        "roster": [s.id for s in m.state.slots],
+        "workers": m.state.worker_count(),
+        "state": state_contract(m.state),
+        "open_reviews": m.open_review_ids(),
+        "streams": report["streams"],
+        "tier": report.get("tier", {}),
         "health": report["health"],
         "verify": getattr(m, "last_verify", None),
         "stop_reason": getattr(m, "stop_reason", ""),
@@ -452,15 +453,15 @@ def cmd_board(args: argparse.Namespace) -> int:
 
 
 def cmd_inspect(args: argparse.Namespace) -> int:
-    m = load_mission(Path(args.path))
+    m = load_run(Path(args.path))
     tail = [{"event": e.event, "detail": e.detail} for e in m.log[-8:]]
-    print(json.dumps({"picture": {
-        "what": m.picture.effect,
-        "why": m.picture.purpose,
-        "where": m.picture.current_picture,
-        "how": m.picture.method,
-        "step_off": m.picture.step_off_picture,
-        "axes": m.picture.axes,
+    print(json.dumps({"state": {
+        "goal": m.state.goal,
+        "purpose": m.state.purpose,
+        "context": m.state.context,
+        "method": m.state.method,
+        "initial_context": m.state.initial_context,
+        "axes": m.state.axes,
     }, "summary": m.summary(), "tail": tail}, indent=2))
     return 0
 
@@ -519,7 +520,7 @@ def cmd_policy_fit(args: argparse.Namespace) -> int:
 
 
 def cmd_replay(args: argparse.Namespace) -> int:
-    m = load_mission(Path(args.path))
+    m = load_run(Path(args.path))
     print(json.dumps({"summary": m.summary(), "log": [{"event": e.event, "detail": e.detail} for e in m.log]}, indent=2))
     return 0
 

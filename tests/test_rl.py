@@ -3,8 +3,8 @@ from taskorg.policy import StubPolicy
 from taskorg.rl import compare_to_stub, evaluate, step, train
 
 
-def test_stub_does_not_spawn_on_crawl_or_exists():
-    for name in ("crawl", "exists"):
+def test_stub_does_not_spawn_on_tight_or_exists():
+    for name in ("tight", "exists"):
         ep = step(StubPolicy(), name)
         assert ep.workers == 0
         assert ep.action != "PROPOSE_CHANNEL"
@@ -24,9 +24,9 @@ def test_train_preserves_invariants():
     pol, ev = train(40)
     assert isinstance(pol, ImitationPolicy)
     assert ev["mean_workers"] == 0
-    crawl = step(pol, "crawl")
+    tight = step(pol, "tight")
     exists = step(pol, "exists")
-    assert crawl.action != "PROPOSE_CHANNEL"
+    assert tight.action != "PROPOSE_CHANNEL"
     assert exists.action != "PROPOSE_CHANNEL"
-    assert crawl.workers == 0
+    assert tight.workers == 0
     assert exists.workers == 0

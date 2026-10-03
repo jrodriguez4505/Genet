@@ -191,7 +191,7 @@ def gates(theme: str) -> str:
             c.text(g[stop] + 36, y + 4, reasons[i], size=12, color="muted", anchor="start")
     spans = [(0, 4), (0, 2), (0, 1)]
     labels = ["1 · Can someone else?", "2 · Should we?", "3 · Could we?"]
-    checks = ["covered · staffed · repeat · verifier", "a named failure", "pace · budget · cap · specialty"]
+    checks = ["covered · staffed · repeat · verifier", "a named failure", "tier · budget · cap · skill"]
     for x, (a, b), label, check in zip(g, spans, labels, checks):
         top, bottom = rows[a] - 20, rows[b] + 20
         c.rect(x - 6, top, 12, bottom - top, stroke="accent", fill="accent", rx=4, sw=1)
@@ -224,7 +224,7 @@ def control(theme: str) -> str:
     c.box(110, 215, 180, 52, "Schema check", "JSON only; extra keys refused")
     c.box(350, 215, 180, 52, "Policy gates", "3 checks, in order", accent=True)
     c.box(590, 215, 150, 52, "Roster", "written only here")
-    c.box(790, 215, 130, 52, "Tool allowlist", "per specialty")
+    c.box(790, 215, 130, 52, "Tool allowlist", "per skill")
     c.box(790, 300, 130, 52, "Sandbox", "read-only workspace")
 
     c.arrow("M200,116 V215")

@@ -2,28 +2,28 @@ from pathlib import Path
 
 from taskorg.budget import Budget
 from taskorg.errors import InvariantError
-from taskorg.factory import element_at_rest
+from taskorg.factory import new_run
 from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import Slot
 
 
-def test_one_body_completes(tmp_path: Path):
+def test_single_agent_completes(tmp_path: Path):
     store = MemoryStore(tmp_path)
-    store.write_doctrine("standing", "one body first")
-    m = element_at_rest("smoke", "Complete the default task", "Keep purpose", "Done")
-    result = Engine(store, budget=Budget.for_pace("crawl")).run_standing_order(
+    store.write_guidelines("standing", "one agent first")
+    m = new_run("smoke", "Complete the default task", "Keep purpose", "Done")
+    result = Engine(store, budget=Budget.for_tier("tight")).run_single(
         m,
-        look_update="One source. Picture is enough.",
-        operator_why="Could this have been one body?",
+        context="One source. The context is enough.",
+        operator_question="Could a single agent have done this?",
     )
-    assert result.mission.status.value == "complete"
-    assert result.mission.picture.worker_count() == 0
+    assert result.run.status.value == "complete"
+    assert result.run.state.worker_count() == 0
     assert result.verified
 
 
 def test_worker_cannot_spawn():
-    m = element_at_rest("x", "task", "purpose", "done")
+    m = new_run("x", "task", "purpose", "done")
     try:
         m.worker_spawn("w-1", Slot(id="w-2", function="worker"))
     except InvariantError as e:
@@ -32,19 +32,19 @@ def test_worker_cannot_spawn():
         raise AssertionError("spawn must fail")
 
 
-def test_crawl_cannot_split(tmp_path: Path):
-    from taskorg.gates import Seam
+def test_tight_cannot_split(tmp_path: Path):
+    from taskorg.gates import Subtask
     store = MemoryStore(tmp_path)
-    m = element_at_rest("c", "task", "purpose", "done")
+    m = new_run("c", "task", "purpose", "done")
     try:
-        Engine(store, budget=Budget.for_pace("crawl")).run_multi_axis(
+        Engine(store, budget=Budget.for_tier("tight")).run_fanout(
             m,
-            look_update="seam:a=a seam:b=b",
-            seams=[Seam("a", "a"), Seam("b", "b")],
+            context="subtask:a=a subtask:b=b",
+            subtasks=[Subtask("a", "a"), Subtask("b", "b")],
             axes=["sequential"],
-            operator_why="why",
+            operator_question="why",
         )
     except InvariantError as e:
         assert e.code == "BUDGET"
     else:
-        raise AssertionError("crawl must not split")
+        raise AssertionError("the tight tier must not fan out")

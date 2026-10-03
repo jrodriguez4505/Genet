@@ -16,7 +16,7 @@ def test_reader_recovers_every_fact_and_no_distractor():
         assert got == want, c.name
 
 
-def test_look_alike_names_stay_apart():
+def test_context_alike_names_stay_apart():
     assert find_slugs("read halvorsen-freight-labs.md then halvorsen-freight.md") == ["halvorsen-freight-labs", "halvorsen-freight"]
     q = parse_question("Which had the higher FY2026 Q2 customer churn: Quillon Biologics or Quillon Bio?")
     assert q.slugs == ["quillon-biologics", "quillon-bio"] and q.kind == "max" and q.metric == "churn"
@@ -37,7 +37,7 @@ def test_structure_of_each_strategy(tmp_path: Path):
     assert s["overall"]["single"]["split_rate"] == 0 and s["overall"]["single"]["calls_mean"] == 3
     assert fam["lookup"]["genet"]["split_rate"] == 0 and fam["lookup"]["always"]["split_rate"] == 1
     assert fam["lookup"]["genet"]["tokens_mean"] < fam["lookup"]["always"]["tokens_mean"]
-    # With a perfect reader, splitting buys nothing: one body is cheapest everywhere.
+    # With a perfect reader, splitting buys nothing: a single agent is cheapest everywhere.
     for block in fam.values():
         assert block["single"]["tokens_mean"] == min(v["tokens_mean"] for v in block.values())
 

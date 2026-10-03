@@ -1,12 +1,12 @@
 # Genet
 
-[Apache-2.0](LICENSE) · Python 3.11+ · kernel, not a cloud
+[Apache-2.0](LICENSE) · Python 3.11+ · kernel, not a cloud · [Website](https://jrodriguez4505.github.io/Genet/)
 
 One organism. Many stems.
 
 **The question is not how many agents you can run. It is whether a second one is doing new work.**
 
-Genet is a small multi-agent runtime. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the specialty its sub-task needs, and policy gates in code decide whether any of them run. Default is one agent. Authority lives in the graph, not in the prompt.
+Genet is a small multi-agent runtime. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/patterns-dark.svg">
@@ -15,7 +15,7 @@ Genet is a small multi-agent runtime. Most stacks treat headcount as capacity; G
 
 *Same task, three ways to staff it. A crew fans out on every task. Genet's lead proposes, and the gates decide whether a fan-out happens at all.*
 
-The design comes from a SEAL platoon: small, cross-trained, with specialists among them. The commander owns the task organization. Intent stays fixed while the method changes. The platoon splits into elements only when the situation has separate objectives, then regroups.
+The team is small, and every agent can switch skills, with specialists added only when a sub-task needs one. The lead owns the roster. The goal stays fixed while the method changes. Work fans out to sub-agents only when the task has independent parts, then merges back.
 
 Quality of process over quantity of agents: possibly more efficient, and possibly more effective. That stays a claim until measured. `taskorg compare` exists to measure it (see [Proving it](#proving-it)).
 
@@ -36,18 +36,18 @@ Quality of process over quantity of agents: possibly more efficient, and possibl
 
 *Models propose; code disposes. Nothing a model writes reaches the roster, the tools or the budget without passing a check in code, and every decision lands in the audit log.*
 
-Models only fill a fixed JSON artifact: `claim`, `evidence`, `uncertainty`, `channel_id`, `delta_to_picture`, `requests`. Any other key is rejected. The lead proposes sub-agents as `requests` entries like `seam:<channel>@<qual>=<named_failure>`. It cannot write the roster.
+Models only fill a fixed JSON artifact: `claim`, `evidence`, `uncertainty`, `channel_id`, `context_update`, `requests`. Any other key is rejected. The lead proposes sub-agents as `requests` entries like `subtask:<channel>@<skill>=<named_failure>`. It cannot write the roster.
 
-A mission runs in four steps:
+A run has four steps:
 
-1. **Look and propose.** The lead reads the situation and proposes sub-tasks, or none.
-2. **Judge.** The gates decide. Two or more legal sub-tasks run as parallel sub-agents, each blind to the others, and the lead merges their results. Otherwise one agent does the work, switching to whatever specialty the job needs.
-3. **Verify.** If the product fails and the pace allows, the lead reports the plan wrong, changes the method and reworks once.
-4. **Answer from the record.** The operator's question is answered from the gate record, and the mission closes. A closed board is read-only.
+1. **Read and propose.** The lead reads the context and proposes sub-tasks, or none.
+2. **Judge.** The gates decide. Two or more legal sub-tasks run as parallel sub-agents, each blind to the others, and the lead merges their results. Otherwise a single agent does the work, switching to whatever skill the job needs.
+3. **Verify.** If the product fails and the budget tier allows, the lead requests a replan, changes the method and reworks once.
+4. **Answer from the record.** The operator's question is answered from the gate record, and the run closes. A closed run is read-only.
 
 ## Gates
 
-Every proposed sub-task goes through three gates in order, and they fail closed: **can someone else → should we → could we.** In industry terms this is admission control for sub-agents. Each proposal gets a full gate record on the board, legal or not.
+Every proposed sub-task goes through three gates in order, and they fail closed: **can someone else → should we → could we.** In industry terms this is admission control for sub-agents. Each proposal gets a full gate record, legal or not.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/gates-dark.svg">
@@ -56,21 +56,21 @@ Every proposed sub-task goes through three gates in order, and they fail closed:
 
 *Refused work is either already covered or goes back to the lead; it is never silently dropped.*
 
-| Gate | Refuses an element when |
+| Gate | Refuses a sub-task when |
 |---|---|
-| Can someone else | A file or channel in the world already covers it, the channel is already staffed, it repeats another proposal, or it is verification (the verifier's job). A single open part is the lead's job, not a new body. |
-| Should we | It names no failure: what goes wrong if one body does it. |
-| Could we | Its specialty is unknown, or its channel id is unusable or reserved. The pace does not allow a split. The budget cannot pay for the elements plus integrate and verify. The cap of 4 workers is full. |
+| Can someone else | A file or channel in the world already covers it, the channel is already staffed, it repeats another proposal, or it is verification (the verifier's job). A single open sub-task is the lead's job, not a new agent's. |
+| Should we | It names no failure: what goes wrong if a single agent does it. |
+| Could we | Its skill is unknown, or its channel id is unusable or reserved. The budget tier does not allow a fan-out. The budget cannot pay for the sub-agents plus merge and verify. The cap of 4 workers is full. |
 
-A split needs at least two legal elements.
+A fan-out needs at least two legal sub-tasks.
 
-When the plan is wrong, report it and change the method. `KEEP_ROSTER` is illegal on that note; use `CHANGE_METHOD` or `REVISE_GOAL`.
+When the plan no longer fits, request a replan and change the method. `KEEP_ROSTER` is illegal on a replan request; use `CHANGE_METHOD` or `REVISE_GOAL`.
 
-## Specialists and tools
+## Skills and tools
 
-Every slot carries one active qualification. The lead can switch its own (cross-training). An element is created with the qualification its seam names (a specialist). Each qualification has its own role brief and tool allowlist, and can have its own model.
+Every slot carries one active skill. The lead can switch its own. A sub-agent is created with the skill its sub-task names, which makes it a specialist. Each skill has its own brief and tool allowlist, and can have its own model.
 
-| Qualification | Tools | Role |
+| Skill | Tools | Brief |
 |---|---|---|
 | `execute` | — | Do the assigned piece of work. |
 | `retrieve` | `retrieve`, `read` | Find source material; cite paths and lines. |
@@ -80,17 +80,17 @@ Every slot carries one active qualification. The lead can switch its own (cross-
 | `simulate` | — | Run the plan forward; report where it breaks. |
 | `verify` | — | Judge the product: PASS or FAIL. |
 
-The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. They reach only the `--workspace` directories and the `--read` files. Hidden files, binaries and symlinks that lead outside are refused. The allowlist is checked before any tool runs, and each tool round is a budgeted call (at most 2 rounds per element).
+The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. They reach only the `--workspace` directories and the `--read` files. Hidden files, binaries and symlinks that lead outside are refused. The allowlist is checked before any tool runs, and each tool round is a budgeted call (at most 2 rounds per sub-agent).
 
-## Pace
+## Budget tiers
 
-| Pace | Flag | Allowed | Cap |
+| Tier | Flag | Allowed | Cap |
 |---|---|---|---|
-| Crawl | `--pace crawl` | one body | 4 calls / 4k tokens / 30s |
-| Walk | `--pace walk` | + change method | 8 / 15k / 60s |
-| Run | `--pace run` | + gated elements | 12 / 50k / 120s |
+| Tight | `--tier tight` | single agent | 4 calls / 4k tokens / 30s |
+| Normal | `--tier normal` | + replan | 8 / 15k / 60s |
+| Open | `--tier open` | + gated fan-out | 12 / 50k / 120s |
 
-The CLI defaults to crawl. Do not open the budget because the model sounded ready. A run may spend its whole budget, but not one call more.
+The CLI defaults to tight. Do not raise the budget because the model sounded ready. A run may spend its whole budget, but not one call more.
 
 ## Install
 
@@ -105,49 +105,50 @@ pytest -q
 ## Commands
 
 ```bash
-# The lead organizes the team.
-python -m taskorg.cli mission --look "One paragraph is the whole picture."
-python -m taskorg.cli mission --pace run --workspace notes/ \
-  --look "seam:note-a@retrieve=sources_must_not_mix seam:note-b@retrieve=sources_must_not_mix"
+# The lead staffs the task.
+python -m taskorg.cli run --context "One paragraph holds everything needed."
+python -m taskorg.cli run --tier open --workspace notes/ \
+  --context "subtask:note-a@retrieve=sources_must_not_mix subtask:note-b@retrieve=sources_must_not_mix"
 
-# Drills: the operator picks the path.
-python -m taskorg.cli run --pace crawl
-python -m taskorg.cli adapt --pace walk
-python -m taskorg.cli split --pace run --look "seam:source-a=independent_a seam:source-b=independent_b"
+# Fixed paths: the operator picks the shape.
+python -m taskorg.cli single --tier tight
+python -m taskorg.cli replan --tier normal
+python -m taskorg.cli fanout --tier open --context "subtask:source-a=independent_a subtask:source-b=independent_b"
 
-# Read the board.
-python -m taskorg.cli diagnose data/missions/ms-001.json
-python -m taskorg.cli board data/missions/ms-001.json
+# Read a saved run.
+python -m taskorg.cli diagnose data/runs/run-001.json
+python -m taskorg.cli board data/runs/run-001.json
 python -m taskorg.cli bench
 ```
 
-Every mission command takes these flags:
+Every run command takes these flags:
 
+- `--goal`, `--purpose`, `--done-when` and `--context`: what the run is for, and what is known.
 - `--read FILE`: file text goes into working memory.
 - `--workspace DIR`: specialists may read and search here.
 - `--exists FILE`: the file's name covers a channel.
 - `--criteria TEXT`: the product must show this.
-- `--pace`, plus budget overrides: `--max-calls`, `--max-tokens`, `--max-seconds`, `--max-tokens-per-call`.
+- `--tier`, plus budget overrides: `--max-calls`, `--max-tokens`, `--max-seconds`, `--max-tokens-per-call`.
 
-Each run starts with clean working memory, even when you reuse a mission id.
+Each run starts with clean working memory, even when you reuse a run id. Runs saved before the 0.2 rename still load.
 
 `bench` scores every fixture in `fixtures/bench/` against its `expect` block.
 
 ## Proving it
 
-`compare` runs the same tasks three ways. Model, tools, budget, tool rounds, verify-and-adapt step and concurrency are all the same; only the task organization differs.
+`compare` runs the same tasks three ways. Model, tools, budget, tool rounds, verify-and-replan step and concurrency are all the same; only how the task is staffed differs.
 
-| Strategy | Organization |
+| Strategy | Staffing |
 |---|---|
 | `single` | One agent works the task. No planning call. |
-| `always` | Crew style: the lead always decomposes, and every subtask gets a worker. |
-| `genet` | The lead proposes elements and the gates judge them. |
+| `always` | Crew style: the lead always decomposes, and every sub-task gets a worker. |
+| `genet` | The lead proposes sub-agents and the gates judge them. |
 
 The tasks come from a seeded, synthetic corpus of company operating notes, so ground truth is exact and no model has seen it. Facts are written in varied prose and surrounded by distractors: prior-year figures and look-alike company names.
 
 | Family | Question | Stresses |
 |---|---|---|
-| `lookup` | One figure for one company | One source is the whole picture |
+| `lookup` | One figure for one company | One source holds everything needed |
 | `aggregate` | Sum of a figure over 3 companies | Independent parts |
 | `compare` | Which of a look-alike pair had higher churn | Interference |
 | `breadth` | Which of 5 companies had the highest revenue | Many sources |
@@ -161,7 +162,7 @@ python -m taskorg.cli compare --adapter live --per-family 2 # pilot: 24 trials
 python -m taskorg.cli compare --adapter live --price-in 2 --price-out 10   # full: 60 trials, with cost
 ```
 
-The `sim` adapter is a deterministic reader, not a language model. It solves every task under every strategy, which shows the harness gives each strategy the facts it needs. Its token counts show what each strategy costs by structure alone. With a perfect reader, splitting never pays: one agent is cheapest in every family. Splitting can only earn its cost if a real model reads worse with everything in one context. The live run is what measures that.
+The `sim` adapter is a deterministic reader, not a language model. It solves every task under every strategy, which shows the harness gives each strategy the facts it needs. Its token counts show what each strategy costs by structure alone. With a perfect reader, splitting never pays: a single agent is cheapest in every family. Splitting can only earn its cost if a real model reads worse with everything in one context. The live run is what measures that.
 
 The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. No live results are published yet.
 
@@ -173,57 +174,60 @@ Any OpenAI-compatible chat endpoint:
 export TASKORG_MODEL_BASE=https://api.x.ai/v1
 export TASKORG_MODEL_KEY=...
 export TASKORG_MODEL_NAME=...                 # required
-export TASKORG_MODEL_NAME_REASON=...          # optional: a model per qualification
-python -m taskorg.cli mission --adapter live --pace walk --look "..."
+export TASKORG_MODEL_NAME_REASON=...          # optional: a model per skill
+python -m taskorg.cli run --adapter live --tier normal --context "..."
 ```
 
 ## Verification
 
-The verifier's claim must start with PASS. Then every success criterion must appear in the product itself: its claim, evidence or delta. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. The world checks must also hold: Where and How are not empty, elements posted their deltas, and no review note is open.
+The verifier's claim must start with PASS. Then every success criterion must appear in the product itself: its claim, evidence or context update. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. These run-state checks must also hold:
+
+- The context and the method are not empty.
+- Sub-agents merged their results.
+- No review is open.
 
 ## Diagnose
 
-`diagnose` reports health, the budget used and remaining, and every gate verdict and tool call. It also reports isolation: whether any element's brief carried a sibling's product. That is checked at call time over the whole brief, and the verdict survives save and load.
+`diagnose` reports health, the budget used and remaining, and every gate verdict and tool call. It also reports isolation: whether any sub-agent's brief carried another sub-agent's result. That is checked at call time over the whole brief, and the verdict survives save and load.
 
 These count as fails:
 
-- A crawl run that grew the roster.
-- A walk run that answers a dead plan with `KEEP_ROSTER`.
+- A tight-tier run that grew the roster.
+- A normal-tier run that answers a replan request with `KEEP_ROSTER`.
 - Any run with `isolation_leak`.
 
-Boards saved before isolation was recorded show `isolation_unverified`.
+Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 500 checks with no network and no key:
+`pytest -q` runs about 520 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
-- **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, seam floods, oversized output.
+- **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
 - **Fuzzing.** 300 random sequences of 40 calls from random actors. The roster rules hold after every call.
 - **Concurrency.** Parallel sub-agents never lose, double-count or cross results, and a tight budget is never overspent.
 - **Live adapter.** Driven against a fake OpenAI-compatible endpoint: prompts, usage accounting, HTTP errors, timeouts.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
+- **Compatibility.** Runs saved in older formats still load.
 
-## Glossary
+## Terms
 
-The code keeps its original names. This maps them to the platoon and to common agent-industry terms:
-
-| Platoon | Genet | Industry term | In code |
-|---|---|---|---|
-| Commander | Lead | Orchestrator | `head` slot, `who_head_id` |
-| Task organization | Roster | Agent topology | Who: `picture.slots`, `write_who()` |
-| Element / fire team | Element | Sub-agent | `worker` slot with a `channel_id` |
-| Separate objective | Seam | Sub-task with a reason to isolate | `Seam`, `seam:<channel>@<qual>=<failure>` |
-| Go / no-go criteria | Gates | Admission control, guardrail | `gates.assess()`, `GateRecord` |
-| Qualification | Qualification | Role and tool profile | `skill`, `QUALS`, `slide()` |
-| Commander's intent | Intent | Goal and success criteria | What and Why: `effect`, `purpose`, `end_state` |
-| Scheme of maneuver | Method | Plan, strategy | How: `picture.method`, `axes` |
-| Situation | Picture | Shared context, state | Where: `current_picture`, `update_context()` |
-| Speaking up | Review note | Escalation, feedback | Why: `submit_why()`, `respond_why()` |
-| "This plan is dead" | Plan-wrong report | Replan trigger | `report_plan_wrong()`, INV-14 |
-| After-action record | Board | Trace, audit log | `Mission.log`, `diagnose()` |
-| Comms nets | Nets | Message channels | `element`, `up`, `out`, `adjacent` |
-| Crawl, walk, run | Pace | Budget tier | `Budget.for_pace()` |
+| Term | Meaning | In code |
+|---|---|---|
+| Lead | The orchestrator. The only agent that proposes changes to the team. | `lead` slot, `RunState.lead_id` |
+| Roster | Who is on the team (agent topology). | `RunState.slots`, `Run.set_roster()` |
+| Sub-agent | A worker with an isolated context and one channel. | `worker` slot with a `channel_id` |
+| Sub-task | A part of the work with a stated reason to run separately. | `Subtask`, `subtask:<channel>@<skill>=<failure>` |
+| Gates | Admission control for sub-agents. | `gates.assess()`, `GateRecord` |
+| Skill | A role brief plus a tool allowlist. | `Slot.skill`, `SKILLS`, `Run.switch_skill()` |
+| Goal | What the run must deliver, with success criteria and a done-when condition. | `goal`, `success_criteria`, `done_when` |
+| Method | The current plan. | `RunState.method`, `axes` |
+| Context | The shared state of what is known. | `RunState.context`, `Run.update_context()` |
+| Review | A concern raised to the lead, which must answer it. | `Run.open_review()`, `Run.answer_review()` |
+| Replan request | A review that says the plan no longer fits; only a method or goal change closes it. | `Run.request_replan()`, INV-14 |
+| Run log | The trace and audit log of every decision. | `Run.log`, `diagnose()` |
+| Streams | Typed message channels: merge, escalate, report, peer. | `STREAMS`, `Delta.stream` |
+| Budget tier | Tight, normal or open. | `Budget.for_tier()` |
 
 This Genet is software, not the playwright.
 
@@ -231,7 +235,7 @@ This Genet is software, not the playwright.
 
 v0.2 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
-The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into missions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
+The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 
 ## Use, partnerships, commercial
 

@@ -1,14 +1,14 @@
 {
   "id": "lead_exists",
-  "pace": "run",
-  "mode": "mission",
-  "effect": "Answer using two notes",
+  "tier": "open",
+  "mode": "run",
+  "goal": "Answer using two notes",
   "purpose": "Do not redo work that exists",
-  "end_state": "Only the open note worked",
+  "done_when": "Only the open note worked",
   "exists": [
     "out/note-a.md"
   ],
-  "look": "seam:note-a=sources_must_not_mix seam:note-b=sources_must_not_mix",
+  "context": "subtask:note-a=sources_must_not_mix subtask:note-b=sources_must_not_mix",
   "expect": {
     "status": "complete",
     "workers": 0,

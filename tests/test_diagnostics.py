@@ -2,42 +2,42 @@ from pathlib import Path
 
 from taskorg.budget import Budget
 from taskorg.diagnostics import diagnose
-from taskorg.factory import element_at_rest
-from taskorg.gates import Seam
+from taskorg.factory import new_run
+from taskorg.gates import Subtask
 from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
 
 
-def test_diagnose_standing_order(tmp_path: Path):
+def test_diagnose_single_agent(tmp_path: Path):
     store = MemoryStore(tmp_path)
-    m = element_at_rest("dx-1", "Issue order", "Picture", "Issued")
-    Engine(store).run_standing_order(m, look_update="enough", operator_why="one?")
+    m = new_run("dx-1", "Write the report", "Keep the context", "Report written")
+    Engine(store).run_single(m, context="enough", operator_question="one?")
     report = diagnose(m)
     assert report["health"] == "ok"
-    assert report["mission"]["could_this_have_been_one"] is True
-    assert "look" in report["phases_seen"]
+    assert report["run"]["could_this_have_been_one"] is True
+    assert "context" in report["phases_seen"]
     assert "complete" in report["phases_seen"]
-    assert any(i["kind"] == "up" for i in report["interactions"])
-    assert report["mission"]["duration_s"] >= 0
+    assert any(i["kind"] == "review" for i in report["interactions"])
+    assert report["run"]["duration_s"] >= 0
     assert report["performance"]["calls"] >= 2
     assert report["performance"]["tokens"] > 0
-    assert report["pace"]["name"] == "run"
-    assert report["pace"]["armed"] is True
+    assert report["tier"]["name"] == "open"
+    assert report["tier"]["armed"] is True
 
 
-def test_diagnose_split_has_element_net(tmp_path: Path):
+def test_diagnose_split_has_merge_net(tmp_path: Path):
     store = MemoryStore(tmp_path)
-    m = element_at_rest("dx-2", "Clear", "Deny", "Held")
-    Engine(store).run_multi_axis(
+    m = new_run("dx-2", "Summarize the notes", "Keep sources apart", "Summary written")
+    Engine(store).run_fanout(
         m,
-        look_update="two seams",
-        seams=[Seam("source-a", "source-a"), Seam("source-b", "rear")],
+        context="two subtasks",
+        subtasks=[Subtask("source-a", "source-a"), Subtask("source-b", "source-b")],
         axes=["sequential", "fan_in"],
-        operator_why="vector?",
+        operator_question="method?",
     )
     report = diagnose(m)
-    assert report["mission"]["workers"] == 2
-    assert report["nets"]["delta_counts"].get("element", 0) >= 2
+    assert report["run"]["workers"] == 2
+    assert report["streams"]["delta_counts"].get("merge", 0) >= 2
     assert "split" in report["phases_seen"]
     assert report["health"] == "ok"
     assert report["performance"]["calls"] >= 2
@@ -46,7 +46,7 @@ def test_diagnose_split_has_element_net(tmp_path: Path):
 
 
 def test_isolation_detects_sibling_packet():
-    m = element_at_rest("dx-leak", "Clear", "Deny", "Held")
+    m = new_run("dx-leak", "Summarize the notes", "Keep sources apart", "Summary written")
     m.calls = [
         {"function": "worker", "channel": "source-a", "packet": "clean"},
         {"function": "worker", "channel": "source-b", "packet": "see channel:source-a leaked"},
@@ -58,13 +58,13 @@ def test_isolation_detects_sibling_packet():
     assert report["health"] == "degraded"
 
 
-def test_diagnose_names_crawl_pace(tmp_path: Path):
+def test_diagnose_names_tight_tier(tmp_path: Path):
     store = MemoryStore(tmp_path)
-    m = element_at_rest("dx-crawl", "Issue order", "Picture", "Issued")
-    Engine(store, budget=Budget.for_pace("crawl")).run_standing_order(
-        m, look_update="enough", operator_why="one?"
+    m = new_run("dx-tight", "Write the report", "Keep the context", "Report written")
+    Engine(store, budget=Budget.for_tier("tight")).run_single(
+        m, context="enough", operator_question="one?"
     )
     report = diagnose(m)
-    assert report["pace"]["name"] == "crawl"
-    assert report["pace"]["allow_split"] is False
+    assert report["tier"]["name"] == "tight"
+    assert report["tier"]["allow_split"] is False
     assert report["health"] == "ok"

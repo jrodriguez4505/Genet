@@ -8,8 +8,8 @@ import pytest
 from taskorg.budget import Budget
 from taskorg.diagnostics import diagnose
 from taskorg.errors import InvariantError
-from taskorg.factory import element_at_rest
-from taskorg.gates import Seam, World, decide
+from taskorg.factory import new_run
+from taskorg.gates import Subtask, World, decide
 from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import GateRecord, GATE_ORDER, Slot
@@ -22,62 +22,61 @@ def _load(name: str) -> dict:
 
 
 def _engine(tmp_path: Path, spec: dict) -> Engine:
-    pace = spec.get("pace", "crawl")
-    b = Budget.for_pace(pace)
+    b = Budget.for_tier(spec.get("tier", "tight"))
     if spec.get("max_calls") is not None:
         b.max_calls = int(spec["max_calls"])
     return Engine(MemoryStore(tmp_path), budget=b)
 
 
-def test_one_body(tmp_path: Path):
-    spec = _load("one_body.json")
-    m = element_at_rest(spec["id"], spec["effect"], spec["purpose"], spec["end_state"])
-    result = _engine(tmp_path, spec).run_standing_order(
-        m, look_update=spec["look"], operator_why="one body?"
+def test_single_agent(tmp_path: Path):
+    spec = _load("single_agent.json")
+    m = new_run(spec["id"], spec["goal"], spec["purpose"], spec["done_when"])
+    result = _engine(tmp_path, spec).run_single(
+        m, context=spec["context"], operator_question="one agent?"
     )
-    assert result.mission.status.value == spec["expect"]["status"]
-    assert result.mission.picture.worker_count() == 0
+    assert result.run.status.value == spec["expect"]["status"]
+    assert result.run.state.worker_count() == 0
     assert result.split is False
     assert diagnose(m)["health"] == "ok"
 
 
-def test_dead_plan(tmp_path: Path):
-    spec = _load("dead_plan.json")
-    m = element_at_rest(spec["id"], spec["effect"], spec["purpose"], spec["end_state"])
-    result = _engine(tmp_path, spec).adapt_vector(
+def test_replan(tmp_path: Path):
+    spec = _load("replan.json")
+    m = new_run(spec["id"], spec["goal"], spec["purpose"], spec["done_when"])
+    result = _engine(tmp_path, spec).run_replan(
         m,
-        look_update=spec["look"],
-        report=spec["report"],
+        context=spec["context"],
+        replan_reason=spec["replan_reason"],
         new_method=spec["method"],
         axes=spec["axes"],
     )
-    assert result.mission.status.value == "complete"
-    assert result.mission.picture.worker_count() == 0
-    assert spec["expect"]["method_contains"] in result.mission.picture.method
+    assert result.run.status.value == "complete"
+    assert result.run.state.worker_count() == 0
+    assert spec["expect"]["method_contains"] in result.run.state.method
 
 
 def test_two_sources(tmp_path: Path):
     spec = _load("two_sources.json")
-    m = element_at_rest(spec["id"], spec["effect"], spec["purpose"], spec["end_state"])
-    seams = [Seam(a, b) for a, b in spec["seams"]]
-    result = _engine(tmp_path, spec).run_multi_axis(
+    m = new_run(spec["id"], spec["goal"], spec["purpose"], spec["done_when"])
+    subtasks = [Subtask(a, b) for a, b in spec["subtasks"]]
+    result = _engine(tmp_path, spec).run_fanout(
         m,
-        look_update=spec["look"],
-        seams=seams,
+        context=spec["context"],
+        subtasks=subtasks,
         axes=spec["axes"],
-        operator_why="two notes?",
+        operator_question="two notes?",
     )
     assert result.split is True
-    assert result.mission.picture.worker_count() == 2
+    assert result.run.state.worker_count() == 2
     iso = diagnose(m)["isolation"]
     assert iso["flags"] == []
 
 
 def test_already_exists():
     spec = _load("already_exists.json")
-    m = element_at_rest(spec["id"], spec["effect"], spec["purpose"], spec["end_state"])
+    m = new_run(spec["id"], spec["goal"], spec["purpose"], spec["done_when"])
     world = World(existing_files=["out/summary.md"], existing_channels=["summary"])
-    assert decide([Seam("summary", "need a summary writer")], world=world) is None
+    assert decide([Subtask("summary", "need a summary writer")], world=world) is None
     bad = GateRecord(
         can_someone_else=True,
         should_we=True,
@@ -87,21 +86,21 @@ def test_already_exists():
         order=GATE_ORDER,
     )
     with pytest.raises(InvariantError) as e:
-        m.write_who(
-            "head-1",
-            m.picture.slots + [Slot(id="w-summary", function="worker", channel_id="summary")],
+        m.set_roster(
+            "lead-1",
+            m.state.slots + [Slot(id="w-summary", function="worker", channel_id="summary")],
             gates=bad,
         )
     assert e.value.code == spec["expect"]["code"]
-    assert m.picture.worker_count() == 0
+    assert m.state.worker_count() == 0
 
 
-def test_leash(tmp_path: Path):
-    spec = _load("leash.json")
-    m = element_at_rest(spec["id"], spec["effect"], spec["purpose"], spec["end_state"])
+def test_budget_cap(tmp_path: Path):
+    spec = _load("budget_cap.json")
+    m = new_run(spec["id"], spec["goal"], spec["purpose"], spec["done_when"])
     with pytest.raises(InvariantError) as e:
-        _engine(tmp_path, spec).run_standing_order(
-            m, look_update=spec["look"], operator_why="stop?"
+        _engine(tmp_path, spec).run_single(
+            m, context=spec["context"], operator_question="stop?"
         )
     assert e.value.code == spec["expect"]["code"]
     assert m.status.value == spec["expect"]["status"]

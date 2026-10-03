@@ -4,13 +4,13 @@ from pathlib import Path
 
 from .errors import InvariantError
 from .memory_store import MemoryStore
-from .mission import Mission
+from .run import Run
 
 
 CAP = 4000
 
 
-def attach_reads(store: MemoryStore, mission: Mission, paths: list[str], *, cap: int = CAP) -> list[str]:
+def attach_reads(store: MemoryStore, run: Run, paths: list[str], *, cap: int = CAP) -> list[str]:
     """Operator pointed at files. Text goes in working memory. Not a new Worker."""
     loaded = []
     for raw in paths or []:
@@ -20,5 +20,5 @@ def attach_reads(store: MemoryStore, mission: Mission, paths: list[str], *, cap:
         text = path.read_text(encoding="utf-8", errors="replace")[:cap]
         loaded.append({"path": str(path.resolve()), "chars": len(text), "text": text})
     if loaded:
-        store.remember_working(mission.id, "reads", loaded)
+        store.remember_working(run.id, "reads", loaded)
     return [x["path"] for x in loaded]

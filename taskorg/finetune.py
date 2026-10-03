@@ -31,10 +31,10 @@ SYSTEM = (
 def board_prompt(state: BoardState) -> str:
     feats = {k: state.features.get(k) for k in (
         "worker_count", "context_sufficient", "allow_split", "allow_adapt",
-        "world_files", "world_channels", "plan_wrong_open", "status_active",
-        "open_why",
+        "world_files", "world_channels", "replan_open", "status_active",
+        "open_reviews",
     )}
-    extras = {k: state.extras.get(k) for k in ("effect", "purpose", "method", "pace", "status")}
+    extras = {k: state.extras.get(k) for k in ("goal", "purpose", "method", "tier", "status")}
     return json.dumps({"features": feats, "run": extras}, sort_keys=True)
 
 
@@ -111,7 +111,7 @@ def parse_action_json(text: str) -> PolicyDecision:
 
 
 class LivePolicy:
-    """Uses an LLM as proposer. Still cannot write Who."""
+    """Uses an LLM as proposer. Still cannot write the roster."""
 
     threshold = 0.35
     name = "live-policy"

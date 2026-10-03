@@ -1,10 +1,10 @@
 """Genet-native bench. Score the graph, not the essay.
 
-Each fixture in fixtures/bench/*.json names a mode, a pace, the operator's
+Each fixture in fixtures/bench/*.json names a mode, a budget tier, the operator's
 inputs, and an expect block. The runner drives the engine with the stub
 adapter and compares the board to expect, key by key.
 
-modes      standing | adapt | split | mission | refuse_someone_else
+modes      single | replan | fanout | run | refuse_someone_else
 expect     status, code, workers, split, health, method_contains,
            isolation_flags_empty, refused_contains, calls_max
 """
@@ -18,48 +18,48 @@ from pathlib import Path
 from .budget import Budget
 from .diagnostics import diagnose
 from .errors import InvariantError
-from .factory import element_at_rest
-from .gates import Seam, World, assess
+from .factory import new_run
+from .gates import Subtask, World, assess
 from .loop import Engine
 from .memory_store import MemoryStore
 from .models import Slot
-from .seams import parse_seams
+from .subtasks import parse_subtasks
 
 DEFAULT_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "bench"
 
 
-def _seams(spec: dict) -> list[Seam]:
-    if spec.get("seams"):
-        return [Seam(a, b) for a, b in spec["seams"]]
-    return parse_seams(spec.get("look", ""))
+def _subtasks(spec: dict) -> list[Subtask]:
+    if spec.get("subtasks"):
+        return [Subtask(a, b) for a, b in spec["subtasks"]]
+    return parse_subtasks(spec.get("context", ""))
 
 
 def _drive(spec: dict, store: MemoryStore):
-    """Run one fixture. Returns (mission, error code or "")."""
-    budget = Budget.for_pace(spec.get("pace", "crawl"))
+    """Run one fixture. Returns (run, error code or "")."""
+    budget = Budget.for_tier(spec.get("tier", "tight"))
     if spec.get("max_calls") is not None:
         budget.max_calls = int(spec["max_calls"])
-    m = element_at_rest(spec["id"], spec["effect"], spec["purpose"], spec["end_state"])
+    m = new_run(spec["id"], spec["goal"], spec["purpose"], spec["done_when"])
     m.world = World(existing_files=list(spec.get("exists", [])), existing_channels=[Path(p).stem for p in spec.get("exists", [])])
     engine = Engine(store, budget=budget)
-    mode = spec.get("mode", "standing")
-    look = spec.get("look", "")
+    mode = spec.get("mode", "single")
+    context = spec.get("context", "")
     try:
-        if mode == "standing":
-            engine.run_standing_order(m, look_update=look, operator_why="Could this have been one body?")
-        elif mode == "adapt":
-            engine.adapt_vector(m, look_update=look, report=spec["report"], new_method=spec["method"], axes=spec.get("axes", ["reroute"]))
-        elif mode == "split":
-            engine.run_multi_axis(m, look_update=look, seams=_seams(spec), axes=spec.get("axes", ["parallel", "fan_in"]), operator_why="Why split?")
-        elif mode == "mission":
-            engine.run_mission(m, look_update=look)
+        if mode == "single":
+            engine.run_single(m, context=context, operator_question="Could a single agent have done this?")
+        elif mode == "replan":
+            engine.run_replan(m, context=context, replan_reason=spec["replan_reason"], new_method=spec["method"], axes=spec.get("axes", ["reroute"]))
+        elif mode == "fanout":
+            engine.run_fanout(m, context=context, subtasks=_subtasks(spec), axes=spec.get("axes", ["parallel", "fan_in"]), operator_question="Why split?")
+        elif mode == "run":
+            engine.run_task(m, context=context)
         elif mode == "refuse_someone_else":
             # The world already covers the work: the gates refuse, and forcing the
-            # refused record through write_who fails at gate one.
+            # refused record through set_roster fails at gate one.
             engine._arm(m)
-            verdict = assess(_seams(spec), world=m.world)[0]
-            worker = Slot(id=f"w-{verdict.seam.channel_id}", function="worker", channel_id=verdict.seam.channel_id)
-            m.write_who(m.picture.who_head_id, m.picture.slots + [worker], gates=verdict.gates)
+            verdict = assess(_subtasks(spec), world=m.world)[0]
+            worker = Slot(id=f"w-{verdict.subtask.channel_id}", function="worker", channel_id=verdict.subtask.channel_id)
+            m.set_roster(m.state.lead_id, m.state.slots + [worker], gates=verdict.gates)
         else:
             raise ValueError(f"unknown bench mode: {mode}")
     except InvariantError as e:
@@ -71,14 +71,14 @@ def run_fixture(spec: dict) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         m, code = _drive(spec, MemoryStore(Path(tmp)))
     report = diagnose(m)
-    answer = m.notes["why-1"].reason if "why-1" in m.notes else ""
+    answer = m.notes["question-1"].reason if "question-1" in m.notes else ""
     got = {
         "status": m.status.value,
         "code": code,
-        "workers": m.picture.worker_count(),
+        "workers": m.state.worker_count(),
         "split": any(e.event == "split" for e in m.log),
         "health": report["health"],
-        "method_contains": m.picture.method,
+        "method_contains": m.state.method,
         "isolation_flags_empty": not report["isolation"]["flags"],
         "refused_contains": answer,
         "calls_max": len(m.calls),
@@ -93,7 +93,7 @@ def run_fixture(spec: dict) -> dict:
         else:
             ok = have == want
         checks.append({"key": key, "want": want, "got": have, "ok": ok})
-    return {"id": spec["id"], "mode": spec.get("mode"), "pace": spec.get("pace"), "ok": all(c["ok"] for c in checks), "checks": checks}
+    return {"id": spec["id"], "mode": spec.get("mode"), "tier": spec.get("tier"), "ok": all(c["ok"] for c in checks), "checks": checks}
 
 
 def run_bench(fixtures: Path | None = None) -> dict:

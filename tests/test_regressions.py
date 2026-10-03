@@ -12,14 +12,14 @@ from taskorg.budget import Budget
 from taskorg.cli import main
 from taskorg.diagnostics import diagnose
 from taskorg.errors import InvariantError
-from taskorg.factory import element_at_rest
+from taskorg.factory import new_run
 from taskorg.finetune import parse_action_json
-from taskorg.gates import Seam, World, decide
+from taskorg.gates import Subtask, World, decide
 from taskorg.live import LiveAdapter
 from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import GateRecord, Slot
-from taskorg.persist import load_mission, save_mission
+from taskorg.persist import load_run, save_run
 from taskorg.policy import clamp
 
 
@@ -37,7 +37,7 @@ class SpyAdapter(StubAdapter):
         self.briefs.append(brief)
         art = super().act(brief)
         if brief.slot_function == "worker":
-            art.delta_to_picture = f"SECRET-{brief.channel_id}"
+            art.context_update = f"SECRET-{brief.channel_id}"
         return art
 
 
@@ -47,25 +47,25 @@ class SpyAdapter(StubAdapter):
 def test_cli_split_defaults_complete(tmp_path: Path, capsys):
     out = tmp_path / "fanout.json"
     rc = main([
-        "split", "--pace", "run", "--store", str(tmp_path), "--out", str(out),
-        "--look", "seam:source-a=independent_a seam:source-b=independent_b",
+        "fanout", "--tier", "open", "--store", str(tmp_path), "--out", str(out),
+        "--context", "subtask:source-a=independent_a subtask:source-b=independent_b",
     ])
     assert rc == 0, capsys.readouterr().out
-    assert load_mission(out).status.value == "complete"
+    assert load_run(out).status.value == "complete"
 
 
-def test_cli_adapt_defaults_complete(tmp_path: Path, capsys):
-    out = tmp_path / "walk.json"
-    rc = main(["adapt", "--pace", "walk", "--store", str(tmp_path), "--out", str(out)])
+def test_cli_replan_defaults_complete(tmp_path: Path, capsys):
+    out = tmp_path / "normal.json"
+    rc = main(["replan", "--tier", "normal", "--store", str(tmp_path), "--out", str(out)])
     assert rc == 0, capsys.readouterr().out
-    assert load_mission(out).status.value == "complete"
+    assert load_run(out).status.value == "complete"
 
 
 def test_failed_run_is_saved_as_abort_not_active(tmp_path: Path, capsys):
     out = tmp_path / "bad.json"
-    rc = main(["adapt", "--pace", "walk", "--axes", "sideways", "--store", str(tmp_path), "--out", str(out)])
+    rc = main(["replan", "--tier", "normal", "--axes", "sideways", "--store", str(tmp_path), "--out", str(out)])
     assert rc == 1
-    m = load_mission(out)
+    m = load_run(out)
     assert m.status.value == "abort"
     assert "unknown axis" in m.stop_reason
 
@@ -75,48 +75,48 @@ def test_failed_run_is_saved_as_abort_not_active(tmp_path: Path, capsys):
 
 def test_worker_brief_never_carries_sibling_product(tmp_path: Path):
     spy = SpyAdapter()
-    m = element_at_rest("iso-1", "Answer two notes", "Do not mix", "Integrated")
-    Engine(MemoryStore(tmp_path), adapter=spy, budget=Budget.for_pace("run")).run_multi_axis(
-        m, look_update="two notes", seams=[Seam("source-a", "x"), Seam("source-b", "y")],
-        axes=["fan_in"], operator_why="?",
+    m = new_run("iso-1", "Answer two notes", "Do not mix", "Integrated")
+    Engine(MemoryStore(tmp_path), adapter=spy, budget=Budget.for_tier("open")).run_fanout(
+        m, context="two notes", subtasks=[Subtask("source-a", "x"), Subtask("source-b", "y")],
+        axes=["fan_in"], operator_question="?",
     )
     b_brief = next(b for b in spy.briefs if b.channel_id == "source-b")
-    assert "SECRET-source-a" not in b_brief.picture
+    assert "SECRET-source-a" not in b_brief.context
     assert "SECRET-source-a" not in b_brief.packet
     assert diagnose(m)["isolation"]["flags"] == []
     # The lead still integrates both.
-    assert "SECRET-source-a" in m.picture.current_picture
-    assert "SECRET-source-b" in m.picture.current_picture
+    assert "SECRET-source-a" in m.state.context
+    assert "SECRET-source-b" in m.state.context
 
 
-def test_leak_through_picture_is_flagged(tmp_path: Path):
-    m = element_at_rest("iso-2", "E", "P", "S")
-    engine = Engine(MemoryStore(tmp_path), adapter=SpyAdapter(), budget=Budget.for_pace("run"))
+def test_leak_through_context_is_flagged(tmp_path: Path):
+    m = new_run("iso-2", "E", "P", "S")
+    engine = Engine(MemoryStore(tmp_path), adapter=SpyAdapter(), budget=Budget.for_tier("open"))
     engine._arm(m)
     a = Slot(id="w-a", function="worker", channel_id="a")
     b = Slot(id="w-b", function="worker", channel_id="b")
-    m.write_who("head-1", m.picture.slots + [a], gates=_gates("a"))
-    m.write_who("head-1", m.picture.slots + [b], gates=_gates("b"))
+    m.set_roster("lead-1", m.state.slots + [a], gates=_gates("a"))
+    m.set_roster("lead-1", m.state.slots + [b], gates=_gates("b"))
     art = engine._act(m, engine._brief(m, "worker", slot=a), slot=a)
     art.channel_id = "a"
-    m.accept_artifact(art)  # merges SECRET-a into the living picture
-    engine._act(m, engine._brief(m, "worker", slot=b), slot=b)  # living picture, not the split snapshot
+    m.accept_artifact(art)  # merges SECRET-a into the live context
+    engine._act(m, engine._brief(m, "worker", slot=b), slot=b)  # live context, not the split-time snapshot
     assert "isolation_leak:a->b" in diagnose(m)["flags"]
 
 
 def test_isolation_verdict_survives_disk(tmp_path: Path):
-    m = element_at_rest("iso-3", "E", "P", "S")
+    m = new_run("iso-3", "E", "P", "S")
     m.calls = [
         {"function": "worker", "channel": "a", "heard_channels": []},
         {"function": "worker", "channel": "b", "heard_channels": ["a"]},
     ]
-    path = save_mission(m, tmp_path / "iso.json")
+    path = save_run(m, tmp_path / "iso.json")
     assert "packet" not in json.loads(path.read_text())["calls"][0]
-    assert "isolation_leak:a->b" in diagnose(load_mission(path))["flags"]
+    assert "isolation_leak:a->b" in diagnose(load_run(path))["flags"]
 
 
 def test_old_board_without_evidence_is_unverified(tmp_path: Path):
-    m = element_at_rest("iso-4", "E", "P", "S")
+    m = new_run("iso-4", "E", "P", "S")
     m.calls = [{"function": "worker", "channel": "a"}, {"function": "worker", "channel": "b"}]
     assert "isolation_unverified" in diagnose(m)["flags"]
 
@@ -133,62 +133,62 @@ def test_cli_does_not_touch_sys_path():
 # --- Working memory starts clean ---
 
 
-def test_reused_mission_id_starts_clean(tmp_path: Path, capsys):
+def test_reused_run_id_starts_clean(tmp_path: Path, capsys):
     store = MemoryStore(tmp_path)
-    store.remember_working("so-001", "channel:source-a", "OLD RUN PRODUCT")
-    rc = main(["run", "--id", "so-001", "--store", str(tmp_path), "--out", str(tmp_path / "so.json"), "--look", "enough"])
+    store.remember_working("single-001", "channel:source-a", "OLD RUN PRODUCT")
+    rc = main(["single", "--id", "single-001", "--store", str(tmp_path), "--out", str(tmp_path / "so.json"), "--context", "enough"])
     assert rc == 0
-    assert "channel:source-a" not in store.working_facts("so-001")
+    assert "channel:source-a" not in store.working_facts("single-001")
 
 
-def test_unsafe_mission_id_refused(tmp_path: Path):
+def test_unsafe_run_id_refused(tmp_path: Path):
     with pytest.raises(InvariantError) as e:
         MemoryStore(tmp_path).remember_working("../escape", "k", "v")
     assert e.value.code == "STORE"
 
 
-def test_cli_keeps_operator_doctrine(tmp_path: Path, capsys):
+def test_cli_keeps_operator_guidelines(tmp_path: Path, capsys):
     store = MemoryStore(tmp_path)
-    store.write_doctrine("standing", "operator doctrine")
-    main(["run", "--store", str(tmp_path), "--out", str(tmp_path / "so.json"), "--look", "enough"])
-    assert store.read_doctrine("standing").strip() == "operator doctrine"
+    store.write_guidelines("standing", "operator guidelines")
+    main(["single", "--store", str(tmp_path), "--out", str(tmp_path / "so.json"), "--context", "enough"])
+    assert store.read_guidelines("standing").strip() == "operator guidelines"
 
 
 # --- World matching ---
 
 
 def test_world_file_must_name_the_channel():
-    assert decide([Seam("a", "need")], world=World(existing_files=["data/report.md"])) is not None
-    assert decide([Seam("a", "need")], world=World(existing_files=["out/a.md"])) is None
+    assert decide([Subtask("a", "need")], world=World(existing_files=["data/report.md"])) is not None
+    assert decide([Subtask("a", "need")], world=World(existing_files=["out/a.md"])) is None
 
 
-# --- write_who ---
+# --- set_roster ---
 
 
 def test_refused_write_who_leaves_no_split_event():
-    m = element_at_rest("ww-1", "E", "P", "S")
-    no_head = [s for s in m.picture.slots if s.function != "head"]
+    m = new_run("ww-1", "E", "P", "S")
+    no_head = [s for s in m.state.slots if s.function != "lead"]
     with pytest.raises(InvariantError) as e:
-        m.write_who("head-1", no_head + [Slot(id="w-c", function="worker", channel_id="c")], gates=_gates("c"))
-    assert e.value.code == "WHO"
+        m.set_roster("lead-1", no_head + [Slot(id="w-c", function="worker", channel_id="c")], gates=_gates("c"))
+    assert e.value.code == "ROSTER"
     assert not any(ev.event == "split" for ev in m.log)
 
 
 def test_retasking_a_worker_needs_gates():
-    m = element_at_rest("ww-2", "E", "P", "S")
-    m.write_who("head-1", m.picture.slots + [Slot(id="w-a", function="worker", channel_id="a")], gates=_gates("a"))
-    moved = [s for s in m.picture.slots if s.id != "w-a"] + [Slot(id="w-a", function="worker", channel_id="other")]
+    m = new_run("ww-2", "E", "P", "S")
+    m.set_roster("lead-1", m.state.slots + [Slot(id="w-a", function="worker", channel_id="a")], gates=_gates("a"))
+    moved = [s for s in m.state.slots if s.id != "w-a"] + [Slot(id="w-a", function="worker", channel_id="other")]
     with pytest.raises(InvariantError) as e:
-        m.write_who("head-1", moved)
+        m.set_roster("lead-1", moved)
     assert e.value.code == "INV-8"
-    assert m.picture.slot("w-a").channel_id == "a"
+    assert m.state.slot("w-a").channel_id == "a"
 
 
 def test_duplicate_slot_ids_refused():
-    m = element_at_rest("ww-3", "E", "P", "S")
+    m = new_run("ww-3", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        m.write_who("head-1", m.picture.slots + [Slot(id="memory-1", function="memory")])
-    assert e.value.code == "WHO"
+        m.set_roster("lead-1", m.state.slots + [Slot(id="memory-1", function="memory")])
+    assert e.value.code == "ROSTER"
 
 
 # --- Codes and budgets ---
@@ -202,31 +202,31 @@ class SpawnAsker(StubAdapter):
 
 
 def test_tool_violation_reports_tools_code(tmp_path: Path):
-    m = element_at_rest("tc-1", "E", "P", "S")
+    m = new_run("tc-1", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        Engine(MemoryStore(tmp_path), adapter=SpawnAsker()).run_standing_order(m, look_update="x", operator_why="?")
+        Engine(MemoryStore(tmp_path), adapter=SpawnAsker()).run_single(m, context="x", operator_question="?")
     assert e.value.code == "TOOLS"
     assert m.status.value == "abort"
     assert len(m.calls) == 1  # the offending call is on the record
 
 
 def test_run_may_spend_its_whole_call_budget(tmp_path: Path):
-    m = element_at_rest("bc-1", "E", "P", "S")
-    Engine(MemoryStore(tmp_path), budget=Budget(max_calls=2)).run_standing_order(m, look_update="l", operator_why="?")
+    m = new_run("bc-1", "E", "P", "S")
+    Engine(MemoryStore(tmp_path), budget=Budget(max_calls=2)).run_single(m, context="l", operator_question="?")
     assert m.status.value == "complete"
     assert len(m.calls) == 2
 
 
 def test_run_may_not_exceed_its_call_budget(tmp_path: Path):
-    m = element_at_rest("bc-2", "E", "P", "S")
+    m = new_run("bc-2", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        Engine(MemoryStore(tmp_path), budget=Budget(max_calls=1)).run_standing_order(m, look_update="l", operator_why="?")
+        Engine(MemoryStore(tmp_path), budget=Budget(max_calls=1)).run_single(m, context="l", operator_question="?")
     assert e.value.code == "BUDGET"
     assert len(m.calls) == 1
 
 
-def test_aborted_mission_cannot_complete():
-    m = element_at_rest("bc-3", "E", "P", "S")
+def test_aborted_run_cannot_complete():
+    m = new_run("bc-3", "E", "P", "S")
     with pytest.raises(InvariantError):
         m.halt("operator kill switch")
     with pytest.raises(InvariantError):
@@ -238,20 +238,20 @@ def test_aborted_mission_cannot_complete():
 
 
 def test_defer_without_reason_leaves_note_untouched():
-    m = element_at_rest("wn-1", "E", "P", "S")
-    m.submit_why("later?", "n1")
+    m = new_run("wn-1", "E", "P", "S")
+    m.open_review("later?", "n1")
     with pytest.raises(InvariantError) as e:
-        m.respond_why("head-1", "n1", "DEFER", "")
+        m.answer_review("lead-1", "n1", "DEFER", "")
     assert e.value.code == "INV-4"
     assert m.notes["n1"].response is None
     assert m.notes["n1"].status.value == "open"
 
 
 def test_unknown_note_is_an_invariant_error():
-    m = element_at_rest("wn-2", "E", "P", "S")
+    m = new_run("wn-2", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        m.respond_why("head-1", "nope", "KEEP_ROSTER", "x")
-    assert e.value.code == "WHY"
+        m.answer_review("lead-1", "nope", "KEEP_ROSTER", "x")
+    assert e.value.code == "REVIEW"
 
 
 # --- Policy parsing ---

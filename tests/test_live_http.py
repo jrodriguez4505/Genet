@@ -12,7 +12,7 @@ import pytest
 from taskorg.budget import Budget
 from taskorg.diagnostics import diagnose
 from taskorg.errors import InvariantError
-from taskorg.factory import element_at_rest
+from taskorg.factory import new_run
 from taskorg.live import LiveAdapter
 from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
@@ -47,17 +47,17 @@ class FakeModel(BaseHTTPRequestHandler):
         user = json.loads(body["messages"][1]["content"])
         fn, mode = user["function"], user["mode"]
         requests = []
-        if fn == "head" and mode == "plan":
-            requests = [t for t in user["picture"].split() if t.startswith("seam:")]
-            claim = "Read: two independent notes." if requests else "Read: one body."
-        elif fn == "head":
+        if fn == "lead" and mode == "plan":
+            requests = [t for t in user["context"].split() if t.startswith("subtask:")]
+            claim = "Read: two independent notes." if requests else "Read: a single agent is enough."
+        elif fn == "lead":
             claim = "Product covering " + "; ".join(user["success_criteria"])
         elif fn == "verifier":
             claim = "PASS"
         else:
-            claim = f"[{user['channel_id']}] element product"
+            claim = f"[{user['channel_id']}] sub-agent result"
         art = {"claim": claim, "evidence": [], "uncertainty": "fake", "channel_id": "anything",
-               "delta_to_picture": f"after {fn} {user['channel_id']}", "requests": requests}
+               "context_update": f"after {fn} {user['channel_id']}", "requests": requests}
         payload = json.dumps({
             "choices": [{"message": {"content": "```json\n" + json.dumps(art) + "\n```"}}],
             "usage": {"prompt_tokens": 100, "completion_tokens": 20},
@@ -94,11 +94,11 @@ def _adapter(server, timeout=5, **kw):
     return LiveAdapter(f"http://127.0.0.1:{server.server_port}/v1", "test-key", "base-model", timeout=timeout, **kw)
 
 
-def test_mission_over_http_splits_and_regroups(fake_model, tmp_path: Path):
-    m = element_at_rest("http-1", "Answer two notes", "Do not mix", "Integrated")
+def test_run_over_http_splits_and_merges(fake_model, tmp_path: Path):
+    m = new_run("http-1", "Answer two notes", "Do not mix", "Integrated")
     adapter = _adapter(fake_model, models={"reason": "lead-model"})
-    result = Engine(MemoryStore(tmp_path), adapter=adapter, budget=Budget.for_pace("run")).run_mission(
-        m, look_update="seam:note-a=must_not_mix seam:note-b=must_not_mix")
+    result = Engine(MemoryStore(tmp_path), adapter=adapter, budget=Budget.for_tier("open")).run_task(
+        m, context="subtask:note-a=must_not_mix subtask:note-b=must_not_mix")
     assert result.split is True
     assert m.status.value == "complete"
     assert all(not c["tokens_estimated"] for c in m.calls)
@@ -106,20 +106,20 @@ def test_mission_over_http_splits_and_regroups(fake_model, tmp_path: Path):
     assert {s["path"] for s in fake_model.seen} == {"/v1/chat/completions"}
     assert {s["auth"] for s in fake_model.seen} == {"Bearer test-key"}
     plan = next(s for s in fake_model.seen if s["user"]["mode"] == "plan")
-    assert plan["model"] == "lead-model" and "lead of a small team" in plan["system"]
+    assert plan["model"] == "lead-model" and "lead agent of a small team" in plan["system"]
     workers = [s for s in fake_model.seen if s["user"]["function"] == "worker"]
     assert {w["user"]["channel_id"] for w in workers} == {"note-a", "note-b"}
     for w in workers:
         sibling = "note-b" if w["user"]["channel_id"] == "note-a" else "note-a"
-        assert f"after worker {sibling}" not in w["user"]["picture"] + w["user"]["packet"]
+        assert f"after worker {sibling}" not in w["user"]["context"] + w["user"]["packet"]
     assert diagnose(m)["health"] == "ok"
 
 
 def test_http_error_is_live_with_detail(fake_model, tmp_path: Path):
     fake_model.mode = "error"
-    m = element_at_rest("http-2", "E", "P", "S")
+    m = new_run("http-2", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        Engine(MemoryStore(tmp_path), adapter=_adapter(fake_model)).run_mission(m, look_update="one")
+        Engine(MemoryStore(tmp_path), adapter=_adapter(fake_model)).run_task(m, context="one")
     assert e.value.code == "LIVE"
     assert "500" in e.value.message and "boom" in e.value.message
     assert m.status.value == "abort"
@@ -127,16 +127,16 @@ def test_http_error_is_live_with_detail(fake_model, tmp_path: Path):
 
 def test_timeout_is_live(fake_model, tmp_path: Path):
     fake_model.mode = "slow"
-    m = element_at_rest("http-3", "E", "P", "S")
+    m = new_run("http-3", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        Engine(MemoryStore(tmp_path), adapter=_adapter(fake_model, timeout=1)).run_mission(m, look_update="one")
+        Engine(MemoryStore(tmp_path), adapter=_adapter(fake_model, timeout=1)).run_task(m, context="one")
     assert e.value.code == "LIVE"
     assert m.status.value == "abort"
 
 
 def test_null_content_is_live(fake_model, tmp_path: Path):
     fake_model.mode = "null"
-    m = element_at_rest("http-4", "E", "P", "S")
+    m = new_run("http-4", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        Engine(MemoryStore(tmp_path), adapter=_adapter(fake_model)).run_mission(m, look_update="one")
+        Engine(MemoryStore(tmp_path), adapter=_adapter(fake_model)).run_task(m, context="one")
     assert e.value.code == "LIVE"

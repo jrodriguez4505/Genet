@@ -9,19 +9,19 @@ from typing import Any
 
 from .adapters import Brief, ModelAdapter
 from .errors import InvariantError
-from .models import QUALS, Artifact
-from .quals import role as qual_role
+from .models import SKILLS, Artifact
+from .skills import brief as skill_brief
 from .tools import RUNNABLE
 
 ROLES = {
-    "head": (
-        "You are the lead of a small team. You hold the intent (effect, purpose, end_state). "
-        "When one body is enough you do the work yourself. When elements report, you integrate "
-        "their products against the intent and do not invent what they did not report."
+    "lead": (
+        "You are the lead agent of a small team. You hold the goal, purpose and done-when condition. "
+        "When a single agent is enough you do the work yourself. When sub-agents report, you merge "
+        "their results against the goal and do not invent what they did not report."
     ),
     "worker": (
-        "You are one element of a small team, working channel {channel}. Work only your channel. "
-        "You cannot see sibling elements and must not guess at their work."
+        "You are one sub-agent of a small team, working channel {channel}. Work only your channel. "
+        "You cannot see the other sub-agents and must not guess at their work."
     ),
     "verifier": (
         "You are the verifier. Judge the product, not the plan. Your claim starts with PASS or FAIL. "
@@ -30,7 +30,7 @@ ROLES = {
 }
 
 SYSTEM = """{role}
-Your qualification right now: {qual}. {qual_role}
+Your skill right now: {skill}. {skill_brief}
 You do not command. You do not change the roster. You do not spawn.
 {tools}
 Return ONLY a JSON object with keys:
@@ -38,7 +38,7 @@ Return ONLY a JSON object with keys:
   evidence (array of strings),
   uncertainty (string),
   channel_id (string),
-  delta_to_picture (string),
+  context_update (string),
   requests (array of strings)
 No markdown. No extra keys. No authority language.
 """
@@ -60,7 +60,7 @@ def system_prompt(brief: Brief) -> str:
         else TOOLS_OFF
     )
     role = ROLES.get(brief.slot_function, ROLES["worker"]).format(channel=brief.channel_id or "?")
-    return SYSTEM.format(role=role, qual=brief.skill, qual_role=qual_role(brief.skill), tools=tools)
+    return SYSTEM.format(role=role, skill=brief.skill, skill_brief=skill_brief(brief.skill), tools=tools)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -84,18 +84,18 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 def artifact_from_model(data: dict[str, Any], brief: Brief) -> Artifact:
-    forbidden = {"who", "write_who", "spawn", "slots", "complete", "halt"}
+    forbidden = {"roster", "set_roster", "spawn", "slots", "complete", "halt"}
     allowed = {
         "claim",
         "evidence",
         "uncertainty",
         "channel_id",
-        "delta_to_picture",
+        "context_update",
         "requests",
     }
     extra = set(data.keys()) - allowed
     if extra & forbidden:
-        raise InvariantError("WHO", "model tried to speak Who — rejected")
+        raise InvariantError("ROSTER", "model tried to change the roster; rejected")
     extra = extra - forbidden
     if extra:
         raise InvariantError("SCHEMA", f"unknown artifact keys: {sorted(extra)}")
@@ -114,7 +114,7 @@ def artifact_from_model(data: dict[str, Any], brief: Brief) -> Artifact:
         evidence=[str(x) for x in evidence],
         uncertainty=str(data.get("uncertainty") or "unspecified"),
         channel_id=channel,
-        delta_to_picture=str(data.get("delta_to_picture") or ""),
+        context_update=str(data.get("context_update") or ""),
         requests=[str(x) for x in requests],
     )
     art.validate()
@@ -130,14 +130,14 @@ class LiveAdapter(ModelAdapter):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
-        # Optional model per qualification, e.g. a stronger model for reason.
+        # Optional model per skill, e.g. a stronger model for reason.
         self.models = dict(models or {})
         self.timeout = timeout
         self._local = threading.local()
 
     @property
     def last_usage(self) -> dict:
-        """Per thread: elements call the model concurrently."""
+        """Per thread: sub-agents call the model concurrently."""
         return getattr(self._local, "usage", {})
 
     @last_usage.setter
@@ -165,7 +165,7 @@ class LiveAdapter(ModelAdapter):
             raise InvariantError("LIVE", f"TASKORG_MODEL_TIMEOUT must be whole seconds, got {raw_timeout!r}") from e
         models = {
             q: os.environ[f"TASKORG_MODEL_NAME_{q.upper()}"].strip()
-            for q in QUALS
+            for q in SKILLS
             if os.environ.get(f"TASKORG_MODEL_NAME_{q.upper()}", "").strip()
         }
         return cls(base, key, model, timeout=timeout, models=models)
@@ -175,10 +175,10 @@ class LiveAdapter(ModelAdapter):
             "function": brief.slot_function,
             "skill": brief.skill,
             "channel_id": brief.channel_id,
-            "effect": brief.effect,
+            "goal": brief.goal,
             "purpose": brief.purpose,
-            "picture": brief.picture,
-            "end_state": brief.end_state,
+            "context": brief.context,
+            "done_when": brief.done_when,
             "packet": brief.packet,
             "isolated": brief.isolated,
             "mode": brief.mode,

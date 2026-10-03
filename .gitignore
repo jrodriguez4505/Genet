@@ -1,4 +1,5 @@
-# Run output: boards, working memory, episodes, policy files, comparisons. Live boards stay local.
+# Run output: saved runs, working memory, episodes, policy files, comparisons. Live runs stay local.
+data/runs/
 data/missions/
 data/working/
 data/episodic/

@@ -3,77 +3,77 @@ from pathlib import Path
 import pytest
 
 from taskorg.errors import InvariantError
-from taskorg.factory import element_at_rest
-from taskorg.gates import Seam
+from taskorg.factory import new_run
+from taskorg.gates import Subtask
 from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import Delta
 
 
-def test_step_off_frozen_running_picture_moves():
-    m = element_at_rest("coh-1", "Clear", "Deny", "Held")
-    assert m.picture.step_off_picture == ""
-    first = m.picture.current_picture
-    m.update_context("head-1", "source-b is the seam")
-    assert m.picture.step_off_picture == first
-    assert m.picture.current_picture == "source-b is the seam"
-    m.update_context("head-1", "contact on second deck")
-    assert m.picture.step_off_picture == first
-    assert m.picture.current_picture == "contact on second deck"
+def test_initial_context_frozen_live_context_moves():
+    m = new_run("coh-1", "Summarize the notes", "Keep sources apart", "Summary written")
+    assert m.state.initial_context == ""
+    first = m.state.context
+    m.update_context("lead-1", "source-b is the subtask")
+    assert m.state.initial_context == first
+    assert m.state.context == "source-b is the subtask"
+    m.update_context("lead-1", "new data in section two")
+    assert m.state.initial_context == first
+    assert m.state.context == "new data in section two"
 
 
-def test_element_delta_updates_living_picture():
-    m = element_at_rest("coh-2", "Clear", "Deny", "Held")
-    m.update_context("head-1", "initial context")
+def test_merge_delta_updates_live_context():
+    m = new_run("coh-2", "Summarize the notes", "Keep sources apart", "Summary written")
+    m.update_context("lead-1", "initial context")
     m.post_delta(Delta(claim="source-a held", evidence=["w-source-a"], uncertainty="low", channel_id="source-a"))
-    m.post_delta(Delta(claim="rear held", evidence=["w-rear"], uncertainty="low", channel_id="source-b"))
-    assert "source-a held" in m.picture.current_picture
-    assert "rear held" in m.picture.current_picture
-    assert m.deltas[0].net == "element"
+    m.post_delta(Delta(claim="note B done", evidence=["w-source-b"], uncertainty="low", channel_id="source-b"))
+    assert "source-a held" in m.state.context
+    assert "note B done" in m.state.context
+    assert m.deltas[0].stream == "merge"
 
 
 def test_unopened_out_net_illegal():
-    m = element_at_rest("coh-3", "Clear", "Deny", "Held")
+    m = new_run("coh-3", "Summarize the notes", "Keep sources apart", "Summary written")
     with pytest.raises(InvariantError) as e:
         m.post_delta(
-            Delta(claim="adjacent mark", evidence=[], uncertainty="n", channel_id="out", net="out")
+            Delta(claim="adjacent mark", evidence=[], uncertainty="n", channel_id="report", stream="report")
         )
     assert e.value.code == "INV-13"
-    m.write_net("head-1", "out")
-    m.post_delta(Delta(claim="adjacent mark", evidence=[], uncertainty="n", channel_id="out", net="out"))
+    m.open_stream("lead-1", "report")
+    m.post_delta(Delta(claim="adjacent mark", evidence=[], uncertainty="n", channel_id="report", stream="report"))
 
 
 def test_worker_cannot_open_net():
-    m = element_at_rest("coh-4", "Clear", "Deny", "Held")
+    m = new_run("coh-4", "Summarize the notes", "Keep sources apart", "Summary written")
     with pytest.raises(InvariantError) as e:
-        m.write_net("w-source-a", "adjacent")
+        m.open_stream("w-source-a", "peer")
     assert e.value.code == "INV-13"
 
 
 def test_sibling_channel_stripped_from_brief(tmp_path: Path):
     store = MemoryStore(tmp_path)
-    store.remember_working("m", "look", "both seams")
-    store.remember_working("m", "channel:source-a", "SECRET-ALLEY")
-    store.remember_working("m", "channel:source-b", "SECRET-REAR")
+    store.remember_working("m", "context", "both subtasks")
+    store.remember_working("m", "channel:source-a", "SECRET-A")
+    store.remember_working("m", "channel:source-b", "SECRET-B")
     brief_a = store.scoped_brief("m", extra="act", channel_id="source-a")
-    assert "SECRET-ALLEY" in brief_a
-    assert "SECRET-REAR" not in brief_a
-    rear = store.scoped_brief("m", extra="act", channel_id="source-b")
-    assert "SECRET-REAR" in rear
-    assert "SECRET-ALLEY" not in rear
+    assert "SECRET-A" in brief_a
+    assert "SECRET-B" not in brief_a
+    brief_b = store.scoped_brief("m", extra="act", channel_id="source-b")
+    assert "SECRET-B" in brief_b
+    assert "SECRET-A" not in brief_b
 
 
-def test_split_posts_element_deltas(tmp_path: Path):
+def test_split_posts_merge_deltas(tmp_path: Path):
     store = MemoryStore(tmp_path)
-    m = element_at_rest("coh-5", "Clear", "Deny", "Held")
-    Engine(store).run_multi_axis(
+    m = new_run("coh-5", "Summarize the notes", "Keep sources apart", "Summary written")
+    Engine(store).run_fanout(
         m,
-        look_update="two seams",
-        seams=[Seam("source-a", "source-a channel"), Seam("source-b", "rear channel")],
+        context="two subtasks",
+        subtasks=[Subtask("source-a", "source-a channel"), Subtask("source-b", "source-b channel")],
         axes=["sequential", "fan_in"],
-        operator_why="Is the living picture current?",
+        operator_question="Is the live context current?",
     )
-    assert m.picture.step_off_picture
-    assert any(d.net == "element" and d.channel_id == "source-a" for d in m.deltas)
-    assert any(d.net == "element" and d.channel_id == "source-b" for d in m.deltas)
-    assert m.picture.step_off_picture != m.picture.current_picture
+    assert m.state.initial_context
+    assert any(d.stream == "merge" and d.channel_id == "source-a" for d in m.deltas)
+    assert any(d.stream == "merge" and d.channel_id == "source-b" for d in m.deltas)
+    assert m.state.initial_context != m.state.context

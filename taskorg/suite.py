@@ -8,7 +8,7 @@ stated once, in the company's own file.
 
 Families, and what each one stresses:
 
-  lookup     one company, one figure            one source is the whole picture
+  lookup     one company, one figure            one source holds everything needed
   aggregate  sum of one figure over 3 companies independent parts, arithmetic
   compare    look-alike pair, higher churn      interference between similar names
   breadth    max of one figure over 5 companies many sources, context pressure

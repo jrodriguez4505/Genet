@@ -1,0 +1,14 @@
+{
+  "id": "budget_cap",
+  "tier": "tight",
+  "mode": "single",
+  "max_calls": 1,
+  "goal": "Summarize the paragraph",
+  "purpose": "Stop before a second call",
+  "done_when": "Halted",
+  "context": "One paragraph. Still one agent.",
+  "expect": {
+    "status": "abort",
+    "code": "BUDGET"
+  }
+}

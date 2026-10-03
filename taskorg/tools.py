@@ -2,7 +2,7 @@
 
 A model asks by putting requests in its artifact: "read:<path>",
 "retrieve:<query>", "observe" or "observe:<subdir>". The kernel checks the
-slot's allowlist first (Mission.assert_tools), then runs the tool here and
+slot's allowlist first (Run.assert_tools), then runs the tool here and
 hands the result back in the next brief. Every round is a budgeted call.
 
 Tools only read. They see the workspace roots the operator declared and the

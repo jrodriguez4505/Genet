@@ -12,10 +12,10 @@ class Brief:
     slot_function: str
     skill: str
     packet: str
-    effect: str
+    goal: str
     purpose: str
-    picture: str
-    end_state: str
+    context: str
+    done_when: str
     channel_id: str = ""
     isolated: bool = True
     tools: list[str] | None = None
@@ -36,8 +36,8 @@ class ModelAdapter:
 class StubAdapter(ModelAdapter):
     """Deterministic stand-in for a compliant model. No network. Predictable fixtures.
 
-    It plans by proposing the seams the picture tags, uses a runnable tool once
-    when its qualification has one, and addresses the criteria in its product.
+    It plans by proposing the sub-tasks the context tags, uses a runnable tool once
+    when its skill has one, and addresses the criteria in its product.
     """
 
     name = "stub"
@@ -50,7 +50,7 @@ class StubAdapter(ModelAdapter):
                 evidence=[],
                 uncertainty="waiting on tool results",
                 channel_id=brief.channel_id or brief.slot_function,
-                delta_to_picture="",
+                context_update="",
                 requests=[tool],
             )
         evidence = ["stub-adapter", brief.packet[:120]]
@@ -58,34 +58,34 @@ class StubAdapter(ModelAdapter):
         if found:
             evidence.append(found)
         requests: list[str] = []
-        if brief.slot_function == "head" and brief.mode == "plan":
-            tagged = [t for t in brief.picture.replace(",", " ").split() if t.startswith("seam:")]
+        if brief.slot_function == "lead" and brief.mode == "plan":
+            tagged = [t for t in brief.context.replace(",", " ").split() if t.startswith("subtask:")]
             claim = (
-                f"Read: {len(tagged)} independent part(s) named in the picture."
+                f"Read: {len(tagged)} independent part(s) named in the context."
                 if tagged
-                else "Read: one body is enough; nothing in the picture is independent."
+                else "Read: one agent is enough; nothing in the context is independent."
             )
             requests = tagged
-            channel = "head-plan"
-        elif brief.slot_function == "head":
+            channel = "lead-plan"
+        elif brief.slot_function == "lead":
             # A compliant model addresses the criteria in the product itself.
             criteria = "; ".join(brief.success_criteria or [])
             claim = (
-                f"Default task: {brief.effect}. "
+                f"Default task: {brief.goal}. "
                 f"Purpose holds: {brief.purpose}. "
-                f"Picture: {brief.picture}. Method: look, then write."
+                f"Context: {brief.context}. Method: read, then write."
                 + (f" Covers: {criteria}." if criteria else "")
             )
-            channel = "head-integrate"
+            channel = "lead-merge"
         elif brief.slot_function == "verifier":
-            claim = "PASS — effect named, purpose intact, picture updated."
+            claim = "PASS — goal named, purpose intact, context updated."
             channel = "verify"
         else:
             vantage = brief.channel_id or brief.skill or "execute"
             claim = (
-                f"[{vantage}] Isolated product against '{brief.effect}'. "
+                f"[{vantage}] Isolated product against '{brief.goal}'. "
                 f"This channel does not see sibling Workers. "
-                f"Intent: {brief.purpose}."
+                f"Purpose: {brief.purpose}."
             )
             channel = vantage
         return Artifact(
@@ -93,18 +93,18 @@ class StubAdapter(ModelAdapter):
             evidence=evidence,
             uncertainty="stub has no external sources",
             channel_id=channel,
-            delta_to_picture=f"stub picture after {brief.slot_function}: {brief.effect}",
+            context_update=f"stub context after {brief.slot_function}: {brief.goal}",
             requests=requests,
         )
 
     @staticmethod
     def _tool_request(brief: Brief) -> str:
-        """One tool round when the qualification has a runnable tool and none has run yet."""
+        """One tool round when the skill has a runnable tool and none has run yet."""
         if TOOL_RESULTS in brief.packet:
             return ""
         tools = brief.tools or []
         if "retrieve" in tools:
-            query = brief.channel_id or (brief.effect.split() or ["notes"])[-1]
+            query = brief.channel_id or (brief.goal.split() or ["notes"])[-1]
             return f"retrieve:{query}"
         if "observe" in tools:
             return "observe"
@@ -119,8 +119,8 @@ class StubAdapter(ModelAdapter):
         return lines[0][:200] if lines else ""
 
 
-class EchoWhy:
-    """Operator / fixture voice in the Why slot."""
+class OperatorQuestion:
+    """The operator's question to the lead, recorded as a review."""
 
     def __init__(self, question: str):
         self.question = question

@@ -3,13 +3,13 @@ import pytest
 from taskorg.adapters import Brief
 from taskorg.cues import fire_auto_cues
 from taskorg.errors import InvariantError
-from taskorg.factory import element_at_rest
+from taskorg.factory import new_run
 from taskorg.live import artifact_from_model
 from taskorg.models import Artifact
 
 
 def test_worker_cannot_update_where():
-    m = element_at_rest("rf-1", "Clear", "Deny", "Held")
+    m = new_run("rf-1", "Summarize the notes", "Keep sources apart", "Summary written")
     with pytest.raises(InvariantError) as e:
         m.update_context("worker-rogue", "other side")
     assert e.value.code == "INV-1"
@@ -20,10 +20,10 @@ def test_unknown_json_keys_rejected():
         slot_function="worker",
         skill="execute",
         packet="x",
-        effect="e",
+        goal="e",
         purpose="p",
-        picture="here",
-        end_state="there",
+        context="here",
+        done_when="there",
     )
     with pytest.raises(InvariantError) as e:
         artifact_from_model(
@@ -32,7 +32,7 @@ def test_unknown_json_keys_rejected():
                 "evidence": [],
                 "uncertainty": "n",
                 "channel_id": "source-a",
-                "delta_to_picture": "d",
+                "context_update": "d",
                 "requests": [],
                 "temperature": 0.2,
             },
@@ -42,16 +42,16 @@ def test_unknown_json_keys_rejected():
 
 
 def test_cue_targets_living_head():
-    m = element_at_rest("rf-2", "Clear", "Deny", "Held")
-    m.update_context(m.picture.who_head_id, "enough")
+    m = new_run("rf-2", "Summarize the notes", "Keep sources apart", "Summary written")
+    m.update_context(m.state.lead_id, "enough")
     fire_auto_cues(m)
     for cue in m.cues.values():
-        assert cue.target == m.picture.who_head_id
+        assert cue.target == m.state.lead_id
 
 
 def test_unlisted_tool_request_rejected():
-    m = element_at_rest("rf-3", "Clear", "Deny", "Held")
-    m.slide("head-1", "head-1", "draft", "write")
+    m = new_run("rf-3", "Summarize the notes", "Keep sources apart", "Summary written")
+    m.switch_skill("lead-1", "lead-1", "draft", "write")
     with pytest.raises(InvariantError) as e:
-        m.assert_tools("head-1", ["spawn"])
+        m.assert_tools("lead-1", ["spawn"])
     assert e.value.code == "TOOLS"

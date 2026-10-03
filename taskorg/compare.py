@@ -1,4 +1,4 @@
-"""Head-to-head: does the gated split beat one agent, or an always-split crew?
+"""Side by side: does the gated split beat one agent, or an always-split crew?
 
 Three strategies run the same tasks with the same model, the same tools, the
 same budget and tool rounds, the same verify-and-adapt step and the same
@@ -6,7 +6,7 @@ concurrency. Only the task organization differs:
 
   single   one agent works the task; no planning call
   always   crew style: the lead always decomposes and every subtask gets a worker
-  genet    the lead proposes elements; the gates judge them (Engine.run_mission)
+  genet    the lead proposes sub-agents; the gates judge them (Engine.run_task)
 
 The claim under test: genet matches the better baseline's accuracy at close to
 single-agent cost. The report shows where it does and where it does not.
@@ -26,29 +26,29 @@ from pathlib import Path
 from .adapters import ModelAdapter
 from .budget import Budget
 from .errors import InvariantError
-from .factory import element_at_rest
-from .gates import Assessment, Seam, _could_we
+from .factory import new_run
+from .gates import Assessment, Subtask, _could_we
 from .loop import Engine
 from .memory_store import MemoryStore
-from .mission import Mission
-from .models import GATE_ORDER, MAX_WORKERS, QUALS, GateRecord
-from .seams import parse_seams
+from .run import Run
+from .models import GATE_ORDER, MAX_WORKERS, SKILLS, GateRecord
+from .subtasks import parse_subtasks
 from .suite import Suite, Task, extract_answer, grade
 from .tools import Toolbox
 
-LOOK = (
+CONTEXT = (
     "The workspace holds FY2026 operating notes, one markdown file per company, named after it "
     "(for example halvorsen-freight.md for Halvorsen Freight). "
     "Figures are written in prose and the notes contain prior-year figures and look-alike company names. "
     "Use the files; do not guess."
 )
 PURPOSE = "Answer exactly from the notes. End the product with one line: ANSWER: <value>"
-END_STATE = "The product ends with one line 'ANSWER: <value>': a number for amounts, a company name for which-questions."
+DONE_WHEN = "The product ends with one line 'ANSWER: <value>': a number for amounts, a company name for which-questions."
 
 DECOMPOSE_BRIEF = (
     "PLAN. You lead a crew. Break the work into 2 to 4 subtasks and give each its own worker. "
-    "For each, add a request 'seam:<channel>@<qual>=<what_the_worker_does>' where qual is one of {quals} "
-    "(underscores for spaces). A worker that must search or read the workspace needs qual retrieve. "
+    "For each, add a request 'subtask:<channel>@<skill>=<what_the_worker_does>' where skill is one of {skills} "
+    "(underscores for spaces). A worker that must search or read the workspace needs skill retrieve. "
     "claim: your plan in one or two sentences."
 )
 
@@ -56,7 +56,7 @@ DECOMPOSE_BRIEF = (
 class SingleAgent(Engine):
     """Baseline: one agent, no planning call, never splits."""
 
-    def _propose(self, mission: Mission) -> list[Seam]:
+    def _propose(self, run: Run) -> list[Subtask]:
         return []
 
 
@@ -65,23 +65,23 @@ class AlwaysSplit(Engine):
 
     min_split = 1
 
-    def _propose(self, mission: Mission) -> list[Seam]:
-        head = mission.picture.who_head_id
-        mission.slide(head, head, "reason", "decompose into subtasks for the crew")
-        plan = self._act(mission, self._brief(mission, "head", extra=DECOMPOSE_BRIEF.format(quals="|".join(QUALS)), mode="plan"))
-        mission.accept_artifact(plan)
-        return parse_seams(" ".join(plan.requests))
+    def _propose(self, run: Run) -> list[Subtask]:
+        lead = run.state.lead_id
+        run.switch_skill(lead, lead, "reason", "decompose into sub-tasks for the crew")
+        plan = self._act(run, self._brief(run, "lead", extra=DECOMPOSE_BRIEF.format(skills="|".join(SKILLS)), mode="plan"))
+        run.accept_artifact(plan)
+        return parse_subtasks(" ".join(plan.requests))
 
-    def _judge(self, mission: Mission, seams: list[Seam]) -> list[Assessment]:
+    def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """No gates. Only what the kernel cannot run is dropped: bad ids, repeats, past the worker cap."""
         out, seen = [], set()
-        for seam in seams:
-            if _could_we(seam) or seam.channel_id in seen or len(out) >= MAX_WORKERS:
+        for subtask in subtasks:
+            if _could_we(subtask) or subtask.channel_id in seen or len(out) >= MAX_WORKERS:
                 continue
-            seen.add(seam.channel_id)
-            failure = seam.named_failure.strip() or "baseline: always split"
-            a = Assessment(seam, GateRecord(False, True, failure, True, seam.channel_id, GATE_ORDER))
-            mission._record("gate", a.as_dict() | {"policy": "always-split"})
+            seen.add(subtask.channel_id)
+            failure = subtask.named_failure.strip() or "baseline: always split"
+            a = Assessment(subtask, GateRecord(False, True, failure, True, subtask.channel_id, GATE_ORDER))
+            run._record("gate", a.as_dict() | {"policy": "always-split"})
             out.append(a)
         return out
 
@@ -97,8 +97,8 @@ class TrialResult:
     repeat: int
     expected: str
     answer: str | None
-    correct: bool        # delivered (mission complete) and right
-    answer_right: bool   # last product right, whether or not the mission completed
+    correct: bool        # delivered (run complete) and right
+    answer_right: bool   # last product right, whether or not the run completed
     status: str
     code: str
     calls: int
@@ -110,9 +110,9 @@ class TrialResult:
     workers: int
 
 
-def _last_product(mission: Mission) -> str:
-    heads = [a for a in mission.artifacts if a.channel_id == "head-integrate"]
-    return heads[-1].claim if heads else ""
+def _last_product(run: Run) -> str:
+    products = [a for a in run.artifacts if a.channel_id == "lead-merge"]
+    return products[-1].claim if products else ""
 
 
 def run_trial(
@@ -128,8 +128,8 @@ def run_trial(
 ) -> TrialResult:
     with tempfile.TemporaryDirectory() as tmp:
         store = MemoryStore(store_root or Path(tmp))
-        mission = element_at_rest(f"{strategy}-{task.id}-r{repeat}", effect=task.question, purpose=PURPOSE, end_state=END_STATE)
-        mission.picture.success_criteria = ["ANSWER:"]
+        run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=PURPOSE, done_when=DONE_WHEN)
+        run.state.success_criteria = ["ANSWER:"]
         engine = STRATEGIES[strategy](
             store, adapter=adapter, budget=budget,
             toolbox=Toolbox(roots=[corpus_dir]), max_tool_rounds=tool_rounds,
@@ -137,23 +137,23 @@ def run_trial(
         code = ""
         started = time.perf_counter()
         try:
-            engine.run_mission(mission, look_update=LOOK, operator_why="Could this have been one body?")
+            engine.run_task(run, context=CONTEXT, operator_question="Could a single agent have done this?")
         except InvariantError as e:
             code = e.code
         latency = time.perf_counter() - started
-    answer = extract_answer(_last_product(mission))
+    answer = extract_answer(_last_product(run))
     right = grade(answer, task)
-    prompt = sum(c.get("prompt_tokens") or 0 for c in mission.calls)
-    completion = sum(c.get("completion_tokens") or 0 for c in mission.calls)
+    prompt = sum(c.get("prompt_tokens") or 0 for c in run.calls)
+    completion = sum(c.get("completion_tokens") or 0 for c in run.calls)
     return TrialResult(
         task_id=task.id, family=task.family, strategy=strategy, repeat=repeat,
         expected=task.answer, answer=answer,
-        correct=right and mission.status.value == "complete", answer_right=right,
-        status=mission.status.value, code=code,
-        calls=len(mission.calls), tokens=prompt + completion,
+        correct=right and run.status.value == "complete", answer_right=right,
+        status=run.status.value, code=code,
+        calls=len(run.calls), tokens=prompt + completion,
         prompt_tokens=prompt, completion_tokens=completion,
-        tokens_estimated=any(c.get("tokens_estimated") for c in mission.calls),
-        latency_s=round(latency, 3), workers=mission.picture.worker_count(),
+        tokens_estimated=any(c.get("tokens_estimated") for c in run.calls),
+        latency_s=round(latency, 3), workers=run.state.worker_count(),
     )
 
 
@@ -161,7 +161,7 @@ def comparison_budget(max_calls: int = 40, context: int = 16_000, max_seconds: f
     """The same cap for every strategy, wide enough that it measures spend rather than truncating it."""
     return Budget(
         max_calls=max_calls, max_tokens=max_calls * context, max_seconds=max_seconds,
-        max_tokens_per_call=context, allow_split=True, allow_adapt=True, pace="bench",
+        max_tokens_per_call=context, allow_split=True, allow_adapt=True, tier="bench",
     )
 
 
@@ -244,9 +244,9 @@ def summarize(results: list[TrialResult], *, price_in: float | None = None, pric
 def render(summary: dict) -> str:
     def table(block: dict) -> list[str]:
         has_cost = any("cost_total" in v for v in block.values())
-        head = "| strategy | accuracy | tokens/task | calls/task | latency/task | split rate | aborts |" + (" cost |" if has_cost else "")
+        header = "| strategy | accuracy | tokens/task | calls/task | latency/task | split rate | aborts |" + (" cost |" if has_cost else "")
         rule = "|---|---|---|---|---|---|---|" + ("---|" if has_cost else "")
-        lines = [head, rule]
+        lines = [header, rule]
         for s, v in block.items():
             row = (
                 f"| {s} | {v['accuracy']:.0%} | {v['tokens_mean']:,} | {v['calls_mean']} | "

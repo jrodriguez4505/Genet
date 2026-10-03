@@ -1,29 +1,29 @@
-"""Diagnostics at mission, slot, net, and interaction level."""
+"""Diagnostics at run, slot, stream, and interaction level."""
 
 from __future__ import annotations
 
 from collections import Counter
 
-from .mission import Mission
+from .run import Run
 
 
-PHASES = ("look", "slide", "split", "artifact", "delta", "why_submit", "why_respond", "complete", "abort")
+PHASES = ("context", "switch_skill", "split", "artifact", "delta", "review_open", "review_answer", "complete", "abort")
 
 
-def diagnose(mission: Mission) -> dict:
-    events = [e.event for e in mission.log]
+def diagnose(run: Run) -> dict:
+    events = [e.event for e in run.log]
     counts = Counter(events)
-    started = mission.log[0].ts if mission.log else 0.0
-    ended = mission.log[-1].ts if mission.log else started
+    started = run.log[0].ts if run.log else 0.0
+    ended = run.log[-1].ts if run.log else started
     duration = max(0.0, ended - started)
 
     by_slot = []
-    for slot in mission.picture.slots:
-        arts = [a for a in mission.artifacts if a.channel_id == slot.channel_id] if slot.channel_id else []
-        if not arts and slot.function == "head":
-            arts = [a for a in mission.artifacts if a.channel_id == "head-integrate"]
+    for slot in run.state.slots:
+        arts = [a for a in run.artifacts if a.channel_id == slot.channel_id] if slot.channel_id else []
+        if not arts and slot.function == "lead":
+            arts = [a for a in run.artifacts if a.channel_id == "lead-merge"]
         if not arts and slot.function == "verifier":
-            arts = [a for a in mission.artifacts if a.channel_id == "verify"]
+            arts = [a for a in run.artifacts if a.channel_id == "verify"]
         by_slot.append({
             "id": slot.id,
             "function": slot.function,
@@ -33,90 +33,90 @@ def diagnose(mission: Mission) -> dict:
             "artifacts": len(arts),
         })
 
-    nets = Counter(d.net for d in mission.deltas)
+    streams = Counter(d.stream for d in run.deltas)
     interactions = []
-    for e in mission.log:
+    for e in run.log:
         kind = _kind(e.event)
         if kind:
             interactions.append({"ts": e.ts, "kind": kind, "event": e.event, "detail": _small(e.detail)})
 
     flags = []
-    if mission.open_why_ids():
-        flags.append("open_why")
-    if mission.summary().get("plan_wrong_open"):
-        flags.append("plan_wrong_unanswered")
-    if any(e.event == "split" and not e.detail.get("gates") for e in mission.log):
+    if run.open_review_ids():
+        flags.append("open_reviews")
+    if run.summary().get("replan_open"):
+        flags.append("replan_unanswered")
+    if any(e.event == "split" and not e.detail.get("gates") for e in run.log):
         flags.append("split_without_gates")
-    if mission.picture.worker_count() > 1 and not any(d.net == "element" for d in mission.deltas):
-        flags.append("split_without_element_deltas")
+    if run.state.worker_count() > 1 and not any(d.stream == "merge" for d in run.deltas):
+        flags.append("split_without_merged_results")
 
-    pace = _pace(mission)
-    flags.extend(pace.get("flags") or [])
-    iso = _isolation(mission)
+    tier = _tier(run)
+    flags.extend(tier.get("flags") or [])
+    iso = _isolation(run)
     flags = flags + iso.get("flags", [])
-    auth = _authority(mission)
+    auth = _authority(run)
     flags.extend(auth.get("flags") or [])
-    who = _who(mission)
-    flags.extend(who.get("flags") or [])
+    roster = _roster(run)
+    flags.extend(roster.get("flags") or [])
     return {
-        "pace": pace,
-        "mission": {
-            "id": mission.id,
-            "status": mission.status.value,
+        "tier": tier,
+        "run": {
+            "id": run.id,
+            "status": run.status.value,
             "duration_s": round(duration, 4),
-            "events": len(mission.log),
-            "workers": mission.picture.worker_count(),
-            "could_this_have_been_one": mission.picture.worker_count() == 0,
-            "looked": mission.picture.context_sufficient,
-            "method": mission.picture.method,
-            "axes": list(mission.picture.axes),
+            "events": len(run.log),
+            "workers": run.state.worker_count(),
+            "could_this_have_been_one": run.state.worker_count() == 0,
+            "context_checked": run.state.context_sufficient,
+            "method": run.state.method,
+            "axes": list(run.state.axes),
         },
         "counts": dict(counts),
         "phases_seen": [p for p in PHASES if p in counts],
         "slots": by_slot,
-        "nets": {
-            "open": list(mission.open_nets),
-            "delta_counts": dict(nets),
-            "deltas": len(mission.deltas),
+        "streams": {
+            "open": list(run.open_streams),
+            "delta_counts": dict(streams),
+            "deltas": len(run.deltas),
         },
-        "why": {
-            "notes": len(mission.notes),
-            "open": mission.open_why_ids(),
-            "kinds": {k: n.kind for k, n in mission.notes.items()},
+        "reviews": {
+            "notes": len(run.notes),
+            "open": run.open_review_ids(),
+            "kinds": {k: n.kind for k, n in run.notes.items()},
         },
-        "cues": list(mission.cues),
+        "cues": list(run.cues),
         "interactions": interactions,
-        "performance": _performance(mission),
+        "performance": _performance(run),
         "isolation": iso,
-        "who": who,
+        "roster": roster,
         "authority": auth,
-        "adapter": getattr(mission, "adapter_name", "") or next((c.get("adapter") for c in getattr(mission, "calls", []) if c.get("adapter")), ""),
+        "adapter": getattr(run, "adapter_name", "") or next((c.get("adapter") for c in getattr(run, "calls", []) if c.get("adapter")), ""),
         "flags": flags,
         "health": "degraded" if flags else "ok",
     }
 
 
-def _pace(mission: Mission) -> dict:
-    b = getattr(mission, "budget", None)
+def _tier(run: Run) -> dict:
+    b = getattr(run, "budget", None)
     flags = []
     if b is None:
         return {"name": "unknown", "armed": False, "flags": ["budget_missing"]}
-    used_calls = len(getattr(mission, "calls", []) or [])
-    used_tokens = sum((c.get("prompt_tokens") or 0) + (c.get("completion_tokens") or 0) for c in getattr(mission, "calls", []) or [])
-    started = mission.log[0].ts if mission.log else 0.0
-    ended = mission.log[-1].ts if mission.log else started
+    used_calls = len(getattr(run, "calls", []) or [])
+    used_tokens = sum((c.get("prompt_tokens") or 0) + (c.get("completion_tokens") or 0) for c in getattr(run, "calls", []) or [])
+    started = run.log[0].ts if run.log else 0.0
+    ended = run.log[-1].ts if run.log else started
     elapsed = max(0.0, ended - started)
-    workers = mission.picture.worker_count()
-    name = getattr(b, "pace", "run")
-    if name == "crawl" and workers > 0:
-        flags.append("crawl_grew_who")
-    if name == "crawl" and any(e.event == "split" for e in mission.log):
-        flags.append("crawl_split")
-    if name == "walk" and workers > 0:
-        flags.append("walk_split")
-    if name == "crawl" and any(n.kind == "plan_wrong" for n in mission.notes.values()):
-        flags.append("crawl_adapt")
-    if mission.status.value == "abort" and (mission.stop_reason or "").startswith("max_"):
+    workers = run.state.worker_count()
+    name = getattr(b, "tier", "open")
+    if name == "tight" and workers > 0:
+        flags.append("tight_grew_roster")
+    if name == "tight" and any(e.event == "split" for e in run.log):
+        flags.append("tight_split")
+    if name == "normal" and workers > 0:
+        flags.append("normal_split")
+    if name == "tight" and any(n.kind == "replan" for n in run.notes.values()):
+        flags.append("tight_replan")
+    if run.status.value == "abort" and (run.stop_reason or "").startswith("max_"):
         flags.append("budget_halt")
     remaining = {
         "calls": max(0, b.max_calls - used_calls),
@@ -136,13 +136,13 @@ def _pace(mission: Mission) -> dict:
         },
         "used": {"calls": used_calls, "tokens": used_tokens, "seconds": round(elapsed, 3)},
         "remaining": remaining,
-        "stop_reason": getattr(mission, "stop_reason", ""),
+        "stop_reason": getattr(run, "stop_reason", ""),
         "flags": flags,
     }
 
 
-def _performance(mission: Mission) -> dict:
-    calls = list(getattr(mission, "calls", []) or [])
+def _performance(run: Run) -> dict:
+    calls = list(getattr(run, "calls", []) or [])
     lat = [c.get("latency_s") or 0 for c in calls]
     pt = sum(c.get("prompt_tokens") or 0 for c in calls)
     ct = sum(c.get("completion_tokens") or 0 for c in calls)
@@ -166,13 +166,13 @@ def _performance(mission: Mission) -> dict:
     }
 
 
-def _isolation(mission: Mission) -> dict:
+def _isolation(run: Run) -> dict:
     """Did any worker brief carry a sibling's product?
 
     heard_channels is computed at call time over the whole brief (packet and
-    picture) and survives save/load. packet is only present in memory.
+    context) and survives save/load. packet is only present in memory.
     """
-    workers = [c for c in getattr(mission, "calls", []) or [] if c.get("function") == "worker"]
+    workers = [c for c in getattr(run, "calls", []) or [] if c.get("function") == "worker"]
     heard: dict[str, set[str]] = {}
     unverified: set[str] = set()
     for c in workers:
@@ -203,19 +203,19 @@ def _isolation(mission: Mission) -> dict:
 
 def _kind(event: str) -> str | None:
     mapping = {
-        "look": "where",
-        "slide": "who",
-        "write_who": "who",
-        "split": "who",
-        "set_how": "how",
+        "context": "context",
+        "switch_skill": "roster",
+        "set_roster": "roster",
+        "split": "roster",
+        "set_method": "method",
         "artifact": "act",
-        "delta": "element",
-        "why_submit": "up",
-        "why_respond": "up",
-        "write_net": "net",
-        "complete": "mission",
-        "cue_mint": "when",
-        "gate": "who",
+        "delta": "merge",
+        "review_open": "review",
+        "review_answer": "review",
+        "open_stream": "stream",
+        "complete": "run",
+        "cue_mint": "trigger",
+        "gate": "roster",
         "tool": "act",
     }
     return mapping.get(event)
@@ -224,25 +224,25 @@ def _kind(event: str) -> str | None:
 def _small(detail: dict) -> dict:
     keep = {}
     for k, v in (detail or {}).items():
-        if k in ("actor", "slot", "skill", "net", "channel", "response", "id", "added", "method", "axes",
+        if k in ("actor", "slot", "skill", "stream", "channel", "response", "id", "added", "method", "axes",
                  "channel_id", "legal", "gate", "refused", "request"):
             keep[k] = v
     return keep
 
 
-SEIZE = ("write_who", "spawn", "i am the head", "take over the roster", "change who", "add a worker")
+TAKEOVER = ("set_roster", "spawn", "i am the lead", "take over the roster", "change the roster", "add a worker")
 
 
-def _authority(mission: Mission) -> dict:
+def _authority(run: Run) -> dict:
     flags = []
     hits = []
-    for art in mission.artifacts:
-        blob = " ".join([art.claim, *art.evidence, art.delta_to_picture]).lower()
+    for art in run.artifacts:
+        blob = " ".join([art.claim, *art.evidence, art.context_update]).lower()
         found = []
-        for w in SEIZE:
+        for w in TAKEOVER:
             if w not in blob:
                 continue
-            # Doctrine quote ("may not take over the roster") is not a hit.
+            # Guidelines quote ("may not take over the roster") is not a hit.
             idx = blob.find(w)
             window = blob[max(0, idx - 18) : idx]
             if any(neg in window for neg in ("not ", "may not ", "cannot ", "can't ", "do not ", "don't ")):
@@ -254,16 +254,16 @@ def _authority(mission: Mission) -> dict:
     return {"hits": hits, "flags": flags}
 
 
-def _who(mission: Mission) -> dict:
-    now = [s.id for s in mission.picture.slots]
-    opened = list(getattr(mission, "who_open", []) or [])
+def _roster(run: Run) -> dict:
+    now = [s.id for s in run.state.slots]
+    opened = list(getattr(run, "roster_at_start", []) or [])
     flags = []
-    if opened and now != opened and mission.picture.worker_count() == 0:
-        flags.append("who_changed_without_workers")
+    if opened and now != opened and run.state.worker_count() == 0:
+        flags.append("roster_changed_without_workers")
     return {
         "open": opened,
         "now": now,
         "unchanged": opened == now,
-        "head": mission.picture.who_head_id,
+        "lead": run.state.lead_id,
         "flags": flags,
     }

@@ -5,11 +5,11 @@ from enum import Enum
 from typing import Optional
 
 
-FUNCTIONS = ("head", "worker", "verifier", "memory", "why")
-QUALS = ("execute", "retrieve", "reason", "draft", "simulate", "observe", "verify")
-# Tool allowlist per qualification. Runnable tools (see tools.py): read, retrieve, observe.
-# write / simulate / verify have no outside effect; the result goes in the artifact.
-QUAL_TOOLS = {
+FUNCTIONS = ("lead", "worker", "verifier", "memory", "reviewer")
+SKILLS = ("execute", "retrieve", "reason", "draft", "simulate", "observe", "verify")
+# Tool allowlist per skill. Runnable tools (see tools.py): read, retrieve, observe.
+# write / simulate / verify act on nothing outside; the result goes in the artifact.
+SKILL_TOOLS = {
     "execute": ("write",),
     "retrieve": ("retrieve", "read"),
     "reason": ("write",),
@@ -20,9 +20,11 @@ QUAL_TOOLS = {
 }
 AXES = ("parallel", "fallback", "reroute", "sequential", "reverse", "fan_in")
 GATE_ORDER = ("can_someone_else", "should_we", "could_we")
-HEAD_RESPONSES = ("KEEP_ROSTER", "CHANGE_METHOD", "REVISE_GOAL", "DEFER")
+LEAD_RESPONSES = ("KEEP_ROSTER", "CHANGE_METHOD", "REVISE_GOAL", "DEFER")
 MAX_WORKERS = 4
-NETS = ("element", "up", "out", "adjacent")
+# Message streams: merge (sub-agent results into shared context), escalate (to the lead),
+# report (to the operator), peer (to another run; never merged).
+STREAMS = ("merge", "escalate", "report", "peer")
 
 
 class Status(str, Enum):
@@ -49,10 +51,10 @@ class Slot:
     def __post_init__(self):
         if self.function not in FUNCTIONS:
             raise ValueError(f"unknown function: {self.function}")
-        if self.skill not in QUALS:
+        if self.skill not in SKILLS:
             raise ValueError(f"unknown skill: {self.skill}")
         if not self.tools:
-            self.tools = list(QUAL_TOOLS.get(self.skill, ("write",)))
+            self.tools = list(SKILL_TOOLS.get(self.skill, ("write",)))
 
 
 @dataclass
@@ -61,7 +63,7 @@ class Artifact:
     evidence: list[str]
     uncertainty: str
     channel_id: str
-    delta_to_picture: str
+    context_update: str
     requests: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
@@ -74,28 +76,28 @@ class Artifact:
 
 
 @dataclass
-class WhyNote:
+class ReviewNote:
     id: str
     body: str
     status: NoteStatus = NoteStatus.OPEN
     response: Optional[str] = None
     reason: Optional[str] = None
-    kind: str = "why"
+    kind: str = "review"
 
 
 @dataclass
 class Delta:
-    """Typed mark on the living picture. Element-net payload."""
+    """A typed update to the shared context, carried on one stream."""
 
     claim: str
     evidence: list[str]
     uncertainty: str
     channel_id: str
-    net: str = "element"
+    stream: str = "merge"
 
     def __post_init__(self):
-        if self.net not in NETS:
-            raise ValueError(f"unknown net: {self.net}")
+        if self.stream not in STREAMS:
+            raise ValueError(f"unknown stream: {self.stream}")
 
 
 @dataclass
@@ -138,19 +140,19 @@ class GateRecord:
 
 
 @dataclass
-class FiveWH:
-    who_head_id: str
+class RunState:
+    lead_id: str
     slots: list[Slot]
     primary: str
-    effect: str
+    goal: str
     success_criteria: list[str]
-    tempo: str
-    decision_points: list[str]
-    current_picture: str
-    end_state: str
+    cadence: str
+    checkpoints: list[str]
+    context: str
+    done_when: str
     purpose: str
     method: str
-    step_off_picture: str = ""
+    initial_context: str = ""
     projections: list[str] = field(default_factory=list)
     context_sufficient: bool = False
     axes: list[str] = field(default_factory=list)
@@ -165,4 +167,4 @@ class FiveWH:
                 return s
         from .errors import InvariantError
 
-        raise InvariantError("WHO", f"no slot {slot_id!r} on the roster")
+        raise InvariantError("ROSTER", f"no slot {slot_id!r} on the roster")

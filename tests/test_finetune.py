@@ -3,7 +3,7 @@ from pathlib import Path
 
 from taskorg.budget import Budget
 from taskorg.errors import InvariantError
-from taskorg.factory import element_at_rest
+from taskorg.factory import new_run
 from taskorg.finetune import (
     LivePolicy,
     build_corpus,
@@ -33,7 +33,7 @@ def test_write_jsonl(tmp_path: Path):
     assert len(lines) == len(rows)
     parsed = json.loads(lines[0])
     assert "messages" in parsed
-    assert "vector" not in parsed
+    assert "method" not in parsed
 
 
 def test_parse_rejects_spawn():
@@ -50,22 +50,22 @@ def test_live_policy_uses_injected_complete():
         return '{"action":"HOLD","confidence":0.9,"rationale_id":"teacher"}'
 
     pol = LivePolicy(complete)
-    m = element_at_rest("ft1", "task", "purpose", "done")
-    m.attach_budget(Budget.for_pace("crawl"))
-    m.picture.context_sufficient = True
+    m = new_run("ft1", "task", "purpose", "done")
+    m.attach_budget(Budget.for_tier("tight"))
+    m.state.context_sufficient = True
     dec = pol.act(encode_board(m))
     assert dec.action == "HOLD"
 
 
 def test_finetuned_head_keeps_invariants():
     pol = fine_tune_head(build_corpus(160))
-    crawl = element_at_rest("ft2", "task", "purpose", "done")
-    crawl.attach_budget(Budget.for_pace("crawl"))
-    crawl.picture.context_sufficient = True
-    assert pol.act(encode_board(crawl)).action != "PROPOSE_CHANNEL"
+    tight = new_run("ft2", "task", "purpose", "done")
+    tight.attach_budget(Budget.for_tier("tight"))
+    tight.state.context_sufficient = True
+    assert pol.act(encode_board(tight)).action != "PROPOSE_CHANNEL"
 
-    exists = element_at_rest("ft3", "Write summary", "Do not duplicate", "Once")
-    exists.attach_budget(Budget.for_pace("run"))
-    exists.picture.context_sufficient = True
+    exists = new_run("ft3", "Write summary", "Do not duplicate", "Once")
+    exists.attach_budget(Budget.for_tier("open"))
+    exists.state.context_sufficient = True
     exists.world = World(existing_files=["summary.md"], existing_channels=["summary"])
     assert pol.act(encode_board(exists)).action == "HOLD"

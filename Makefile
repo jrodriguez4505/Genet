@@ -1,4 +1,4 @@
-.PHONY: test bench mission crawl brief board
+.PHONY: test bench run single brief board
 
 test:
 	PYTHONPATH=. pytest -q
@@ -6,14 +6,14 @@ test:
 bench:
 	PYTHONPATH=. python -m taskorg.cli bench
 
-mission:
-	PYTHONPATH=. python -m taskorg.cli mission --pace crawl --out data/missions/ms-001.json
+run:
+	PYTHONPATH=. python -m taskorg.cli run --tier tight --out data/runs/ms-001.json
 
-crawl:
-	PYTHONPATH=. python -m taskorg.cli run --pace crawl --out data/missions/crawl.json
+single:
+	PYTHONPATH=. python -m taskorg.cli single --tier tight --out data/runs/single.json
 
 brief:
-	PYTHONPATH=. python -m taskorg.cli brief --effect "Issue the order" --purpose "Hold the picture" --look "enough" --out data/missions/brief-001.json
+	PYTHONPATH=. python -m taskorg.cli brief --goal "Write the report" --purpose "Keep the context" --context "enough" --out data/runs/brief-001.json
 
 board:
-	PYTHONPATH=. python -m taskorg.cli board data/missions/brief-001.json
+	PYTHONPATH=. python -m taskorg.cli board data/runs/brief-001.json
