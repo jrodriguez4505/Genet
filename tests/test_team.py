@@ -48,7 +48,7 @@ def _reply(claim, evidence=(), requests=()):
 # --- skills and subtasks ---
 
 
-def test_every_skillification_has_a_role():
+def test_every_skill_has_a_brief():
     assert set(BRIEFS) == set(SKILLS)
 
 
@@ -251,7 +251,7 @@ def test_lead_splits_into_specialists_and_merges(tmp_path: Path):
     assert m.notes["question-1"].reason == "2 sub-agents: note-a, note-b"
 
 
-def test_one_open_part_cross_trains_the_lead(tmp_path: Path):
+def test_one_open_part_switches_the_lead_skill(tmp_path: Path):
     m = new_run("ms-3", "Find the number", "One source", "Number stated")
     _engine(tmp_path, "tight", toolbox=Toolbox(roots=[_workspace(tmp_path)])).run_task(
         m, context="subtask:note-a@retrieve=needs_search")
@@ -371,7 +371,7 @@ def test_system_prompt_fits_role_and_specialty():
     assert "no tools" in system_prompt(_brief("verifier", "verify", tools=["verify"]))
 
 
-def test_model_per_skillification(monkeypatch):
+def test_model_per_skill(monkeypatch):
     monkeypatch.setenv("TASKORG_MODEL_BASE", "https://example.invalid/v1")
     monkeypatch.setenv("TASKORG_MODEL_KEY", "test-key")
     monkeypatch.setenv("TASKORG_MODEL_NAME", "base-model")
@@ -396,7 +396,7 @@ def test_cli_run(tmp_path: Path, capsys):
     assert load_run(out).state.worker_count() == 2
 
 
-def test_cli_missing_workstier(tmp_path: Path, capsys):
+def test_cli_missing_workspace(tmp_path: Path, capsys):
     rc = main(["run", "--workspace", str(tmp_path / "nope"), "--store", str(tmp_path), "--out", str(tmp_path / "x.json")])
     assert rc == 1
     assert "READ" in capsys.readouterr().out

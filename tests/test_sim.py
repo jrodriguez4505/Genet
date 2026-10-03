@@ -16,7 +16,7 @@ def test_reader_recovers_every_fact_and_no_distractor():
         assert got == want, c.name
 
 
-def test_context_alike_names_stay_apart():
+def test_look_alike_names_stay_apart():
     assert find_slugs("read halvorsen-freight-labs.md then halvorsen-freight.md") == ["halvorsen-freight-labs", "halvorsen-freight"]
     q = parse_question("Which had the higher FY2026 Q2 customer churn: Quillon Biologics or Quillon Bio?")
     assert q.slugs == ["quillon-biologics", "quillon-bio"] and q.kind == "max" and q.metric == "churn"

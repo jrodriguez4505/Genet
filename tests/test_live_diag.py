@@ -7,7 +7,7 @@ from taskorg.memory_store import MemoryStore
 from taskorg.models import Artifact
 
 
-def test_diagnose_roster_and_replaner(tmp_path: Path):
+def test_diagnose_roster_and_adapter(tmp_path: Path):
     store = MemoryStore(tmp_path)
     m = new_run("ld-1", "Write the report", "Keep the context", "Report written")
     Engine(store).run_single(m, context="enough", operator_question="one?")

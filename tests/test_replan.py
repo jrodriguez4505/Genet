@@ -8,7 +8,7 @@ from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
 
 
-def test_hold_org_illegal_on_replan():
+def test_keep_roster_illegal_on_replan():
     m = new_run("pw-1", "Summarize the notes", "Keep sources apart", "Summary written")
     m.update_context("lead-1", "the first source is stale")
     m.request_replan("the first plan no longer fits: the first source is stale")
@@ -26,7 +26,7 @@ def test_complete_blocked_until_method_changes():
     assert e.value.code == "INV-14"
 
 
-def test_change_how_clears_replan():
+def test_change_method_clears_replan():
     m = new_run("pw-3", "Summarize the notes", "Keep sources apart", "Summary written")
     m.update_context("lead-1", "the first source is stale")
     m.request_replan("the plan no longer fits; switch to source-b")
@@ -37,7 +37,7 @@ def test_change_how_clears_replan():
     assert m.status.value == "complete"
 
 
-def test_recut_purpose_when_what_is_dead():
+def test_revise_purpose_when_the_goal_no_longer_fits():
     m = new_run("pw-4", "Summarize the dataset", "Keep the sources apart", "Summary written")
     m.request_replan("wrong dataset")
     m.answer_review("lead-1", "replan", "REVISE_GOAL", "Keep the other run separate")

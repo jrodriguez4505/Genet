@@ -63,7 +63,7 @@ def test_context_without_subtasks_stays_one(tmp_path: Path):
     assert m.summary()["could_this_have_been_one"] is True
 
 
-def test_split_still_cannot_skip_context_context_rule(tmp_path: Path):
+def test_split_still_cannot_skip_the_context_rule(tmp_path: Path):
     store = MemoryStore(tmp_path)
     m = new_run("p2-explore", "Summarize the notes", "Keep sources apart", "Summary written")
     m.update_context("lead-1", "the context is already complete")

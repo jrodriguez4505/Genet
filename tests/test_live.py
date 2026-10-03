@@ -57,7 +57,7 @@ def test_empty_claim_rejected():
     assert e.value.code == "SCHEMA"
 
 
-def test_scripted_replaner_drives_loop(tmp_path):
+def test_scripted_adapter_drives_loop(tmp_path):
     replies = [
         '{"claim":"PASS default task drafted","evidence":["context","purpose"],"uncertainty":"stub-live","channel_id":"lead-merge","context_update":"report on paper","requests":[]}',
         '{"claim":"PASS","evidence":["default task","purpose"],"uncertainty":"none","channel_id":"verify","context_update":"verified","requests":[]}',
