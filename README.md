@@ -109,7 +109,12 @@ pytest -q
 ```bash
 # The lead staffs the task.
 python -m taskorg.cli run --context "One paragraph holds everything needed."
+
+# Two notes. If they fit one context, the gates keep a single agent and say why.
+# --isolate declares they must not share a context, so the gates allow a fan-out.
 python -m taskorg.cli run --tier open --workspace notes/ \
+  --context "subtask:note-a@retrieve=sources_must_not_mix subtask:note-b@retrieve=sources_must_not_mix"
+python -m taskorg.cli run --tier open --workspace notes/ --isolate \
   --context "subtask:note-a@retrieve=sources_must_not_mix subtask:note-b@retrieve=sources_must_not_mix"
 
 # Fixed paths: the operator picks the shape.
