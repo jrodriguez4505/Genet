@@ -59,10 +59,12 @@ Every proposed sub-task goes through three gates in order, and they fail closed:
 | Gate | Refuses a sub-task when |
 |---|---|
 | Can someone else | A file or channel in the world already covers it, the channel is already staffed, it repeats another proposal, or it is verification (the verifier's job). A single open sub-task is the lead's job, not a new agent's. |
-| Should we | It names no failure: what goes wrong if a single agent does it. |
+| Should we | It names no failure: what goes wrong if a single agent does it. Then, for the team: there is no measurable reason a single agent would fail. A fan-out needs one of two reasons: the operator declared that the sub-tasks must stay isolated (`--isolate`), or their material does not fit in half of one call's context. Material is estimated from the sizes of the workspace files each sub-task covers. If the material can't be measured, it doesn't count as a reason. |
 | Could we | Its skill is unknown, or its channel id is unusable or reserved. The budget tier does not allow a fan-out. The budget cannot pay for the sub-agents plus merge and verify. The cap of 4 workers is full. |
 
 A fan-out needs at least two legal sub-tasks.
+
+That second check makes the gate measurable rather than rhetorical. The lead can no longer split work just by giving a reason. `--split-policy stated` restores the old behavior, where the lead's named reasons are enough; it is kept for comparison. Fan-outs the operator names with the `fanout` command count as declared.
 
 When the plan no longer fits, request a replan and change the method. `KEEP_ROSTER` is illegal on a replan request; use `CHANGE_METHOD` or `REVISE_GOAL`.
 
@@ -128,6 +130,8 @@ Every run command takes these flags:
 - `--workspace DIR`: specialists may read and search here.
 - `--exists FILE`: the file's name covers a channel.
 - `--criteria TEXT`: the product must show this.
+- `--isolate`: the sub-tasks must not share a context, which is a declared reason to fan out.
+- `--split-policy measured|stated`: what "should we" accepts (default `measured`).
 - `--tier`, plus budget overrides: `--max-calls`, `--max-tokens`, `--max-seconds`, `--max-tokens-per-call`.
 
 Each run starts with clean working memory, even when you reuse a run id. Runs saved before the 0.2 rename still load.
@@ -142,7 +146,8 @@ Each run starts with clean working memory, even when you reuse a run id. Runs sa
 |---|---|
 | `single` | One agent works the task. No planning call. |
 | `always` | Crew style: the lead always decomposes, and every sub-task gets a worker. |
-| `genet` | The lead proposes sub-agents and the gates judge them. |
+| `genet` | The lead proposes sub-agents and the gates judge them, with the measured "should we". |
+| `genet-stated` | Same, but the lead's stated reasons are enough. Add it with `--strategies single,always,genet,genet-stated`. |
 
 The tasks come from a seeded, synthetic corpus of company operating notes, so ground truth is exact and no model has seen it. Facts are written in varied prose and surrounded by distractors: prior-year figures and look-alike company names.
 
@@ -163,6 +168,15 @@ python -m taskorg.cli compare --adapter live --price-in 2 --price-out 10   # ful
 ```
 
 The `sim` adapter is a deterministic reader, not a language model. It solves every task under every strategy, which shows the harness gives each strategy the facts it needs. Its token counts show what each strategy costs by structure alone. With a perfect reader, splitting never pays: a single agent is cheapest in every family. Splitting can only earn its cost if a real model reads worse with everything in one context. The live run is what measures that.
+
+What the simulated reader shows. These are structural results from a perfect reader, not model results:
+
+| Per-call context | Single agent | Always-split crew | Genet |
+|---|---|---|---|
+| Roomy, `--context 16000` | 100% · 1,913 tokens/task | 100% · 3,503 | 100% · 2,284 (1.19× single) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 3,503 | 100% · 3,304 (0.94× crew) |
+
+When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Whether real models also read worse with everything in one context, which is the other reason to split, is what the live run measures.
 
 The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. No live results are published yet.
 
@@ -200,7 +214,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 520 checks with no network and no key:
+`pytest -q` runs about 550 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -209,6 +223,8 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Live adapter.** Driven against a fake OpenAI-compatible endpoint: prompts, usage accounting, HTTP errors, timeouts.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
+
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 57 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox and model-output checks, and confirms that some test fails for each. All 57 are caught.
 
 ## Terms
 
@@ -219,6 +235,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 | Sub-agent | A worker with an isolated context and one channel. | `worker` slot with a `channel_id` |
 | Sub-task | A part of the work with a stated reason to run separately. | `Subtask`, `subtask:<channel>@<skill>=<failure>` |
 | Gates | Admission control for sub-agents. | `gates.assess()`, `GateRecord` |
+| Split policy | What counts as a reason to fan out: measured (default) or stated. | `Engine(split_policy=...)`, `--split-policy` |
 | Skill | A role brief plus a tool allowlist. | `Slot.skill`, `SKILLS`, `Run.switch_skill()` |
 | Goal | What the run must deliver, with success criteria and a done-when condition. | `goal`, `success_criteria`, `done_when` |
 | Method | The current plan. | `RunState.method`, `axes` |
@@ -233,7 +250,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.2 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.3 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

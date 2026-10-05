@@ -2,6 +2,25 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.3 — October 2026
+
+- **Measured "should we".** A fan-out of the lead's proposals needs one of two reasons:
+  - The operator declared isolation (`--isolate`).
+  - The sub-tasks' material doesn't fit in half of one call's context, estimated from the sizes of the workspace files they cover.
+
+  Material that can't be measured doesn't count as a reason. Every gate record names its basis: `declared`, `measured` or `stated`. `--split-policy stated` keeps the old behavior for comparison, and `compare` gains a `genet-stated` strategy.
+- **What the simulated reader shows.** Genet matches the best accuracy in both regimes:
+  - **Roomy context (16k):** Genet stays a single agent at 1.19× its cost; it was 2.5× before this change.
+  - **Tight context (1.5k):** a single agent aborts on overflow, scoring 55%, and Genet fans out at 0.94× the cost of a crew.
+- **Mutation testing.** `scripts/mutation_check.py` breaks 57 rules one at a time. The first pass found 4 rules no test protected:
+  - the gate record's own order check
+  - the reviewer's skill ban
+  - sub-agents working from the split-time context
+  - the replan tier check
+
+  Each now has a test, and all 57 mutations are caught.
+- **A sim fix.** The deterministic reader read a file once per mention, so each sub-agent read its file three times. That inflated every sub-agent's cost in earlier sim results. The figures above are after the fix.
+
 ## v0.2 — October 2026
 
 ### Lead-driven staffing
@@ -120,7 +139,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 5,000 lines in `taskorg/`. Suite: 524 checks (about 220 test functions, several parametrized, including 300 fuzz sequences) and 9 bench fixtures.
+Kernel: about 5,100 lines in `taskorg/`. Suite: about 550 checks (including 300 fuzz sequences), 9 bench fixtures, and 57 mutation checks.
 
 ## Run
 

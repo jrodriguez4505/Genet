@@ -60,6 +60,11 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--criteria", action="append", default=[], help="success criterion the product must show")
     p.add_argument("--exists", action="append", default=[], help="file already on disk; its name covers a channel")
     p.add_argument("--workspace", action="append", default=[], help="directory specialists may read and search")
+    p.add_argument("--isolate", action="store_true",
+                   help="the sub-tasks must not share a context (a declared reason to fan out)")
+    p.add_argument("--split-policy", default="measured", choices=["measured", "stated"],
+                   help="measured: fan out only for declared isolation or material that does not fit one context; "
+                        "stated: the lead's named reasons are enough")
     _add_budget_args(p)
 
 
@@ -93,7 +98,8 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
         if not Path(root).is_dir():
             raise InvariantError("READ", f"workspace is not a directory: {root}")
     toolbox = Toolbox(roots=args.workspace, files=args.read)
-    return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox)
+    return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
+                  split_policy=args.split_policy, isolation_required=args.isolate)
 
 
 def _axes(raw: str) -> list[str]:

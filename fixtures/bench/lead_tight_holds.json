@@ -12,5 +12,6 @@
     "split": false,
     "health": "ok",
     "refused_contains": "budget tier tight does not allow a split"
-  }
+  },
+  "isolate": true
 }

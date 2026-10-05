@@ -102,6 +102,9 @@ class Assessment:
     gates: GateRecord
     refused: str = ""
     gate: str = ""
+    # Why "should we" passed: "declared" (the operator required isolation), "measured"
+    # (the material does not fit one context) or "stated" (the lead's words alone).
+    basis: str = ""
 
     @property
     def legal(self) -> bool:
@@ -125,6 +128,7 @@ class Assessment:
             "legal": self.legal,
             "gate": self.gate,
             "refused": self.refused,
+            "basis": self.basis,
             "gates": {
                 "can_someone_else": self.gates.can_someone_else,
                 "should_we": self.gates.should_we,
@@ -134,9 +138,27 @@ class Assessment:
         }
 
 
+SPLIT_POLICIES = ("measured", "stated")
+
+
+def _need(open_: list[Assessment], policy: str, declared: bool, material, context_limit: int | None, fit_fraction: float) -> str:
+    """The team's "should we": the basis for a fan-out, or "refuse:<reason>"."""
+    if declared:
+        return "declared"
+    if policy == "stated":
+        return "stated"
+    sizes = [material(a.subtask) if material else None for a in open_]
+    if context_limit is None or any(s is None for s in sizes):
+        return "refuse:no measurable reason to split: the material is unknown and isolation was not declared"
+    total, room = sum(sizes), int(context_limit * fit_fraction)
+    if total <= room:
+        return f"refuse:fits in one context: ~{total} tokens of material vs {room} available per call"
+    return "measured"
+
+
 def _could_we(subtask: Subtask) -> str:
     if subtask.skill not in SKILLS:
-        return f"no such specialty: {subtask.skill}"
+        return f"no such skill: {subtask.skill}"
     if not _CHANNEL.match(subtask.channel_id or ""):
         return f"channel id not usable: {subtask.channel_id!r}"
     if subtask.channel_id in RESERVED_CHANNELS:
@@ -155,24 +177,36 @@ def assess(
     worker_slots_left: int = MAX_WORKERS,
     calls_after_split: int = 2,
     worker_cost: Callable[[Subtask], int] | None = None,
+    policy: str = "stated",
+    declared: bool = False,
+    material: Callable[[Subtask], int | None] | None = None,
+    context_limit: int | None = None,
+    fit_fraction: float = 0.5,
 ) -> list[Assessment]:
     """
     Judge a proposed task organization, gate by gate, in order. Fails closed.
 
-    Each subtask:
+    Each sub-task:
       1. can someone else  the world covers it, the channel is staffed, it repeats
-                           another subtask, or it is verification (the verifier's job)
+                           another sub-task, or it is verification (the verifier's job)
       2. should we         it names what goes wrong if a single agent does it
-      3. could we          a known specialty and a usable channel id
+      3. could we          a known skill and a usable channel id
     Then the team:
       1. can someone else  one open sub-task is the lead's job, not a new agent
-      3. could we          the budget tier allows a split; the budget pays for every sub-agent
-                           plus integrate and verify; the worker cap holds
+      2. should we         under policy="measured", a reason a single agent would fail:
+                           the operator declared isolation, or the sub-tasks' material
+                           (estimated tokens) exceeds fit_fraction of one call's context.
+                           Material that cannot be measured is not a reason.
+                           Under policy="stated", the named failures are enough.
+      3. could we          the budget tier allows a split; the budget pays for every
+                           sub-agent plus merge and verify; the worker cap holds
 
     A split needs at least two legal sub-tasks. Sub-task order is priority when the
     budget or cap can only pay for some of them. worker_cost is the most calls
-    one sub-agent may spend (default 1); calls_after_split covers integrate + verify.
+    one sub-agent may spend (default 1); calls_after_split covers merge + verify.
     """
+    if policy not in SPLIT_POLICIES:
+        raise InvariantError("GATES", f"split policy must be one of {SPLIT_POLICIES}, got {policy!r}")
     world = world or World()
     out: list[Assessment] = []
     seen: set[str] = set()
@@ -199,7 +233,15 @@ def assess(
     open_ = [a for a in out if a.legal]
     if len(open_) == 1:
         open_[0].refuse("can_someone_else", LEAD_COVERS)
-    elif len(open_) >= 2 and not allow_split:
+    elif len(open_) >= 2:
+        need = _need(open_, policy, declared, material, context_limit, fit_fraction)
+        for a in open_:
+            if need.startswith("refuse:"):
+                a.refuse("should_we", need[len("refuse:"):])
+            else:
+                a.basis = need
+        open_ = [a for a in open_ if a.legal]
+    if len(open_) >= 2 and not allow_split:
         for a in open_:
             a.refuse("could_we", f"budget tier {tier or '?'} does not allow a split")
     elif len(open_) >= 2:

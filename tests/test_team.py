@@ -180,7 +180,7 @@ def test_toolbox_attached_file_and_empty_box(tmp_path: Path):
 def test_specialist_uses_its_tool_and_cites_it(tmp_path: Path):
     ws = _workspace(tmp_path)
     m = new_run("tl-1", "Answer two notes", "Do not mix", "Integrated")
-    _engine(tmp_path, toolbox=Toolbox(roots=[ws])).run_task(m, context=TWO)
+    _engine(tmp_path, toolbox=Toolbox(roots=[ws]), isolation_required=True).run_task(m, context=TWO)
     tools = [e.detail for e in m.log if e.event == "tool"]
     assert {t["channel"] for t in tools} == {"note-a", "note-b"}
     a = next(x for x in m.artifacts if x.channel_id == "note-a")
@@ -239,7 +239,7 @@ def test_single_agent_when_nothing_is_independent(tmp_path: Path):
 
 def test_lead_splits_into_specialists_and_merges(tmp_path: Path):
     m = new_run("ms-2", "Answer two notes", "Do not mix", "Integrated")
-    result = _engine(tmp_path, toolbox=Toolbox(roots=[_workspace(tmp_path)])).run_task(m, context=TWO)
+    result = _engine(tmp_path, toolbox=Toolbox(roots=[_workspace(tmp_path)]), isolation_required=True).run_task(m, context=TWO)
     assert result.split is True
     assert result.channels == ["note-a", "note-b"]
     assert {s.skill for s in m.state.slots if s.function == "worker"} == {"retrieve"}
@@ -263,7 +263,7 @@ def test_one_open_part_switches_the_lead_skill(tmp_path: Path):
 
 def test_tight_holds_single_agent_even_with_two_parts(tmp_path: Path):
     m = new_run("ms-4", "Answer two notes", "Do not mix", "Integrated")
-    _engine(tmp_path, "tight").run_task(m, context=TWO)
+    _engine(tmp_path, "tight", isolation_required=True).run_task(m, context=TWO)
     assert m.state.worker_count() == 0
     assert "budget tier tight does not allow a split" in m.notes["question-1"].reason
     assert "tight_split" not in diagnose(m)["flags"]
@@ -330,7 +330,7 @@ class Rendezvous(StubAdapter):
 
 def test_sub_agents_run_concurrently_and_report_in_order(tmp_path: Path):
     m = new_run("cc-1", "Answer two notes", "Do not mix", "Integrated")
-    Engine(MemoryStore(tmp_path), adapter=Rendezvous(), budget=Budget.for_tier("open")).run_task(m, context=TWO)
+    Engine(MemoryStore(tmp_path), adapter=Rendezvous(), budget=Budget.for_tier("open"), isolation_required=True).run_task(m, context=TWO)
     worker_arts = [a.channel_id for a in m.artifacts if a.channel_id.startswith("note")]
     assert worker_arts == ["note-a", "note-b"]
     # plan + 2 sub-agents x (tool round + product) + merge + verify
@@ -340,7 +340,7 @@ def test_sub_agents_run_concurrently_and_report_in_order(tmp_path: Path):
 
 def test_sequential_mode_still_works(tmp_path: Path):
     m = new_run("cc-2", "Answer two notes", "Do not mix", "Integrated")
-    _engine(tmp_path, parallel=False).run_task(m, context=TWO)
+    _engine(tmp_path, parallel=False, isolation_required=True).run_task(m, context=TWO)
     assert m.state.worker_count() == 2
 
 
@@ -388,7 +388,7 @@ def test_model_per_skill(monkeypatch):
 def test_cli_run(tmp_path: Path, capsys):
     ws = _workspace(tmp_path)
     out = tmp_path / "ms.json"
-    rc = main(["run", "--tier", "open", "--workspace", str(ws), "--store", str(tmp_path / "data"),
+    rc = main(["run", "--tier", "open", "--isolate", "--workspace", str(ws), "--store", str(tmp_path / "data"),
                "--out", str(out), "--context", TWO])
     assert rc == 0
     printed = capsys.readouterr().out

@@ -97,7 +97,7 @@ def _adapter(server, timeout=5, **kw):
 def test_run_over_http_splits_and_merges(fake_model, tmp_path: Path):
     m = new_run("http-1", "Answer two notes", "Do not mix", "Integrated")
     adapter = _adapter(fake_model, models={"reason": "lead-model"})
-    result = Engine(MemoryStore(tmp_path), adapter=adapter, budget=Budget.for_tier("open")).run_task(
+    result = Engine(MemoryStore(tmp_path), adapter=adapter, budget=Budget.for_tier("open"), isolation_required=True).run_task(
         m, context="subtask:note-a=must_not_mix subtask:note-b=must_not_mix")
     assert result.split is True
     assert m.status.value == "complete"

@@ -31,7 +31,7 @@ class Jitter(StubAdapter):
 
 def _run(tmp_path: Path, i: int, budget: Budget | None = None):
     m = new_run(f"st-{i}", "Answer four parts", "Do not mix", "Integrated")
-    Engine(MemoryStore(tmp_path / f"s{i}"), adapter=Jitter(i), budget=budget or Budget.for_tier("open")).run_task(m, context=FOUR)
+    Engine(MemoryStore(tmp_path / f"s{i}"), adapter=Jitter(i), budget=budget or Budget.for_tier("open"), isolation_required=True).run_task(m, context=FOUR)
     return m
 
 
@@ -53,7 +53,7 @@ def test_concurrent_runs_do_not_cross(tmp_path: Path):
 
     def go(m):
         try:
-            Engine(MemoryStore(tmp_path / m.id), adapter=shared, budget=Budget.for_tier("open")).run_task(m, context=FOUR)
+            Engine(MemoryStore(tmp_path / m.id), adapter=shared, budget=Budget.for_tier("open"), isolation_required=True).run_task(m, context=FOUR)
         except Exception as e:  # noqa: BLE001 - the test reports any failure
             errors.append(e)
 
@@ -73,7 +73,7 @@ def test_tight_budget_never_overspends(tmp_path: Path):
         m = new_run(f"tb-{calls}", "Answer four parts", "Do not mix", "Integrated")
         budget = Budget(max_calls=calls, max_tokens=100_000, max_tokens_per_call=10_000, tier="open")
         try:
-            Engine(MemoryStore(tmp_path / f"t{calls}"), adapter=Jitter(calls), budget=budget).run_task(m, context=FOUR)
+            Engine(MemoryStore(tmp_path / f"t{calls}"), adapter=Jitter(calls), budget=budget, isolation_required=True).run_task(m, context=FOUR)
         except Exception:  # noqa: BLE001 - a halt is a legal outcome; overspend is not
             pass
         assert len(m.calls) <= calls

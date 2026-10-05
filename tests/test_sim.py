@@ -18,6 +18,8 @@ def test_reader_recovers_every_fact_and_no_distractor():
 
 def test_look_alike_names_stay_apart():
     assert find_slugs("read halvorsen-freight-labs.md then halvorsen-freight.md") == ["halvorsen-freight-labs", "halvorsen-freight"]
+    # A brief names its channel several times; each company is read once.
+    assert find_slugs("vantaro channel=vantaro only. note: read vantaro.md") == ["vantaro"]
     q = parse_question("Which had the higher FY2026 Q2 customer churn: Quillon Biologics or Quillon Bio?")
     assert q.slugs == ["quillon-biologics", "quillon-bio"] and q.kind == "max" and q.metric == "churn"
 
@@ -46,3 +48,20 @@ def test_cli_compare_sim(tmp_path: Path, capsys):
     out = tmp_path / "sim.json"
     assert main(["compare", "--adapter", "sim", "--per-family", "1", "--out", str(out)]) == 0
     assert "| genet | 100% |" in capsys.readouterr().out
+
+
+def test_genet_tracks_the_cheapest_strategy_that_works(tmp_path: Path):
+    """Roomy context: genet stays a single agent. Tight context: a single agent overflows; genet fans out."""
+    from taskorg.compare import comparison_budget
+
+    suite = build_suite(per_family=2)
+    strategies = ("single", "always", "genet")
+    roomy = summarize(run_comparison(suite, SimModel, strategies=strategies, corpus_dir=tmp_path / "a"))["overall"]
+    tight = summarize(run_comparison(suite, SimModel, strategies=strategies, corpus_dir=tmp_path / "b",
+                                     budget_factory=lambda: comparison_budget(context=1500)))["overall"]
+    assert roomy["genet"]["accuracy"] == 1.0 and roomy["genet"]["split_rate"] == 0
+    assert roomy["genet"]["tokens_mean"] < 1.3 * roomy["single"]["tokens_mean"]
+    assert roomy["genet"]["tokens_mean"] < roomy["always"]["tokens_mean"]
+    assert tight["single"]["accuracy"] < 1.0 and tight["single"]["abort_rate"] > 0
+    assert tight["genet"]["accuracy"] == 1.0 and tight["genet"]["split_rate"] > 0
+    assert tight["genet"]["tokens_mean"] <= tight["always"]["tokens_mean"]

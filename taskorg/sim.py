@@ -51,14 +51,15 @@ def facts(text: str) -> dict[tuple[str, str], float]:
 
 
 def find_slugs(text: str) -> list[str]:
-    """Company slugs named in text, in order, longest first so look-alikes stay apart."""
+    """Company slugs named in text, each once, in order of first mention. Longest first,
+    so look-alikes stay apart."""
     found, taken = [], []
     for s in _SLUGS:
         for m in re.finditer(rf"(?<![a-z0-9-]){re.escape(s)}(?![a-z0-9-])", text.lower()):
             if not any(a < m.end() and m.start() < b for a, b in taken):
                 taken.append((m.start(), m.end()))
                 found.append((m.start(), s))
-    return [s for _, s in sorted(found)]
+    return list(dict.fromkeys(s for _, s in sorted(found)))
 
 
 @dataclass

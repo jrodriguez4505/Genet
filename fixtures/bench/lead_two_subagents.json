@@ -13,5 +13,6 @@
     "health": "ok",
     "isolation_flags_empty": true,
     "method_contains": "sub-agents"
-  }
+  },
+  "isolate": true
 }

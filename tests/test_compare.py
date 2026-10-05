@@ -91,31 +91,46 @@ def test_grading():
 # --- strategies ---
 
 
+ALL = ("single", "always", "genet", "genet-stated")
+
+
 def test_strategies_organize_differently(tmp_path: Path):
     suite = build_suite(per_family=2)
-    results = run_comparison(suite, lambda: Oracle(suite), corpus_dir=tmp_path / "corpus")
+    results = run_comparison(suite, lambda: Oracle(suite), strategies=ALL, corpus_dir=tmp_path / "corpus")
     by = {(r.strategy, r.task_id): r for r in results}
     for t in suite.tasks:
         assert by[("single", t.id)].workers == 0
         assert by[("always", t.id)].workers == 2
-        # One sub-agent per company, up to the worker cap of 4; none for a single company.
-        assert by[("genet", t.id)].workers == (min(len(t.entities), 4) if len(t.entities) > 1 else 0)
+        # The whole corpus fits one context at the default cap, so measured genet never splits.
+        assert by[("genet", t.id)].workers == 0
+        # Taking the lead's reasons at face value: one sub-agent per company, capped at 4.
+        assert by[("genet-stated", t.id)].workers == (min(len(t.entities), 4) if len(t.entities) > 1 else 0)
     assert all(r.correct for r in results)
     single_calls = {r.calls for r in results if r.strategy == "single"}
     assert single_calls == {2}  # work + verify, no planning call
 
 
+def test_measured_gate_splits_only_when_the_material_does_not_fit(tmp_path: Path):
+    """About 400 tokens per company file; a 1,200-token context leaves room for one file, not two."""
+    suite = build_suite(per_family=2)
+    results = run_comparison(suite, lambda: Oracle(suite), strategies=("genet",), corpus_dir=tmp_path / "corpus",
+                             budget_factory=lambda: comparison_budget(context=1200))
+    for r in results:
+        task = next(t for t in suite.tasks if t.id == r.task_id)
+        assert r.workers == (min(len(task.entities), 4) if len(task.entities) > 1 else 0), r.task_id
+        assert r.correct
+
+
 def test_summary_and_report(tmp_path: Path):
     suite = build_suite(per_family=2)
-    results = run_comparison(suite, lambda: Oracle(suite), corpus_dir=tmp_path / "c")
+    results = run_comparison(suite, lambda: Oracle(suite), strategies=ALL, corpus_dir=tmp_path / "c")
     summary = summarize(results, price_in=1.0, price_out=5.0)
     o = summary["overall"]
-    assert o["genet"]["accuracy"] == o["single"]["accuracy"] == o["always"]["accuracy"] == 1.0
+    assert {o[s]["accuracy"] for s in ALL} == {1.0}
     assert o["single"]["split_rate"] == 0 and o["always"]["split_rate"] == 1
-    assert 0 < o["genet"]["split_rate"] < 1
-    lookup = summary["by_family"]["lookup"]
-    assert lookup["genet"]["split_rate"] == 0 and lookup["always"]["split_rate"] == 1
-    assert lookup["genet"]["tokens_mean"] < lookup["always"]["tokens_mean"]
+    assert o["genet"]["split_rate"] == 0 and 0 < o["genet-stated"]["split_rate"] < 1
+    for block in summary["by_family"].values():
+        assert block["genet"]["tokens_mean"] < block["always"]["tokens_mean"]
     assert "cost_total" in o["genet"]
     text = render(summary)
     assert "## Overall" in text and "## Verdict" in text and "Genet tokens vs single" in text
@@ -166,7 +181,7 @@ def test_lead_covers_parts_past_the_worker_cap(tmp_path: Path):
     m = new_run("cap-1", suite.tasks[0].question, "p", "s")
     m.state.success_criteria = ["ANSWER:"]
     Engine(MemoryStore(tmp_path / "s"), adapter=Oracle(suite), budget=comparison_budget(),
-           toolbox=Toolbox(roots=[corpus])).run_task(m, context=CONTEXT)
+           toolbox=Toolbox(roots=[corpus]), split_policy="stated").run_task(m, context=CONTEXT)
     assert m.state.worker_count() == 4
     merge_call = next(c for c in m.calls if c.get("mode") == "integrate")
     fifth = slug(suite.tasks[0].entities[4])
