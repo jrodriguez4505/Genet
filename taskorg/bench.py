@@ -41,7 +41,7 @@ def _drive(spec: dict, store: MemoryStore):
         budget.max_calls = int(spec["max_calls"])
     m = new_run(spec["id"], spec["goal"], spec["purpose"], spec["done_when"])
     m.world = World(existing_files=list(spec.get("exists", [])), existing_channels=[Path(p).stem for p in spec.get("exists", [])])
-    engine = Engine(store, budget=budget)
+    engine = Engine(store, budget=budget, isolation_required=bool(spec.get("isolate")))
     mode = spec.get("mode", "single")
     context = spec.get("context", "")
     try:

@@ -161,6 +161,9 @@ class Engine:
         toolbox: Toolbox | None = None,
         parallel: bool = True,
         max_tool_rounds: int = 2,
+        split_policy: str = "measured",
+        isolation_required: bool = False,
+        fit_fraction: float = 0.5,
     ):
         self.store = store
         self.adapter = adapter or StubAdapter()
@@ -169,6 +172,11 @@ class Engine:
         self.toolbox = toolbox or Toolbox()
         self.parallel = parallel
         self.max_tool_rounds = max_tool_rounds
+        # "Should we" for the lead's proposals: "measured" needs declared isolation or
+        # material that does not fit one context; "stated" accepts the lead's reasons.
+        self.split_policy = split_policy
+        self.isolation_required = isolation_required
+        self.fit_fraction = fit_fraction
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
 
@@ -302,7 +310,23 @@ class Engine:
         runnable = any(t in RUNNABLE for t in SKILL_TOOLS.get(subtask.skill, ()))
         return 1 + (self.max_tool_rounds if runnable else 0)
 
-    def _assess(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
+    def _material(self, subtask: Subtask) -> dict[str, int] | None:
+        return self.toolbox.material(subtask.channel_id, subtask.named_failure)
+
+    @staticmethod
+    def _overhead(run: Run) -> int | None:
+        """What one call costs before any material: the lead's latest call, brief and reply.
+
+        A planning brief carries more instructions than a working brief, so this
+        errs toward splitting, never toward overflowing.
+        """
+        for c in reversed(run.calls):
+            if c.get("function") == "lead":
+                return int(c.get("prompt_tokens") or 0) + int(c.get("completion_tokens") or 0)
+        return None
+
+    def _assess(self, run: Run, subtasks: list[Subtask], *, declared: bool = False) -> list[Assessment]:
+        """declared: the operator named these sub-tasks, so the need is theirs to state."""
         b = run.budget
         verdicts = assess(
             _first_per_channel(subtasks),
@@ -313,6 +337,12 @@ class Engine:
             calls_left=(b.max_calls - len(run.calls)) if b else None,
             worker_slots_left=MAX_WORKERS - run.state.worker_count(),
             worker_cost=self._worker_cost,
+            policy=self.split_policy,
+            declared=declared or self.isolation_required,
+            material=self._material,
+            context_limit=b.max_tokens_per_call if b else None,
+            fit_fraction=self.fit_fraction,
+            overhead=self._overhead(run),
         )
         for v in verdicts:
             run._record("gate", v.as_dict())
@@ -518,7 +548,7 @@ class Engine:
         self.store.remember_working(run.id, "context", context)
         run.switch_skill(lead, lead, "reason", "choose a method for the context")
         run.set_method(lead, "multi-axis", axes)
-        verdicts = self._assess(run, subtasks)
+        verdicts = self._assess(run, subtasks, declared=True)
         split_context = run.state.context
         legal = [v for v in verdicts if v.legal]
         added = self._staff(run, legal)

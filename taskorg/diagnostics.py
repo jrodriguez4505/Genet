@@ -67,6 +67,8 @@ def diagnose(run: Run) -> dict:
             "events": len(run.log),
             "workers": run.state.worker_count(),
             "could_this_have_been_one": run.state.worker_count() == 0,
+            "split_basis": sorted({e.detail["basis"] for e in run.log
+                                   if e.event == "gate" and e.detail.get("legal") and e.detail.get("basis")}),
             "context_checked": run.state.context_sufficient,
             "method": run.state.method,
             "axes": list(run.state.axes),
@@ -225,7 +227,7 @@ def _small(detail: dict) -> dict:
     keep = {}
     for k, v in (detail or {}).items():
         if k in ("actor", "slot", "skill", "stream", "channel", "response", "id", "added", "method", "axes",
-                 "channel_id", "legal", "gate", "refused", "request"):
+                 "channel_id", "legal", "gate", "refused", "basis", "request"):
             keep[k] = v
     return keep
 

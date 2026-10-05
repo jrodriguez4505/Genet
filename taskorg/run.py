@@ -441,7 +441,7 @@ class Run:
         if self.open_review_ids():
             raise InvariantError("INV-4", "cannot complete while a review is open; answer or defer it first")
         if self.failed_stop_rules:
-            raise InvariantError("INV-5", "COMPLETE illegal with a failed stop-rule field")
+            raise InvariantError("INV-5", "cannot complete with a failed stop-rule check")
         from .schema import validate_state
 
         validate_state(self.state)

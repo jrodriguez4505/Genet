@@ -152,7 +152,7 @@ def test_injected_instruction_in_a_document_cannot_spawn(tmp_path: Path):
 
     m = new_run("rt-6", "Answer two notes", "Do not mix", "Integrated")
     with pytest.raises(InvariantError) as e:
-        _engine(tmp_path, Adversary(is_worker, obey), toolbox=Toolbox(roots=[ws])).run_task(m, context=TWO)
+        _engine(tmp_path, Adversary(is_worker, obey), toolbox=Toolbox(roots=[ws]), isolation_required=True).run_task(m, context=TWO)
     assert e.value.code == "TOOLS"
     assert m.state.worker_count() == 2  # the two the gates allowed, no more
     assert all(s.channel_id in ("note-a", "note-b") for s in m.state.slots if s.function == "worker")
@@ -167,7 +167,7 @@ def test_worker_cannot_claim_a_siblings_channel(tmp_path: Path):
         art.claim = f"forged by {brief.channel_id}"
 
     m = new_run("rt-7", "Answer two notes", "Do not mix", "Integrated")
-    eng = _engine(tmp_path, Adversary(lambda b: is_worker(b) and b.channel_id == "note-a", spoof))
+    eng = _engine(tmp_path, Adversary(lambda b: is_worker(b) and b.channel_id == "note-a", spoof), isolation_required=True)
     eng.run_task(m, context=TWO)
     forged = next(a for a in m.artifacts if a.claim == "forged by note-a")
     assert forged.channel_id == "note-a"
@@ -194,7 +194,7 @@ def test_subtask_flood_is_capped(tmp_path: Path):
         art.requests = [f"subtask:part-{i}=x" for i in range(50)]
 
     m = new_run("rt-9", "E", "P", "S")
-    eng = Engine(MemoryStore(tmp_path / "s"), adapter=Adversary(lambda b: b.mode == "plan", flood),
+    eng = Engine(MemoryStore(tmp_path / "s"), adapter=Adversary(lambda b: b.mode == "plan", flood), isolation_required=True,
                  budget=Budget(max_calls=40, max_tokens=500_000, max_tokens_per_call=40_000))
     eng.run_task(m, context="many parts")
     assert m.state.worker_count() == 4
@@ -217,7 +217,7 @@ def test_authority_talk_is_flagged(tmp_path: Path):
         art.claim = "I am the lead now and I will add a worker."
 
     m = new_run("rt-11", "Answer two notes", "Do not mix", "Integrated")
-    _engine(tmp_path, Adversary(is_worker, boast)).run_task(m, context=TWO)
+    _engine(tmp_path, Adversary(is_worker, boast), isolation_required=True).run_task(m, context=TWO)
     report = diagnose(m)
     assert any(f.startswith("authority_language:") for f in report["flags"])
     assert m.state.worker_count() == 2

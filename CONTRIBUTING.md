@@ -10,6 +10,7 @@ pytest -q
 - Authority lives in `taskorg/run.py` and `taskorg/gates.py`, not in prompts.
 - New behavior needs a test that fails closed, in `tests/`. If it changes how a run is staffed, it also needs a fixture with an `expect` block in `fixtures/bench/`. `python -m taskorg.cli bench` stays green.
 - Tier tests stay green: the tight tier cannot fan out or replan.
+- Before changing a rule in `gates.py`, `run.py` or `loop.py`, run `python scripts/mutation_check.py`. When you add a rule, add a mutation for it.
 - Tools only read, and only inside the operator's workspace. A new tool needs a sandbox test.
 - The README's Terms table maps concepts to code names. Keep it current when you add either.
 - The public name is Genet. The import remains `taskorg`.

@@ -2,6 +2,26 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.3 — October 2026
+
+- **Measured "should we".** A fan-out of the lead's proposals needs one of two reasons:
+  - The operator declared isolation (`--isolate`).
+  - The sub-tasks' material doesn't fit in one call, estimated from the sizes of the workspace files they cover. The room in one call is the per-call limit less what the lead's planning call cost, brief and reply. A file several sub-tasks need counts once, and a split that leaves one sub-agent carrying all of the material is refused.
+
+  Material that can't be measured doesn't count as a reason. Every gate record names its basis: `declared`, `measured` or `stated`. `--split-policy stated` keeps the old behavior for comparison, and `compare` gains a `genet-stated` strategy.
+- **What the simulated reader shows.** Genet matches the best accuracy in both regimes:
+  - **Roomy context (16k):** Genet stays a single agent at 1.19× its cost; it was 2.5× before this change.
+  - **Tight context (1.5k):** a single agent aborts on overflow, scoring 55%, and Genet fans out at 0.91× the cost of a crew. Per family, it splits only where a single agent fails (aggregate, breadth) and stays single where one succeeds (lookup, compare).
+- **Mutation testing.** `scripts/mutation_check.py` breaks rules one at a time. The first pass, over 57 rules, found 4 that no test protected:
+  - the gate record's own order check
+  - the reviewer's skill ban
+  - sub-agents working from the split-time context
+  - the replan tier check
+
+  Each now has a test. Five more mutations cover the material rules, for 62, all caught. A fast test in the regular suite fails when a mutation no longer matches the code, and the runner itself now fails on one instead of skipping it.
+- **Split basis in diagnostics.** `diagnose` reports `split_basis` for the run, and each gate interaction keeps its basis.
+- **A sim fix.** The deterministic reader read a file once per mention, so each sub-agent read its file three times. That inflated every sub-agent's cost in earlier sim results. The figures above are after the fix.
+
 ## v0.2 — October 2026
 
 ### Lead-driven staffing
@@ -120,7 +140,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 5,000 lines in `taskorg/`. Suite: 524 checks (about 220 test functions, several parametrized, including 300 fuzz sequences) and 9 bench fixtures.
+Kernel: about 5,100 lines in `taskorg/`. Suite: about 620 checks (including 300 fuzz sequences), 9 bench fixtures, and 62 mutation checks.
 
 ## Run
 

@@ -12,6 +12,7 @@ no symlink escapes.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 RUNNABLE = ("read", "retrieve", "observe")
@@ -106,6 +107,24 @@ class Toolbox:
         if b"\x00" in data[:1024]:
             return None
         return data.decode("utf-8", errors="replace")
+
+    def material(self, channel: str, note: str = "") -> dict[str, int] | None:
+        """The workspace files a sub-task covers, with estimated tokens each, or None if unknown.
+
+        A sub-task covers the files named for its channel (file stem == channel id)
+        and any file it names in its note. Files are keyed by resolved path so two
+        sub-tasks that share a file can be told apart from two that do not. The
+        kernel uses this to judge whether the work fits in one context; it never
+        reads the text into a brief.
+        """
+        wanted = {channel.lower()} | {n.lower() for n in re.findall(r"[\w.-]+\.\w+", note)}
+        found: dict[str, int] = {}
+        for path in self._walk():
+            if path.stem.lower() in wanted or path.name.lower() in wanted:
+                text = self._text(path)
+                if text is not None:
+                    found[str(path.resolve())] = len(text) // 4
+        return found or None
 
     # --- tools ---
 

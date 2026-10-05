@@ -191,7 +191,7 @@ def gates(theme: str) -> str:
             c.text(g[stop] + 36, y + 4, reasons[i], size=12, color="muted", anchor="start")
     spans = [(0, 4), (0, 2), (0, 1)]
     labels = ["1 · Can someone else?", "2 · Should we?", "3 · Could we?"]
-    checks = ["covered · staffed · repeat · verifier", "a named failure", "tier · budget · cap · skill"]
+    checks = ["covered · staffed · repeat · verifier", "named failure · measured need", "tier · budget · cap · skill"]
     for x, (a, b), label, check in zip(g, spans, labels, checks):
         top, bottom = rows[a] - 20, rows[b] + 20
         c.rect(x - 6, top, 12, bottom - top, stroke="accent", fill="accent", rx=4, sw=1)

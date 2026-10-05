@@ -14,6 +14,7 @@ single-agent cost. The report shows where it does and where it does not.
 
 from __future__ import annotations
 
+import functools
 import json
 import statistics
 import sys
@@ -86,7 +87,13 @@ class AlwaysSplit(Engine):
         return out
 
 
-STRATEGIES: dict[str, type[Engine]] = {"single": SingleAgent, "always": AlwaysSplit, "genet": Engine}
+# genet uses the measured "should we"; genet-stated accepts the lead's reasons, for comparison.
+STRATEGIES: dict[str, Callable[..., Engine]] = {
+    "single": SingleAgent,
+    "always": AlwaysSplit,
+    "genet": Engine,
+    "genet-stated": functools.partial(Engine, split_policy="stated"),
+}
 
 
 @dataclass
