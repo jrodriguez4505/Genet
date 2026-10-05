@@ -108,22 +108,23 @@ class Toolbox:
             return None
         return data.decode("utf-8", errors="replace")
 
-    def material(self, channel: str, note: str = "") -> int | None:
-        """Estimated tokens of workspace text a sub-task covers, or None if unknown.
+    def material(self, channel: str, note: str = "") -> dict[str, int] | None:
+        """The workspace files a sub-task covers, with estimated tokens each, or None if unknown.
 
         A sub-task covers the files named for its channel (file stem == channel id)
-        and any file it names in its note. The kernel uses this to judge whether
-        the work fits in one context; it never reads the text into a brief.
+        and any file it names in its note. Files are keyed by resolved path so two
+        sub-tasks that share a file can be told apart from two that do not. The
+        kernel uses this to judge whether the work fits in one context; it never
+        reads the text into a brief.
         """
         wanted = {channel.lower()} | {n.lower() for n in re.findall(r"[\w.-]+\.\w+", note)}
-        chars, found = 0, False
+        found: dict[str, int] = {}
         for path in self._walk():
             if path.stem.lower() in wanted or path.name.lower() in wanted:
                 text = self._text(path)
                 if text is not None:
-                    chars += len(text)
-                    found = True
-        return chars // 4 if found else None
+                    found[str(path.resolve())] = len(text) // 4
+        return found or None
 
     # --- tools ---
 

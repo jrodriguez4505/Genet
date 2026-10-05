@@ -141,18 +141,36 @@ class Assessment:
 SPLIT_POLICIES = ("measured", "stated")
 
 
-def _need(open_: list[Assessment], policy: str, declared: bool, material, context_limit: int | None, fit_fraction: float) -> str:
-    """The team's "should we": the basis for a fan-out, or "refuse:<reason>"."""
+def _need(open_: list[Assessment], policy: str, declared: bool, material, context_limit: int | None,
+          fit_fraction: float, overhead: int | None = None) -> str:
+    """The team's "should we": the basis for a fan-out, or "refuse:<reason>".
+
+    material(subtask) maps the files a sub-task needs to estimated tokens. One agent
+    needs every file any sub-task needs, shared files once; a sub-agent needs only
+    its own. A measured split needs more than fits in one call, and a split that
+    leaves some sub-agent carrying all of it does not help.
+
+    The room in one call is the context limit less overhead, what a call already
+    costs before any material (brief and reply). Without a measured overhead it is
+    fit_fraction of the limit.
+    """
     if declared:
         return "declared"
     if policy == "stated":
         return "stated"
-    sizes = [material(a.subtask) if material else None for a in open_]
-    if context_limit is None or any(s is None for s in sizes):
+    shares = [material(a.subtask) if material else None for a in open_]
+    if context_limit is None or any(s is None for s in shares):
         return "refuse:no measurable reason to split: the material is unknown and isolation was not declared"
-    total, room = sum(sizes), int(context_limit * fit_fraction)
+    union = {name: tokens for share in shares for name, tokens in share.items()}
+    total = sum(union.values())
+    if overhead is None:
+        room, after = int(context_limit * fit_fraction), ""
+    else:
+        room, after = max(0, context_limit - overhead), f" after ~{overhead} for the brief and reply"
     if total <= room:
-        return f"refuse:fits in one context: ~{total} tokens of material vs {room} available per call"
+        return f"refuse:fits in one context: ~{total} tokens of material vs {room} available per call{after}"
+    if max(sum(share.values()) for share in shares) >= total:
+        return f"refuse:a split does not shrink the work: one sub-task alone needs all ~{total} tokens"
     return "measured"
 
 
@@ -179,9 +197,10 @@ def assess(
     worker_cost: Callable[[Subtask], int] | None = None,
     policy: str = "stated",
     declared: bool = False,
-    material: Callable[[Subtask], int | None] | None = None,
+    material: Callable[[Subtask], dict[str, int] | None] | None = None,
     context_limit: int | None = None,
     fit_fraction: float = 0.5,
+    overhead: int | None = None,
 ) -> list[Assessment]:
     """
     Judge a proposed task organization, gate by gate, in order. Fails closed.
@@ -195,7 +214,11 @@ def assess(
       1. can someone else  one open sub-task is the lead's job, not a new agent
       2. should we         under policy="measured", a reason a single agent would fail:
                            the operator declared isolation, or the sub-tasks' material
-                           (estimated tokens) exceeds fit_fraction of one call's context.
+                           (estimated tokens, shared files once) does not fit the room
+                           in one call and a split shrinks what each call carries.
+                           The room is context_limit less overhead (the measured cost
+                           of a call before material), or fit_fraction of context_limit
+                           when no overhead is measured.
                            Material that cannot be measured is not a reason.
                            Under policy="stated", the named failures are enough.
       3. could we          the budget tier allows a split; the budget pays for every
@@ -234,7 +257,7 @@ def assess(
     if len(open_) == 1:
         open_[0].refuse("can_someone_else", LEAD_COVERS)
     elif len(open_) >= 2:
-        need = _need(open_, policy, declared, material, context_limit, fit_fraction)
+        need = _need(open_, policy, declared, material, context_limit, fit_fraction, overhead)
         for a in open_:
             if need.startswith("refuse:"):
                 a.refuse("should_we", need[len("refuse:"):])

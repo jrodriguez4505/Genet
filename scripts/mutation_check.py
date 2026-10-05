@@ -26,7 +26,7 @@ M = [
     ("gates.py", "unknown skill allowed", "    if subtask.skill not in SKILLS:", "    if False:"),
     ("gates.py", "reserved channel allowed", "    if subtask.channel_id in RESERVED_CHANNELS:", "    if False:"),
     ("gates.py", "lone sub-task gets a worker", "    if len(open_) == 1:", "    if False:"),
-    ("gates.py", "tier ignored", "elif len(open_) >= 2 and not allow_split:", "elif False:"),
+    ("gates.py", "tier ignored", "    if len(open_) >= 2 and not allow_split:", "    if False:"),
     ("gates.py", "budget off-by-one", "spend + c > calls_left - calls_after_split", "spend + c > calls_left - calls_after_split + 1"),
     ("gates.py", "worker cap ignored", "for a in open_[: max(0, worker_slots_left)]:", "for a in open_:"),
     # gate record
@@ -73,7 +73,12 @@ M = [
     # measured should-we
     ("gates.py", "declared ignored", "    if declared:\n        return \"declared\"", "    if False:\n        return \"declared\""),
     ("gates.py", "stated policy ignored", '    if policy == "stated":\n        return "stated"', '    if False:\n        return "stated"'),
-    ("gates.py", "unknown material counts", "    if context_limit is None or any(s is None for s in sizes):", "    if False:"),
+    ("gates.py", "unknown material counts", "    if context_limit is None or any(s is None for s in shares):", "    if False:"),
+    ("gates.py", "shared files counted twice", "    total = sum(union.values())\n", "    total = sum(sum(s.values()) for s in shares)\n"),
+    ("gates.py", "room ignores measured overhead", "        room, after = max(0, context_limit - overhead), ", "        room, after = context_limit, "),
+    ("diagnostics.py", "split basis hidden", '"refused", "basis", "request"):', '"refused", "request"):'),
+    ("loop.py", "overhead not passed", "            overhead=self._overhead(run),\n", ""),
+    ("gates.py", "split that does not shrink allowed", "    if max(sum(share.values()) for share in shares) >= total:", "    if False:"),
     ("gates.py", "fit check off", "    if total <= room:", "    if False:"),
     ("gates.py", "fit check inverted", "    if total <= room:", "    if total > room:"),
     ("gates.py", "should-we refusals ignored", "        open_ = [a for a in open_ if a.legal]\n", ""),
@@ -85,28 +90,38 @@ M = [
     ("sim.py", "sim reads a file per mention", "    return list(dict.fromkeys(s for _, s in sorted(found)))", "    return [s for _, s in sorted(found)]"),
 ]
 
-ONLY = set(sys.argv[1].split("|")) if len(sys.argv) > 1 else None
-survivors = []
-for fname, name, old, new in M:
-    if ONLY and name not in ONLY:
-        continue
-    path = ROOT / "taskorg" / fname
-    src = path.read_text()
-    if src.count(old) != 1:
-        print(f"SKIP  {name}: snippet found {src.count(old)} times")
-        continue
-    path.write_text(src.replace(old, new))
-    try:
-        r = subprocess.run([PY, "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider"], cwd=ROOT,
-                           capture_output=True, text=True, timeout=240, env=os.environ | {"PYTHONDONTWRITEBYTECODE": "1"})
-        killed = r.returncode != 0
-    except subprocess.TimeoutExpired:
-        killed = True
-    finally:
-        path.write_text(src)
-    print(f"{'killed  ' if killed else 'SURVIVED'} {fname:<15} {name}", flush=True)
-    if not killed:
-        survivors.append(name)
-ran = len(M) if ONLY is None else len(ONLY)
-print(f"\n{ran - len(survivors)} of {ran} mutations caught; uncaught: {survivors}")
-sys.exit(1 if survivors else 0)
+
+def main(argv: list[str]) -> int:
+    ONLY = set(argv[0].split("|")) if argv else None
+    survivors, stale, ran = [], [], 0
+    for fname, name, old, new in M:
+        if ONLY and name not in ONLY:
+            continue
+        path = ROOT / "taskorg" / fname
+        src = path.read_text()
+        if src.count(old) != 1:
+            # The code moved under the mutation: it no longer tests anything, so it fails the check.
+            print(f"STALE    {fname:<15} {name}: snippet found {src.count(old)} times", flush=True)
+            stale.append(name)
+            continue
+        ran += 1
+        path.write_text(src.replace(old, new))
+        try:
+            r = subprocess.run([PY, "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider"], cwd=ROOT,
+                               capture_output=True, text=True, timeout=240, env=os.environ | {"PYTHONDONTWRITEBYTECODE": "1"})
+            killed = r.returncode != 0
+        except subprocess.TimeoutExpired:
+            killed = True
+        finally:
+            path.write_text(src)
+        print(f"{'killed  ' if killed else 'SURVIVED'} {fname:<15} {name}", flush=True)
+        if not killed:
+            survivors.append(name)
+    print(f"\n{ran - len(survivors)} of {ran} mutations caught; uncaught: {survivors}")
+    if stale:
+        print(f"stale (update the snippet): {stale}")
+    return 1 if survivors or stale else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

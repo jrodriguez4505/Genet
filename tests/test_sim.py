@@ -65,3 +65,20 @@ def test_genet_tracks_the_cheapest_strategy_that_works(tmp_path: Path):
     assert tight["single"]["accuracy"] < 1.0 and tight["single"]["abort_rate"] > 0
     assert tight["genet"]["accuracy"] == 1.0 and tight["genet"]["split_rate"] > 0
     assert tight["genet"]["tokens_mean"] <= tight["always"]["tokens_mean"]
+
+
+def test_tight_context_genet_splits_only_the_families_a_single_agent_fails(tmp_path: Path):
+    """Per family: where a single agent gets every task right, genet does not split; where it gets none, genet splits every task."""
+    from taskorg.compare import comparison_budget
+
+    suite = build_suite()
+    rows = summarize(run_comparison(suite, SimModel, strategies=("single", "genet"), corpus_dir=tmp_path / "c",
+                                    budget_factory=lambda: comparison_budget(context=1500)))["by_family"]
+    for family, row in rows.items():
+        assert row["genet"]["accuracy"] == 1.0, family
+        if row["single"]["accuracy"] == 1.0:
+            assert row["genet"]["split_rate"] == 0, family
+        if row["single"]["accuracy"] == 0:
+            assert row["genet"]["split_rate"] == 1.0, family
+    assert {f for f, r in rows.items() if r["single"]["accuracy"] == 1.0} == {"lookup", "compare"}
+    assert rows["breadth"]["single"]["accuracy"] == 0

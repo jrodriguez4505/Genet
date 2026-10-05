@@ -69,7 +69,7 @@
     </table>
 
     <h2>Proving it</h2>
-    <p><code>taskorg compare</code> runs the same tasks three ways: one agent, an always-split crew, and Genet. The model, tools and budget are the same for all three. The claim is that Genet matches the better baseline's accuracy at close to single-agent cost. A perfect simulated reader shows the mechanism. With a roomy context, Genet stays a single agent at 1.19× its cost. With a tight one, a single agent fails, and Genet fans out at 0.94× the cost of a crew. The claim stays a claim until a live run says so.</p>
+    <p><code>taskorg compare</code> runs the same tasks three ways: one agent, an always-split crew, and Genet. The model, tools and budget are the same for all three. The claim is that Genet matches the better baseline's accuracy at close to single-agent cost. A perfect simulated reader shows the mechanism. With a roomy context, Genet stays a single agent at 1.19× its cost. With a tight one, a single agent fails where the material overflows, and Genet fans out on exactly those tasks, at 0.91× the cost of a crew. The claim stays a claim until a live run says so.</p>
     <pre>python -m taskorg.cli compare --dry-run          # plan and call ceiling
 python -m taskorg.cli compare --adapter sim      # structural cost at $0
 python -m taskorg.cli compare --adapter live     # a real model</pre>

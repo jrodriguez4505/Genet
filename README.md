@@ -59,7 +59,7 @@ Every proposed sub-task goes through three gates in order, and they fail closed:
 | Gate | Refuses a sub-task when |
 |---|---|
 | Can someone else | A file or channel in the world already covers it, the channel is already staffed, it repeats another proposal, or it is verification (the verifier's job). A single open sub-task is the lead's job, not a new agent's. |
-| Should we | It names no failure: what goes wrong if a single agent does it. Then, for the team: there is no measurable reason a single agent would fail. A fan-out needs one of two reasons: the operator declared that the sub-tasks must stay isolated (`--isolate`), or their material does not fit in half of one call's context. Material is estimated from the sizes of the workspace files each sub-task covers. If the material can't be measured, it doesn't count as a reason. |
+| Should we | It names no failure: what goes wrong if a single agent does it. Then, for the team: there is no measurable reason a single agent would fail. A fan-out needs one of two reasons: the operator declared that the sub-tasks must stay isolated (`--isolate`), or their material does not fit in one call. The room in one call is the per-call limit less what the lead's own planning call cost, brief and reply. Material is estimated from the sizes of the workspace files each sub-task covers. A file several sub-tasks need counts once, and a split that leaves one sub-agent carrying all of the material is not a reason. If the material can't be measured, it doesn't count as a reason. |
 | Could we | Its skill is unknown, or its channel id is unusable or reserved. The budget tier does not allow a fan-out. The budget cannot pay for the sub-agents plus merge and verify. The cap of 4 workers is full. |
 
 A fan-out needs at least two legal sub-tasks.
@@ -179,9 +179,9 @@ What the simulated reader shows. These are structural results from a perfect rea
 | Per-call context | Single agent | Always-split crew | Genet |
 |---|---|---|---|
 | Roomy, `--context 16000` | 100% · 1,913 tokens/task | 100% · 3,503 | 100% · 2,284 (1.19× single) |
-| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 3,503 | 100% · 3,304 (0.94× crew) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 3,503 | 100% · 3,179 (0.91× crew) |
 
-When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Whether real models also read worse with everything in one context, which is the other reason to split, is what the live run measures.
+When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. Whether real models also read worse with everything in one context, which is the other reason to split, is what the live run measures.
 
 The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. No live results are published yet.
 
@@ -219,7 +219,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 550 checks with no network and no key:
+`pytest -q` runs about 620 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -229,7 +229,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 57 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox and model-output checks, and confirms that some test fails for each. All 57 are caught.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 62 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox and model-output checks, and confirms that some test fails for each. All 62 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 

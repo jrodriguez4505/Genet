@@ -310,8 +310,20 @@ class Engine:
         runnable = any(t in RUNNABLE for t in SKILL_TOOLS.get(subtask.skill, ()))
         return 1 + (self.max_tool_rounds if runnable else 0)
 
-    def _material(self, subtask: Subtask) -> int | None:
+    def _material(self, subtask: Subtask) -> dict[str, int] | None:
         return self.toolbox.material(subtask.channel_id, subtask.named_failure)
+
+    @staticmethod
+    def _overhead(run: Run) -> int | None:
+        """What one call costs before any material: the lead's latest call, brief and reply.
+
+        A planning brief carries more instructions than a working brief, so this
+        errs toward splitting, never toward overflowing.
+        """
+        for c in reversed(run.calls):
+            if c.get("function") == "lead":
+                return int(c.get("prompt_tokens") or 0) + int(c.get("completion_tokens") or 0)
+        return None
 
     def _assess(self, run: Run, subtasks: list[Subtask], *, declared: bool = False) -> list[Assessment]:
         """declared: the operator named these sub-tasks, so the need is theirs to state."""
@@ -330,6 +342,7 @@ class Engine:
             material=self._material,
             context_limit=b.max_tokens_per_call if b else None,
             fit_fraction=self.fit_fraction,
+            overhead=self._overhead(run),
         )
         for v in verdicts:
             run._record("gate", v.as_dict())

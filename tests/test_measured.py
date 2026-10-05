@@ -7,6 +7,7 @@ import pytest
 
 from taskorg.budget import Budget
 from taskorg.cli import main
+from taskorg.diagnostics import diagnose
 from taskorg.errors import InvariantError
 from taskorg.factory import new_run
 from taskorg.gates import LEAD_COVERS, Subtask, assess
@@ -19,7 +20,13 @@ TWO = "Two notes. subtask:note-a@retrieve=sources_must_not_mix subtask:note-b@re
 
 
 def _sizes(**tokens):
-    return lambda s: tokens.get(s.channel_id)
+    """Each sub-task has a file of its own of the given size."""
+    return lambda s: {f"{s.channel_id}.md": tokens[s.channel_id]} if s.channel_id in tokens else None
+
+
+def _files(**shares):
+    """Each sub-task needs the named files; a name shared by two sub-tasks is one file."""
+    return lambda s: shares.get(s.channel_id)
 
 
 PAIR = [Subtask("a", "x"), Subtask("b", "x")]
@@ -38,6 +45,40 @@ def test_material_that_fits_stays_with_one_agent():
 def test_material_that_does_not_fit_is_a_reason():
     verdicts = assess(PAIR, policy="measured", material=_sizes(a=800, b=800), context_limit=2000)
     assert all(v.legal and v.basis == "measured" for v in verdicts)
+
+
+def test_a_shared_file_counts_once():
+    big = {"big.md": 800}
+    verdicts = assess(PAIR, policy="measured", material=_files(a=big, b=big), context_limit=2000)
+    assert all("fits in one context: ~800 tokens" in v.refused for v in verdicts)
+
+
+def test_a_split_that_does_not_shrink_the_work_is_refused():
+    big = {"big.md": 3000}
+    verdicts = assess(PAIR, policy="measured", material=_files(a=big, b=big), context_limit=2000)
+    assert all(v.gate == "should_we" and "does not shrink the work" in v.refused for v in verdicts)
+    # One sub-task needing everything is the same: its sub-agent still carries the whole load.
+    verdicts = assess(PAIR, policy="measured", material=_files(a={"big.md": 3000, "s.md": 50}, b={"s.md": 50}),
+                      context_limit=2000)
+    assert all("does not shrink the work: one sub-task alone needs all ~3050 tokens" in v.refused for v in verdicts)
+
+
+def test_partly_shared_material_that_a_split_shrinks_is_a_reason():
+    verdicts = assess(PAIR, policy="measured", context_limit=2000,
+                      material=_files(a={"shared.md": 600, "a.md": 600}, b={"shared.md": 600, "b.md": 600}))
+    assert all(v.legal and v.basis == "measured" for v in verdicts)
+
+
+def test_the_room_is_the_limit_less_the_measured_overhead():
+    sizes = _sizes(a=750, b=750)
+    measured = assess(PAIR, policy="measured", material=sizes, context_limit=2000, overhead=300)
+    assert all("~1500 tokens of material vs 1700 available per call after ~300 for the brief" in v.refused for v in measured)
+    # Without a measurement the gate falls back to fit_fraction of the limit, and 1500 does not fit 1000.
+    guessed = assess(PAIR, policy="measured", material=sizes, context_limit=2000)
+    assert all(v.legal and v.basis == "measured" for v in guessed)
+    # A brief that fills the call leaves no room at all.
+    full = assess(PAIR, policy="measured", material=_sizes(a=1, b=1), context_limit=2000, overhead=2500)
+    assert all(v.legal for v in full)
 
 
 def test_unknown_material_is_not_a_reason():
@@ -80,10 +121,16 @@ def test_material_counts_files_named_for_the_channel_or_in_the_note(tmp_path: Pa
     outside = tmp_path / "b.md"
     outside.write_text("w" * 4000)
     box = Toolbox(roots=[ws])
-    assert box.material("a") == 100
-    assert box.material("a", "also read extra.txt") == 300
+    assert box.material("a") == {str((ws / "a.md").resolve()): 100}
+    assert sum(box.material("a", "also read extra.txt").values()) == 300
     assert box.material("b") is None  # hidden or outside the workspace: not counted
     assert Toolbox().material("a") is None
+
+
+def test_material_keys_a_file_once_when_it_is_both_in_a_root_and_attached(tmp_path: Path):
+    (tmp_path / "a.md").write_text("x" * 400)
+    box = Toolbox(roots=[tmp_path], files=[tmp_path / "a.md"])
+    assert box.material("a") == {str((tmp_path / "a.md").resolve()): 100}
 
 
 # --- end to end ---
@@ -108,17 +155,41 @@ def test_small_notes_stay_with_one_agent(tmp_path: Path):
     m = _run(tmp_path, chars=400, context=4000)
     assert m.state.worker_count() == 0
     assert "fits in one context" in m.notes["question-1"].reason
+    assert diagnose(m)["run"]["split_basis"] == []
+
+
+def test_the_overhead_is_the_leads_planning_call(tmp_path: Path):
+    m = _run(tmp_path, chars=400, context=4000)
+    plan = next(c for c in m.calls if c["function"] == "lead")
+    cost = plan["prompt_tokens"] + plan["completion_tokens"]
+    assert f"available per call after ~{cost} for the brief and reply" in m.notes["question-1"].reason
 
 
 def test_large_notes_fan_out(tmp_path: Path):
-    m = _run(tmp_path, chars=6000, context=4000)
+    m = _run(tmp_path, chars=9000, context=4000)
     assert m.state.worker_count() == 2
     assert {e.detail["basis"] for e in m.log if e.event == "gate"} == {"measured"}
+    d = diagnose(m)
+    assert d["run"]["split_basis"] == ["measured"]
+    assert {i["detail"].get("basis") for i in d["interactions"] if i["event"] == "gate"} == {"measured"}
 
 
 def test_isolation_flag_fans_out_small_notes(tmp_path: Path):
     m = _run(tmp_path, chars=400, context=4000, isolation_required=True)
     assert m.state.worker_count() == 2
+
+
+def test_two_sub_tasks_over_one_large_file_stay_with_one_agent(tmp_path: Path):
+    """Splitting one file between two readers does not make either brief smaller."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "report.md").write_text("Q3 revenue was 4.1M. " + "filler " * 4000)
+    m = new_run("ms-2", "Answer two questions about the report", "Do not mix", "Integrated")
+    budget = Budget(max_calls=20, max_tokens=100_000, max_tokens_per_call=4000, tier="open")
+    context = "subtask:part-1@retrieve=read_report.md_revenue subtask:part-2@retrieve=read_report.md_hiring"
+    Engine(MemoryStore(tmp_path / "s"), budget=budget, toolbox=Toolbox(roots=[ws])).run_task(m, context=context)
+    assert m.state.worker_count() == 0
+    assert "does not shrink the work" in m.notes["question-1"].reason
 
 
 def test_operator_named_subtasks_count_as_declared(tmp_path: Path):
