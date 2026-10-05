@@ -289,3 +289,56 @@ def test_live_bad_timeout_is_live_error(monkeypatch):
     with pytest.raises(InvariantError) as e:
         LiveAdapter.from_env()
     assert e.value.code == "LIVE"
+
+
+# --- Gaps found by mutation testing: each rule below had no test that would fail without it ---
+
+
+def test_gate_record_enforces_its_own_order():
+    out_of_order = GateRecord(False, True, "x", True, "a", ("could_we", "should_we", "can_someone_else"))
+    with pytest.raises(InvariantError) as e:
+        out_of_order.assert_legal()
+    assert e.value.code == "INV-9"
+
+
+def test_reviewer_cannot_take_a_skill():
+    m = new_run("mt-1", "E", "P", "S")
+    with pytest.raises(InvariantError) as e:
+        m.switch_skill("lead-1", "reviewer-1", "draft", "x")
+    assert e.value.code == "INV-11"
+
+
+class LateWriter(StubAdapter):
+    """While the first sub-agent works, something updates the live context."""
+
+    def __init__(self, run):
+        self.run, self.briefs = run, []
+
+    def act(self, brief):
+        self.briefs.append(brief)
+        if brief.slot_function == "worker" and brief.channel_id == "source-a":
+            self.run.state.context += " | LATE-UPDATE"
+        return super().act(brief)
+
+
+def test_sub_agents_work_from_the_split_time_context(tmp_path: Path):
+    m = new_run("mt-2", "E", "P", "S")
+    spy = LateWriter(m)
+    Engine(MemoryStore(tmp_path), adapter=spy, budget=Budget.for_tier("open"), parallel=False).run_fanout(
+        m, context="two sources", subtasks=[Subtask("source-a", "x"), Subtask("source-b", "y")],
+        axes=["fan_in"], operator_question="?",
+    )
+    b_brief = next(b for b in spy.briefs if b.channel_id == "source-b")
+    assert "LATE-UPDATE" not in b_brief.context
+
+
+def test_replan_needs_the_tier_not_just_the_budget(tmp_path: Path):
+    from taskorg.live import ScriptedLive
+
+    reply = lambda claim: json.dumps({"claim": claim, "evidence": [], "uncertainty": "", "channel_id": "x", "context_update": "", "requests": []})
+    m = new_run("mt-3", "E", "P", "S")
+    roomy_but_no_replan = Budget(max_calls=20, max_tokens=50_000, allow_split=False, allow_adapt=False, tier="tight")
+    with pytest.raises(InvariantError):
+        Engine(MemoryStore(tmp_path), adapter=ScriptedLive([reply("Read: one agent."), reply("a draft"), reply("FAIL"), reply("unused")]),
+               budget=roomy_but_no_replan).run_task(m, context="one source")
+    assert "replan" not in m.notes
