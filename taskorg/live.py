@@ -30,7 +30,8 @@ ROLES = {
     ),
     "verifier": (
         "You are the verifier. Judge the product, not the plan. Your claim starts with PASS or FAIL. "
-        "PASS only if the product itself meets every success criterion."
+        "PASS only if the product answers the goal, its subject and its question, and meets every success "
+        "criterion. FAIL a product about something other than the goal, even if it repeats the criteria."
     ),
 }
 
@@ -234,6 +235,8 @@ class LiveAdapter(ModelAdapter):
     """OpenAI-compatible chat adapter. Fills artifacts only."""
 
     name = "live"
+    # Real replies on record ran 110 to 205 tokens a call (docs/LIVE_TESTS.md); room for the larger.
+    min_reply_tokens = 200
 
     def __init__(self, base_url: str, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None):
         self.base_url = check_base_url(base_url).rstrip("/")

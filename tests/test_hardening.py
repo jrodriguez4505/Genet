@@ -748,9 +748,10 @@ def test_a_call_that_failed_stays_on_the_record(tmp_path: Path):
         Engine(MemoryStore(tmp_path / "s"), adapter=Fails("SCHEMA", {"prompt_tokens": 900, "completion_tokens": 300})).run_single(
             m, context="c", operator_question="?")
     assert m.status == Status.ABORT
-    assert [(c["failed"], c["prompt_tokens"], c["completion_tokens"], c["tokens_estimated"]) for c in m.calls] == [("SCHEMA", 900, 300, False)]
-    assert m.usage() == (1, 1200)
-    assert diagnose(m)["performance"]["failed_calls"] == 1
+    # Malformed twice: the call and its one retry, both on the record, both paid for.
+    assert [(c["failed"], c["prompt_tokens"], c["completion_tokens"], c["tokens_estimated"]) for c in m.calls] == [("SCHEMA", 900, 300, False)] * 2
+    assert m.usage() == (2, 2400)
+    assert diagnose(m)["performance"]["failed_calls"] == 2
     loaded = load_run(save_run(m, tmp_path / "r.json"))
     assert loaded.calls[0]["failed"] == "SCHEMA"
 
@@ -778,7 +779,7 @@ def test_a_comparison_counts_the_calls_that_failed(tmp_path: Path):
     suite = build_suite(per_family=1, families=("lookup",))
     res = run_trial(suite.tasks[0], "single", Fails("SCHEMA", {"prompt_tokens": 700, "completion_tokens": 50}),
                     suite.write_corpus(tmp_path / "c"), budget=comparison_budget())
-    assert (res.code, res.calls, res.tokens) == ("SCHEMA", 1, 750)
+    assert (res.code, res.calls, res.tokens) == ("SCHEMA", 2, 1500)  # the call and its retry
 
 
 def test_a_save_lands_whole_or_not_at_all(tmp_path: Path, monkeypatch):

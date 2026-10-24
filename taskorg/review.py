@@ -97,6 +97,9 @@ def team_review(run, error: BaseException | None) -> dict | None:
         if key and key not in keys:
             keys.append(key)
 
+    retries = sum(1 for e in run.log if e.event == "retry")
+    if retries:
+        note(f"{retries} {'reply was' if retries == 1 else 'replies were'} not the artifact schema and asked again", "schema")
     for e in run.log:
         if e.event == "part_failed":
             code = e.detail.get("code")
@@ -122,6 +125,8 @@ def team_review(run, error: BaseException | None) -> dict | None:
         return None
 
     done: list[str] = []
+    if retries:
+        done.append(f"the kernel asked again for {retries} malformed {'reply' if retries == 1 else 'replies'}")
     for ch, status in part_statuses(run).items():
         if status.startswith("failed") and "covered by the lead" in status:
             done.append(f"the lead covered {ch}")

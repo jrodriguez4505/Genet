@@ -105,6 +105,9 @@ TOOL_NAMES = {"write", "verify", "observe", "read", "retrieve", "simulate", "spa
 # Its part goes back to the lead and the run goes on. Authority violations, budget halts and crashes
 # still stop the run at once.
 PART_FAILURES = ("SCHEMA", "LIVE")
+# A malformed reply is asked again once, with this note. Only SCHEMA: an authority violation is never retried.
+RETRY_NOTE = ("\nRETRY. Your last reply was not the JSON object the schema asks for. Reply with only that "
+              "object: claim, evidence, uncertainty, channel_id, context_update and requests.")
 # Model output is untrusted. These bound what one reply can make the kernel do.
 MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
 MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
@@ -315,15 +318,37 @@ class Engine:
         )
 
     def _call(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
+        """One budgeted model call. A malformed reply is asked again once: models slip on the format now
+        and then, and one retry is cheaper than losing the run or the part. The retry is a second budgeted
+        call, and the failed first one stays on the record."""
+        try:
+            return self._attempt(run, brief, slot)
+        except InvariantError as e:
+            if e.code != "SCHEMA" or run.status != Status.ACTIVE:
+                raise
+            with self._lock:
+                run._record("retry", {"slot": slot.id if slot else brief.slot_function,
+                                      "channel": brief.channel_id or brief.slot_function, "after": e.code})
+            return self._attempt(run, replace(brief, packet=brief.packet + RETRY_NOTE), slot)
+
+    def _reply_room(self, run: Run) -> int:
+        """Room a reply needs in the call: the largest reply in this run so far, and at least what the
+        adapter expects before it has replied at all."""
+        seen = max((c.get("completion_tokens") or 0 for c in run.calls if not c.get("failed")), default=0)
+        return max(seen, getattr(self.adapter, "min_reply_tokens", 0))
+
+    def _attempt(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
         """One budgeted model call. The model runs outside the lock; the board inside it."""
         size = self.adapter.estimate_tokens(brief)
         with self._lock:
             self._arm(run)
             self._admit(run)
             b = run.budget
-            if b and size > b.max_tokens_per_call:
-                # Checked before the call: an oversized brief is never sent, so it is never paid for.
-                run.halt(f"brief of ~{size} tokens exceeds max_tokens_per_call {b.max_tokens_per_call}; not sent")
+            reply = self._reply_room(run) if b else 0
+            if b and size + reply > b.max_tokens_per_call:
+                # Checked before the call, reply included: an oversized call is never sent, so never paid for.
+                run.halt(f"brief of ~{size} tokens, plus ~{reply} for the reply, exceeds max_tokens_per_call "
+                         f"{b.max_tokens_per_call}; not sent")
             heard = _sibling_heard(run, brief)
             self._inflight[id(run)] = self._inflight.get(id(run), 0) + 1
         try:
@@ -450,16 +475,17 @@ class Engine:
     def _material(self, subtask: Subtask) -> dict[str, int] | None:
         return self.toolbox.material(subtask.channel_id, subtask.named_failure)
 
-    @staticmethod
-    def _overhead(run: Run) -> int | None:
-        """What one call costs before any material: the lead's latest call, brief and reply.
+    def _overhead(self, run: Run) -> int | None:
+        """What one call costs before any material: the lead's latest brief, plus its reply or the room
+        the size check keeps for a reply, whichever is larger. The gate and the size check then agree on
+        what fits: the gate never keeps work in one call that the size check would refuse to send.
 
         A planning brief carries more instructions than a working brief, so this
         errs toward splitting, never toward overflowing.
         """
         for c in reversed(run.calls):
             if c.get("function") == "lead":
-                return int(c.get("prompt_tokens") or 0) + int(c.get("completion_tokens") or 0)
+                return int(c.get("prompt_tokens") or 0) + max(int(c.get("completion_tokens") or 0), self._reply_room(run))
         return None
 
     def _assess(self, run: Run, subtasks: list[Subtask], *, declared: bool = False) -> list[Assessment]:

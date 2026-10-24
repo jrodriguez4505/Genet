@@ -87,7 +87,8 @@ def test_a_failed_part_goes_back_to_the_lead_and_the_run_goes_on(tmp_path: Path,
     merge = next(b for b in team.briefs if b.mode == "integrate")
     assert "sub-agents failed, so they are yours to cover: part-b" in merge.packet
     assert "part-b: the sub-agent failed, and the lead covered the part" in m.notes["question-1"].reason
-    assert [c["failed"] for c in m.calls if c.get("failed")] == [code]  # still on the record, still paid for
+    # Still on the record, still paid for. A malformed reply was asked again once first.
+    assert [c["failed"] for c in m.calls if c.get("failed")] == [code] * (2 if code == "SCHEMA" else 1)
 
 
 def test_the_lead_covers_a_failed_part_in_run_task_too(tmp_path: Path):
@@ -167,9 +168,10 @@ def test_a_covered_part_is_reviewed_and_leaves_a_lesson(tmp_path: Path):
     _fanout(engine, m)
     review = m.review
     assert review["outcome"] == "complete"
-    assert review["what_failed"] == ["the sub-agent for part-b returned a reply that was not the artifact schema"]
+    assert review["what_failed"] == ["1 reply was not the artifact schema and asked again",
+                                     "the sub-agent for part-b returned a reply that was not the artifact schema"]
     assert review["parts"] == {"part-a": "merged", "part-b": "failed (SCHEMA); covered by the lead", "part-c": "merged"}
-    assert review["what_was_done"] == ["the lead covered part-b", "the product was verified"]
+    assert review["what_was_done"] == ["the kernel asked again for 1 malformed reply", "the lead covered part-b", "the product was verified"]
     assert review["lessons"] == [LESSONS["schema"]]
     assert m.log[-1].event == "team_review"
     assert engine.store.lessons() == [(LESSONS["schema"], 1)]

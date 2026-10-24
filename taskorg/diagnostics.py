@@ -5,11 +5,23 @@ from __future__ import annotations
 import re
 from collections import Counter
 
+from .factory import DEFAULT_CRITERIA
 from .review import part_statuses
 from .run import Run
 
 
 PHASES = ("context", "switch_skill", "split", "artifact", "delta", "review_open", "review_answer", "complete", "abort")
+
+
+# The default criteria, today's and those of the oldest runs on record.
+_DEFAULT_SETS = ({c.lower() for c in DEFAULT_CRITERIA}, {"standing order", "purpose"})
+DEFAULT_CRITERIA_WARNING = ("verified only against the default criteria, which any reply that echoes its brief meets; "
+                            "pass --criteria to name what the product must show")
+
+
+def default_criteria(run: Run) -> bool:
+    """True when the run's success criteria are only the defaults."""
+    return {c.strip().lower() for c in run.state.success_criteria if c.strip()} in _DEFAULT_SETS
 
 
 def diagnose(run: Run) -> dict:
@@ -64,6 +76,8 @@ def diagnose(run: Run) -> dict:
     flags.extend(auth.get("flags") or [])
     roster = _roster(run)
     flags.extend(roster.get("flags") or [])
+    # Warnings do not change health: they say what a result can and cannot be trusted for.
+    warnings = ["verified_against_default_criteria"] if default_criteria(run) else []
     return {
         "tier": tier,
         "run": {
@@ -103,6 +117,7 @@ def diagnose(run: Run) -> dict:
         "review": getattr(run, "review", None),
         "adapter": getattr(run, "adapter_name", "") or next((c.get("adapter") for c in getattr(run, "calls", []) if c.get("adapter")), ""),
         "flags": flags,
+        "warnings": warnings,
         "health": "degraded" if flags else "ok",
     }
 

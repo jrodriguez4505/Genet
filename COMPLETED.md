@@ -2,6 +2,16 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.4.2 — October 2026: ready for a live run
+
+Four gaps, found in the past live data and in a rehearsal of the live path against a stand-in endpoint on this machine:
+
+- **Room for the reply.** The size check before a call counted the brief but not the reply. In the rehearsal, one call's prompt fit and its reply then overran the cap after it was paid for. The check now keeps room for the reply: the largest reply in the run so far, and 200 tokens for a live model before its first reply. That is the top of the 110 to 205 tokens per reply on record. The gates count the same room when they judge what fits, so they never keep work in a call the size check would refuse. Rehearsed at a 1,500-token cap, no call was paid for and then overran. The stub and sim figures are unchanged.
+- **One retry for a malformed reply.** A reply that is not the artifact schema is asked again once, with a note saying what was wrong. The retry is a budgeted call, and the failed first one stays on the record. Authority violations, transport failures and budget halts are never retried. A recovered retry still gets a team review and leaves its lesson. Under injected faults on every call (5%, large context), Genet went from 87% to 100% and a single agent from 82% to 98%.
+- **Default criteria are flagged.** Every past live run used the default criteria ("default task", "purpose", or the older "standing order", "purpose"), which any reply that echoes its brief meets. A run verified only against them now carries `verified_against_default_criteria` in `diagnose` and a warning in the CLI's output. Health is not changed.
+- **The verifier checks the goal.** A past live run passed an answer about Jean Genet the playwright on a task about this kernel. The live verifier is now told to pass a product only if it answers the goal, its subject and its question, and to fail one about something else even when it repeats the criteria. Whether a model follows that is for the live pilot to show.
+- `tests/test_readiness.py`, and 9 new mutations, for 139, all caught.
+
 ## v0.4.1 — October 2026: findings from the past live data and longer tests
 
 - **The oldest review answers are translated.** Real pre-0.2 runs answered reviews with `HOLD_ORG` and `CHANGE_HOW`, which the loader kept as they were, so `policy-replay` read a method change as a hold. They now load as `KEEP_ROSTER` and `CHANGE_METHOD`, in notes and in the log, whatever the file's format.
@@ -227,7 +237,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 5,950 lines in `taskorg/`. Suite: about 875 checks (including 300 fuzz sequences), 9 bench fixtures, and 130 mutation checks.
+Kernel: about 6,000 lines in `taskorg/`. Suite: about 905 checks (including 300 fuzz sequences), 9 bench fixtures, and 139 mutation checks.
 
 ## Run
 
