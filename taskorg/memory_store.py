@@ -13,7 +13,7 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 def _safe_id(run_id: str) -> str:
     """Run ids become file names. No separators, no '..'."""
-    if not _SAFE_ID.match(run_id or "") or ".." in run_id:
+    if not _SAFE_ID.fullmatch(run_id or "") or ".." in run_id:
         raise InvariantError("STORE", f"run id must be letters, digits, '.', '_' or '-': {run_id!r}")
     return run_id
 

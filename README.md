@@ -145,16 +145,18 @@ Each run starts with clean working memory, even when you reuse a run id. Runs sa
 
 ## Proving it
 
-`compare` runs the same tasks three ways. Model, tools, budget, tool rounds, verify-and-replan step and concurrency are all the same; only how the task is staffed differs.
+`compare` runs the same tasks three ways. Model, tools, budget, tool rounds, verify-and-replan step and concurrency are all the same; only how the task is staffed differs. A part that gets no sub-agent, for the worker cap or a malformed id, goes back to the lead under every strategy.
 
 | Strategy | Staffing |
 |---|---|
 | `single` | One agent works the task. No planning call. |
-| `always` | Crew style: the lead always decomposes, and every sub-task gets a worker. |
+| `always` | Crew style: the lead always decomposes, and every sub-task gets a worker, up to the cap. |
 | `genet` | The lead proposes sub-agents and the gates judge them, with the measured "should we". |
 | `genet-stated` | Same, but the lead's stated reasons are enough. Add it with `--strategies single,always,genet,genet-stated`. |
 
 The tasks come from a seeded, synthetic corpus of company operating notes, so ground truth is exact and no model has seen it. Facts are written in varied prose and surrounded by distractors: prior-year figures and look-alike company names.
+
+A product is graded on its last `ANSWER:` marker, in capitals; an "answer:" in prose does not count. A number must be the line's one value: period labels such as Q3 or FY2026 are ignored, `a + b = c` answers `c`, and a range or a list is not an answer.
 
 | Family | Question | Stresses |
 |---|---|---|
@@ -206,23 +208,29 @@ Genet treats three things as untrusted input: what the model endpoint sends back
 | Limit | Value | What it stops |
 |---|---|---|
 | Response size from the endpoint | 8 MB | A reply that exhausts memory |
-| Time to read a response | the timeout | A reply that drips in to hold a run open |
+| Time for the whole exchange: connect, headers, body | the timeout | A server that sends a byte at a time to hold a run open |
 | Brief size, checked before sending | the per-call token cap | An oversized request that is sent and paid for |
 | Tools run per reply | 8, repeats once | One reply that triggers thousands of reads |
 | Sub-tasks the gates judge per plan | 16 | A proposal flood |
 | Text one search scans | 20M characters | A search that reads an entire disk |
+| Terms one search matches | 16 | A query that makes one search take hours |
 | Entries one walk looks at | 20,000 | A huge or hostile directory tree |
 | Reported token counts | whole numbers, not negative | A reply that hides its own spend |
+| Calls in flight | counted against the budget | Parallel sub-agents that each spend past the cap |
+
+When one sub-agent fails, or you press Ctrl-C, the run closes at once and the sub-agents still running start no further calls. Any other failure inside a run, not only a rule the kernel enforces, leaves it aborted with a reason, and the CLI saves it as `CRASH`. A request string from a model, such as a path with a NUL byte or a symlink loop, comes back as "not found" instead of stopping the run.
 
 Malformed JSON from the endpoint or the model, including nesting too deep and numbers too long to convert, stops the call as a `LIVE` or `SCHEMA` error. A malformed saved run is refused as `PERSIST`, and a saved run cannot give a slot tools its skill does not allow. See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Verification
 
-The verifier's claim must start with PASS. Then every success criterion must appear in the product itself: its claim, evidence or context update. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. These run-state checks must also hold:
+The verifier's verdict is the first word of its claim: PASS passes, and anything else fails, so "Passing this would be wrong" is not a pass. Then every success criterion must appear in the product itself, as a whole word or number ("4.1" is not met by "14.1"): its claim, evidence or context update. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. These run-state checks must also hold:
 
 - The context and the method are not empty.
 - Sub-agents merged their results.
 - No review is open.
+
+The verifier always gets its call. When a split is judged, the gates reserve the merge, including the tool rounds it needs to cover a part no sub-agent took, and the verify call. A single agent's work and a rework stop their tool rounds in time to leave that call.
 
 ## Diagnose
 
@@ -233,12 +241,13 @@ These count as fails:
 - A tight-tier run that grew the roster.
 - A normal-tier run that answers a replan request with `KEEP_ROSTER`.
 - Any run with `isolation_leak`.
+- Any aborted run, and any run whose stop rule failed.
 
 Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 670 checks with no network and no key:
+`pytest -q` runs about 830 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -246,10 +255,11 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Concurrency.** Parallel sub-agents never lose, double-count or cross results, and a tight budget is never overspent.
 - **Live adapter.** Driven against a fake OpenAI-compatible endpoint: prompts, usage accounting, HTTP errors, timeouts.
 - **Security.** One test per attack on the trust boundaries: redirects that would carry the key, plain-HTTP endpoints, oversized and slow responses, malformed JSON, fake token counts, oversized briefs, tool floods, hidden files and symlinks to them, huge trees, and tampered saved runs.
+- **Review findings.** `tests/test_hardening.py` has one test per finding from a review of concurrency, input handling, persistence, the CLI and decision logic: siblings that kept spending after a failure, parallel overspend, unpaid merges, verdicts read by substring, crew parts dropped silently, grading by first number, hostile request strings, dripped headers, typed run files, and more.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 77 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output and security checks, and confirms that some test fails for each. All 77 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 113 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 113 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -275,7 +285,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.3.1 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.3.2 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

@@ -14,8 +14,10 @@ reads and returns.
 
 from __future__ import annotations
 
+import heapq
 import os
 import re
+import stat
 from pathlib import Path
 
 RUNNABLE = ("read", "retrieve", "observe")
@@ -30,6 +32,11 @@ VISIT_CAP = 20_000       # directory entries looked at per walk, so a huge tree 
 FILE_BYTES_CAP = 1_000_000
 SCAN_CHARS_CAP = 20_000_000  # text one retrieve scans
 NOTE_CAP = 2000          # chars of a sub-task note searched for file names
+MAX_TERMS = 16           # distinct terms one retrieve matches on
+ECHO_CAP = 200           # chars of a request echoed back in a tool result
+# What a request string can make the file system raise: NUL bytes and lone surrogates
+# (ValueError), names too long or permission denied (OSError), symlink loops (RuntimeError on 3.12).
+_PATH_ERRORS = (OSError, ValueError, RuntimeError)
 SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache"}
 _FILE_NAME = re.compile(r"[\w.-]+\.\w+")
 
@@ -48,13 +55,16 @@ def is_runnable(request: str) -> bool:
     return parse_request(request)[0] in RUNNABLE
 
 
-def _snippet(line: str, low: str, terms: list[str], width: int = 300) -> str:
-    """The part of a long line around its first matched term, so the figure is not cut off."""
+def _snippet(line: str, pattern: re.Pattern, width: int = 300) -> str:
+    """The part of a long line around its first matched term, so the figure is not cut off.
+
+    The position is found in the line itself: lower() can change a line's length, so a
+    position found in the lowered copy can point past the term."""
     line = line.strip()
     if len(line) <= width:
         return line
-    found = [low.strip().find(t) for t in terms if t in low]
-    pos = min((p for p in found if p >= 0), default=0)
+    m = pattern.search(line)
+    pos = m.start() if m else 0
     start = max(0, pos - width // 3)
     end = min(len(line), start + width)
     return ("…" if start else "") + line[start:end] + ("…" if end < len(line) else "")
@@ -86,10 +96,10 @@ class Toolbox:
         for c in candidates:
             try:
                 resolved = c.resolve()
-            except OSError:
+                if self._allowed(resolved) and resolved.exists():
+                    return resolved
+            except _PATH_ERRORS:
                 continue
-            if self._allowed(resolved) and resolved.exists():
-                return resolved
         return None
 
     def _walk(self, start: Path | None = None):
@@ -101,19 +111,17 @@ class Toolbox:
         seen = 0
         starts = [start] if start else self.roots
         for top in starts:
-            if top.is_file():
-                yield top
+            try:
+                if top.is_file():
+                    yield top
+                    continue
+            except _PATH_ERRORS:
                 continue
-            found: list[Path] = []
-            visited = 0
-            for dirpath, dirnames, filenames in os.walk(top):
-                dirnames[:] = sorted(d for d in dirnames if not _skipped(d))
-                found.extend(Path(dirpath) / f for f in filenames if not _skipped(f))
-                visited += len(dirnames) + len(filenames)
-                if visited > VISIT_CAP:
-                    break
-            for path in sorted(found):
-                if not path.is_file() or not self._allowed(path.resolve()):
+            for path in self._list(top):
+                try:
+                    if not path.is_file() or not self._allowed(path.resolve()):
+                        continue
+                except _PATH_ERRORS:  # unreadable, a loop, or gone since it was listed
                     continue
                 seen += 1
                 if seen > WALK_CAP:
@@ -123,12 +131,51 @@ class Toolbox:
             yield from sorted(self.files)
 
     @staticmethod
+    def _list(top: Path) -> list[Path]:
+        """Candidate files under top, in path order, without hidden or tool folders.
+
+        Entry by entry, so even one huge directory stops at VISIT_CAP. Directory
+        symlinks are not followed, and a folder that cannot be listed is skipped.
+        """
+        found: list[Path] = []
+        visited, stack = 0, [str(top)]
+        while stack and visited < VISIT_CAP:
+            entries = []
+            try:
+                with os.scandir(stack.pop()) as it:
+                    for entry in it:
+                        visited += 1
+                        if visited > VISIT_CAP:
+                            break
+                        entries.append(entry)
+            except OSError:
+                continue
+            subdirs = []
+            for entry in sorted(entries, key=lambda e: e.name):
+                if _skipped(entry.name):
+                    continue
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=False)
+                except OSError:
+                    continue
+                (subdirs if is_dir else found).append(entry.path if is_dir else Path(entry.path))
+            stack.extend(reversed(subdirs))
+        return sorted(found)
+
+    @staticmethod
     def _text(path: Path) -> str | None:
+        """A regular file's text, or None. Opened without blocking, so a pipe swapped in
+        after the walk cannot hang the read, and read only as far as the cap."""
         try:
-            if path.stat().st_size > FILE_BYTES_CAP:
-                return None
-            data = path.read_bytes()
-        except OSError:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+            with os.fdopen(fd, "rb") as fh:
+                info = os.fstat(fh.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_size > FILE_BYTES_CAP:
+                    return None
+                data = fh.read(FILE_BYTES_CAP + 1)
+        except _PATH_ERRORS:
+            return None
+        if len(data) > FILE_BYTES_CAP:
             return None
         if b"\x00" in data[:1024]:
             return None
@@ -151,7 +198,7 @@ class Toolbox:
             if path.stem.lower() in wanted or path.name.lower() in wanted:
                 text = self._text(path)
                 if text is not None:
-                    found[str(path.resolve())] = len(text) // 4
+                    found[str(path.resolve())] = min(len(text), READ_CAP) // 4  # what one read returns
         return found or None
 
     # --- tools ---
@@ -160,18 +207,21 @@ class Toolbox:
         name, arg = parse_request(request)
         if not self.roots and not self.files:
             return f"[{name}] no workspace attached"
-        if name == "read":
-            return self.read(arg)
-        if name == "retrieve":
-            return self.retrieve(arg)
-        if name == "observe":
-            return self.observe(arg)
-        return f"[{name}] not a runnable tool; put the result in the artifact"
+        try:
+            if name == "read":
+                return self.read(arg)
+            if name == "retrieve":
+                return self.retrieve(arg)
+            if name == "observe":
+                return self.observe(arg)
+        except _PATH_ERRORS as e:  # a request is model output; it never crashes the kernel
+            return f"[{name}] could not run: {type(e).__name__}"
+        return f"[{name[:ECHO_CAP]}] not a runnable tool; put the result in the artifact"
 
     def read(self, raw: str) -> str:
         path = self._resolve(raw)
         if path is None or not path.is_file():
-            return f"[read {raw}] not found in the workspace"
+            return f"[read {raw[:ECHO_CAP]}] not found in the workspace"
         text = self._text(path)
         if text is None:
             return f"[read {path}] binary or too large"
@@ -184,12 +234,16 @@ class Toolbox:
         When no line carries every term, the closest lines (at least half the
         terms) come back instead, labeled as such.
         """
-        terms = [t for t in query.lower().split() if t]
+        terms = list(dict.fromkeys(t for t in query.lower().split() if t))[:MAX_TERMS]
         if not terms:
             return "[retrieve] empty query"
+        query = query[:ECHO_CAP]
+        pattern = re.compile("|".join(map(re.escape, terms)), re.IGNORECASE)
         need = max(1, -(-len(terms) // 2))
         full: list[str] = []
-        partial: list[tuple[int, str]] = []
+        # The best MATCH_CAP partial matches only: most terms first, then earliest. Memory stays flat.
+        partial: list[tuple[int, int, str]] = []
+        n_partial = 0
         scanned, stopped = 0, ""
         for path in self._walk():
             text = self._text(path)
@@ -205,29 +259,32 @@ class Toolbox:
                     continue
                 low = line.lower()
                 hit = sum(1 for t in terms if t in in_name or t in low)
-                row = f"{path}:{n}: {_snippet(line, low, terms)}"
                 if hit == len(terms):
-                    full.append(row)
+                    full.append(f"{path}:{n}: {_snippet(line, pattern)}")
                     if len(full) > MATCH_CAP:
                         return f"[retrieve {query}]\n" + "\n".join(full[:MATCH_CAP]) + "\n[more matches not shown]"
                 elif len(terms) > 1 and hit >= need:
-                    partial.append((hit, row))
+                    n_partial += 1
+                    item = (hit, -n_partial, "")
+                    if len(partial) < MATCH_CAP or item > partial[0]:
+                        item = (hit, -n_partial, f"{path}:{n}: {_snippet(line, pattern)}")
+                        (heapq.heappush if len(partial) < MATCH_CAP else heapq.heapreplace)(partial, item)
         if full:
             return f"[retrieve {query}]\n" + "\n".join(full) + stopped
         if partial:
-            partial.sort(key=lambda x: -x[0])
-            more = "\n[more not shown]" if len(partial) > MATCH_CAP else ""
-            return f"[retrieve {query}] no line has every term; closest:\n" + "\n".join(r for _, r in partial[:MATCH_CAP]) + more + stopped
+            more = "\n[more not shown]" if n_partial > MATCH_CAP else ""
+            rows = [r for _, _, r in sorted(partial, reverse=True)]
+            return f"[retrieve {query}] no line has every term; closest:\n" + "\n".join(rows) + more + stopped
         return f"[retrieve {query}] no matches" + stopped
 
     def observe(self, raw: str = "") -> str:
         start = self._resolve(raw) if raw else None
         if raw and start is None:
-            return f"[observe {raw}] not found in the workspace"
+            return f"[observe {raw[:ECHO_CAP]}] not found in the workspace"
         paths = []
         for path in self._walk(start):
             paths.append(str(path))
             if len(paths) >= LIST_CAP:
                 paths.append("[more files not shown]")
                 break
-        return f"[observe {raw or 'workspace'}]\n" + ("\n".join(paths) if paths else "(empty)")
+        return f"[observe {raw[:ECHO_CAP] or 'workspace'}]\n" + ("\n".join(paths) if paths else "(empty)")

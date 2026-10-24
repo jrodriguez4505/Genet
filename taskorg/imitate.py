@@ -98,7 +98,7 @@ def synthesize(n: int = 160) -> list[tuple[BoardState, str]]:
         base.setdefault("status_active", 1)
         state = _run_for(base)
         rows.append((state, gold_label(state)))
-    return rows
+    return rows[:n]
 
 
 def _softmax(logits: list[float]) -> list[float]:

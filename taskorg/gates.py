@@ -148,7 +148,7 @@ def _need(open_: list[Assessment], policy: str, declared: bool, material, contex
     material(subtask) maps the files a sub-task needs to estimated tokens. One agent
     needs every file any sub-task needs, shared files once; a sub-agent needs only
     its own. A measured split needs more than fits in one call, and a split that
-    leaves some sub-agent carrying all of it does not help.
+    leaves a sub-agent with more than one call holds does not help.
 
     The room in one call is the context limit less overhead, what a call already
     costs before any material (brief and reply). Without a measured overhead it is
@@ -169,15 +169,16 @@ def _need(open_: list[Assessment], policy: str, declared: bool, material, contex
         room, after = max(0, context_limit - overhead), f" after ~{overhead} for the brief and reply"
     if total <= room:
         return f"refuse:fits in one context: ~{total} tokens of material vs {room} available per call{after}"
-    if max(sum(share.values()) for share in shares) >= total:
-        return f"refuse:a split does not shrink the work: one sub-task alone needs all ~{total} tokens"
+    biggest = max(sum(share.values()) for share in shares)
+    if biggest > room:
+        return f"refuse:a split does not make the work fit: one sub-task alone needs ~{biggest} tokens vs {room} available per call"
     return "measured"
 
 
 def _could_we(subtask: Subtask) -> str:
     if subtask.skill not in SKILLS:
         return f"no such skill: {subtask.skill}"
-    if not _CHANNEL.match(subtask.channel_id or ""):
+    if not _CHANNEL.fullmatch(subtask.channel_id or ""):
         return f"channel id not usable: {subtask.channel_id!r}"
     if subtask.channel_id in RESERVED_CHANNELS:
         return f"channel id reserved for the kernel: {subtask.channel_id}"

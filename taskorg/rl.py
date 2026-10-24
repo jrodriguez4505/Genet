@@ -150,10 +150,11 @@ def train(episodes: int = 80) -> tuple[ImitationPolicy, dict]:
     return pol, evaluate(pol, rounds=3)
 
 
-def compare_to_stub() -> dict:
-    learned, learned_eval = train(60)
+def compare_to_stub(episodes: int = 60) -> dict:
+    learned, learned_eval = train(episodes)
     stub_eval = evaluate(StubPolicy(), rounds=3)
     return {
+        "episodes": episodes,
         "stub": stub_eval,
         "learned": learned_eval,
         "illegal_not_worse": learned_eval["illegal_rate"] <= stub_eval["illegal_rate"] + 1e-9,

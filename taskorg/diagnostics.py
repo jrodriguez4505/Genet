@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from .run import Run
@@ -49,6 +50,10 @@ def diagnose(run: Run) -> dict:
         flags.append("split_without_gates")
     if run.state.worker_count() > 1 and not any(d.stream == "merge" for d in run.deltas):
         flags.append("split_without_merged_results")
+    if run.status.value == "abort":
+        flags.append("aborted")
+    if run.failed_stop_rules:
+        flags.append("stop_rule_failed")
 
     tier = _tier(run)
     flags.extend(tier.get("flags") or [])
@@ -232,6 +237,7 @@ def _small(detail: dict) -> dict:
     return keep
 
 
+_NEGATED = re.compile(r"\b(?:not|never|cannot|can't|don't|do not|may not|must not)\s+(?:\w+\s+){0,2}$")
 TAKEOVER = ("set_roster", "spawn", "i am the lead", "take over the roster", "change the roster", "add a worker")
 
 
@@ -242,14 +248,12 @@ def _authority(run: Run) -> dict:
         blob = " ".join([art.claim, *art.evidence, art.context_update]).lower()
         found = []
         for w in TAKEOVER:
-            if w not in blob:
-                continue
-            # Guidelines quote ("may not take over the roster") is not a hit.
-            idx = blob.find(w)
-            window = blob[max(0, idx - 18) : idx]
-            if any(neg in window for neg in ("not ", "may not ", "cannot ", "can't ", "do not ", "don't ")):
-                continue
-            found.append(w)
+            # Every mention counts: quoting the rule first does not excuse breaking it later.
+            for m in re.finditer(re.escape(w), blob):
+                # A guidelines quote ("may not take over the roster") is not a hit; "not later: spawn" is.
+                if not _NEGATED.search(blob[max(0, m.start() - 24) : m.start()]):
+                    found.append(w)
+                    break
         if found:
             hits.append({"channel": art.channel_id, "terms": found})
             flags.append(f"authority_language:{art.channel_id}")

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import asdict
 from pathlib import Path
 
 from .budget import Budget
 from .errors import InvariantError
+from .gates import World
 from .models import SKILL_TOOLS, SKILLS, Artifact, Cue, Delta, NoteStatus, ReviewNote, RunState, Slot, Status
 from .run import LogEntry, Run
 
@@ -22,6 +24,8 @@ def _budget_dict(m: Run) -> dict | None:
         "max_tokens_per_call": b.max_tokens_per_call,
         "allow_split": getattr(b, "allow_split", True),
         "allow_adapt": getattr(b, "allow_adapt", True),
+        # Time already spent, so a loaded run does not get a fresh clock.
+        "elapsed": round(b.elapsed(), 3),
     }
 
 
@@ -74,6 +78,8 @@ def run_to_dict(m: Run) -> dict:
         ],
         "stop_reason": getattr(m, "stop_reason", ""),
         "budget": _budget_dict(m),
+        # What already exists outside the run; the gates read it, so it travels with the run.
+        "world": asdict(m.world) if getattr(m, "world", None) else None,
         "summary": m.summary(),
     }
 
@@ -95,6 +101,25 @@ _LEGACY_FUNCTION = {"head": "lead", "why": "reviewer"}
 _LEGACY_KIND = {"why": "review", "plan_wrong": "replan"}
 _LEGACY_STREAM = {"element": "merge", "up": "escalate", "out": "report", "adjacent": "peer"}
 _LEGACY_TIER = {"crawl": "tight", "walk": "normal", "run": "open"}
+_LEGACY_EVENT = {
+    "mission_open": "run_open", "look": "context", "slide": "switch_skill", "set_how": "set_method",
+    "why_submit": "review_open", "why_respond": "review_answer", "write_who": "set_roster",
+    "write_net": "open_stream", "adjacent_in": "peer_in", "human_override_who": "human_override_roster",
+}
+_LEGACY_DETAIL = {"net": "stream", "who": "roster", "picture": "context"}
+
+
+def _legacy_entry(e: dict) -> dict:
+    """One log entry in today's vocabulary: event names, detail keys, and stream and review names."""
+    detail = {}
+    for k, v in (e.get("detail") or {}).items():
+        key = _LEGACY_DETAIL.get(k, k)
+        if k == "net":
+            v = _LEGACY_STREAM.get(v, v)
+        elif k == "kind":
+            v = _LEGACY_KIND.get(v, v)
+        detail[key] = v
+    return {**e, "event": _LEGACY_EVENT.get(e.get("event"), e.get("event")), "detail": detail}
 
 
 def _legacy_skill(slot: dict) -> str:
@@ -105,7 +130,9 @@ def _legacy_skill(slot: dict) -> str:
 
 def _upgrade(raw: dict) -> dict:
     if "state" in raw:
-        return raw
+        # Format 2, possibly re-saved from an older file by older code: the log may still use old names.
+        log = raw.get("log")
+        return raw | {"log": [_legacy_entry(e) for e in log if isinstance(e, dict)]} if isinstance(log, list) else raw
     raw = dict(raw)
     state = {}
     for k, v in raw.pop("picture").items():
@@ -130,6 +157,7 @@ def _upgrade(raw: dict) -> dict:
         for d in raw.get("deltas", [])
     ]
     raw["open_streams"] = [_LEGACY_STREAM.get(n, n) for n in raw.pop("open_nets", ["element", "up"])]
+    raw["log"] = [_legacy_entry(e) for e in raw.get("log", []) if isinstance(e, dict)]
     raw["roster_at_start"] = raw.pop("who_open", [])
     if raw.get("budget"):
         b = dict(raw["budget"])
@@ -149,11 +177,80 @@ def _slot(saved: dict) -> Slot:
 def load_run(path: Path) -> Run:
     """A saved run. The file is untrusted input: anything malformed is refused as a PERSIST error."""
     try:
-        return _from_dict(_upgrade(json.loads(Path(path).read_text(encoding="utf-8"))))
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as e:
+        raise InvariantError("PERSIST", f"cannot read run file: {path}: {e.strerror or type(e).__name__}") from e
+    try:
+        raw = json.loads(text)
+        if not isinstance(raw, dict):
+            raise TypeError("a run file is a JSON object")
+        raw = _upgrade(raw)
+        _check_types(raw)
+        return _from_dict(raw)
     except InvariantError:
         raise
     except (KeyError, TypeError, ValueError, AttributeError, RecursionError) as e:
         raise InvariantError("PERSIST", f"not a valid run file: {path}: {type(e).__name__}: {str(e)[:120]}") from e
+
+
+def _need(cond: bool, what: str) -> None:
+    if not cond:
+        raise TypeError(what)
+
+
+def _strs(v, what: str) -> None:
+    _need(isinstance(v, list) and all(isinstance(x, str) for x in v), f"{what}: a list of strings")
+
+
+def _number(v, what: str, *, optional: bool = False) -> None:
+    if optional and v is None:
+        return
+    _need(isinstance(v, (int, float)) and not isinstance(v, bool), f"{what}: a number")
+
+
+def _check_types(raw: dict) -> None:
+    """Field types, so a hand-edited or hostile file fails here, not later inside a read command."""
+    _need(isinstance(raw.get("id"), str) and isinstance(raw.get("status"), str), "id and status: strings")
+    st = raw.get("state")
+    _need(isinstance(st, dict), "state: an object")
+    _need(isinstance(st.get("slots"), list) and all(isinstance(s, dict) for s in st["slots"]), "state.slots: objects")
+    for k in ("lead_id", "primary", "goal", "cadence", "context", "done_when", "purpose", "method"):
+        _need(isinstance(st.get(k), str), f"state.{k}: a string")
+    for k in ("success_criteria", "checkpoints", "projections", "axes", "abort_criteria"):
+        if k in st:
+            _strs(st[k], f"state.{k}")
+    for k in ("open_streams", "roster_at_start", "failed_stop_rules"):
+        if raw.get(k) is not None:
+            _strs(raw[k], k)
+    for kind in ("artifacts", "deltas"):
+        items = raw.get(kind) or []
+        _need(isinstance(items, list) and all(isinstance(a, dict) for a in items), f"{kind}: objects")
+        for a in items:
+            for k in ("claim", "uncertainty", "channel_id", "context_update", "stream"):
+                if k in a:
+                    _need(isinstance(a[k], str), f"{kind}[].{k}: a string")
+            for k in ("evidence", "requests"):
+                if k in a:
+                    _strs(a[k], f"{kind}[].{k}")
+    log = raw.get("log") or []
+    _need(isinstance(log, list) and all(isinstance(e, dict) for e in log), "log: objects")
+    for e in log:
+        _need(isinstance(e.get("event"), str) and isinstance(e.get("detail", {}), dict), "log[]: event and detail")
+        _number(e.get("ts"), "log[].ts", optional=True)
+    calls = raw.get("calls") or []
+    _need(isinstance(calls, list) and all(isinstance(c, dict) for c in calls), "calls: objects")
+    for c in calls:
+        for k in ("slot", "function", "channel", "mode", "adapter"):
+            _need(c.get(k) is None or isinstance(c[k], str), f"calls[].{k}: a string")
+        for k in ("prompt_tokens", "completion_tokens", "latency_s"):
+            _number(c.get(k), f"calls[].{k}", optional=True)
+    b = raw.get("budget")
+    if b is not None:
+        _need(isinstance(b, dict), "budget: an object")
+        for k in ("max_calls", "max_tokens", "max_seconds", "max_tokens_per_call", "elapsed"):
+            _number(b.get(k), f"budget.{k}", optional=True)
+        for k in ("allow_split", "allow_adapt"):
+            _need(isinstance(b.get(k, True), bool), f"budget.{k}: true or false")
 
 
 def _from_dict(raw: dict) -> Run:
@@ -211,5 +308,10 @@ def _from_dict(raw: dict) -> Run:
             allow_split=raw_b.get("allow_split", True),
             allow_adapt=raw_b.get("allow_adapt", True),
             tier=raw_b.get("tier", "open"),
+            started_at=time.time() - float(raw_b.get("elapsed") or 0),
         )
+    w = raw.get("world")
+    if w is not None:
+        _need(isinstance(w, dict), "world: an object")
+        m.world = World(**{k: [str(x) for x in w.get(k) or []] for k in ("existing_files", "existing_channels", "notes")})
     return m

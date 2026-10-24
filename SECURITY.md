@@ -6,9 +6,9 @@ Please do not open a public issue. Report it privately through **Report a vulner
 
 ## What Genet treats as untrusted
 
-- **The model endpoint's reply.** Its size, its timing, its JSON and its token counts.
+- **The model endpoint's reply.** Its size, its timing over the whole exchange (connect, headers and body), its JSON and its token counts.
 - **Model output.** Tool requests, sub-task proposals and artifact fields. A model can be steered by text it reads, so a request from a model is never trusted because it looks reasonable.
-- **The workspace.** Files can carry planted instructions. Tools only read, only inside the declared roots, never hidden files, and never through a symlink that leads outside or into a hidden file.
+- **The workspace.** Files can carry planted instructions, and folders can be huge, unreadable or full of pipes. Tools only read, only inside the declared roots, never hidden files, and never through a symlink that leads outside or into a hidden file.
 - **Saved runs.** A file loaded with `replan`, `diagnose` or `replay` may come from someone else.
 
 The limits that enforce this are listed in the README under Security. They are enforced in code, and each has a test in `tests/test_security.py` and a mutation in `scripts/mutation_check.py`.

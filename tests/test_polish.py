@@ -36,7 +36,7 @@ def test_verifier_fail_blocks_complete(tmp_path: Path):
         Engine(store, adapter=ScriptedLive(replies)).run_single(
             m, context="enough", operator_question="one?"
         )
-    assert e.value.code in ("INV-5", "SCHEMA", "BUDGET")
+    assert e.value.code in ("INV-5", "SCHEMA", "BUDGET", "VERIFY")
     assert m.last_verify and m.last_verify["score"] < 1
 
 

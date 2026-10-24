@@ -183,12 +183,14 @@ def build_suite(seed: int = 7, per_family: int = 5, families: tuple[str, ...] = 
 
 # --- grading ---
 
-_ANSWER = re.compile(r"ANSWER:\s*(.+)", re.IGNORECASE)
+# The marker the brief asks for, in capitals. A lower-case "answer:" in prose is not one.
+_ANSWER = re.compile(r"(?<![A-Za-z])ANSWER:[ \t]*([^\n]+)")
+_PERIOD = re.compile(r"\b(?:FY\d{2,4}|Q[1-4]|H[12])\b", re.IGNORECASE)
 _NUMBER = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
 
 
 def extract_answer(text: str) -> str | None:
-    """The last 'ANSWER: <value>' line in a product."""
+    """The value after the last 'ANSWER:' marker, to the end of its line."""
     found = _ANSWER.findall(text or "")
     return found[-1].strip() if found else None
 
@@ -201,7 +203,9 @@ def grade(answer: str | None, task: Task) -> bool:
     if not answer:
         return False
     if task.kind == "number":
-        m = _NUMBER.search(answer.replace("$", ""))
-        return bool(m) and abs(float(m.group().replace(",", "")) - float(task.answer)) <= 0.05 + 1e-9
+        # Period labels are not values, and "a + b = c" answers c. A range or a list is not one answer.
+        value = _PERIOD.sub(" ", answer.replace("$", "")).rsplit("=", 1)[-1]
+        nums = {float(n.replace(",", "")) for n in _NUMBER.findall(value)}
+        return len(nums) == 1 and abs(nums.pop() - float(task.answer)) <= 0.05 + 1e-9
     got = _norm_name(answer)
     return got in (_norm_name(task.answer), slug(task.answer).replace("-", " "))

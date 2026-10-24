@@ -53,19 +53,24 @@ def test_a_shared_file_counts_once():
     assert all("fits in one context: ~800 tokens" in v.refused for v in verdicts)
 
 
-def test_a_split_that_does_not_shrink_the_work_is_refused():
+def test_a_split_that_does_not_make_the_work_fit_is_refused():
     big = {"big.md": 3000}
     verdicts = assess(PAIR, policy="measured", material=_files(a=big, b=big), context_limit=2000)
-    assert all(v.gate == "should_we" and "does not shrink the work" in v.refused for v in verdicts)
+    assert all(v.gate == "should_we" and "does not make the work fit" in v.refused for v in verdicts)
     # One sub-task needing everything is the same: its sub-agent still carries the whole load.
     verdicts = assess(PAIR, policy="measured", material=_files(a={"big.md": 3000, "s.md": 50}, b={"s.md": 50}),
                       context_limit=2000)
-    assert all("does not shrink the work: one sub-task alone needs all ~3050 tokens" in v.refused for v in verdicts)
-
-
-def test_partly_shared_material_that_a_split_shrinks_is_a_reason():
+    assert all("one sub-task alone needs ~3050 tokens vs 1000" in v.refused for v in verdicts)
+    # Shrinking every share a little is not enough when each sub-agent still overflows.
+    shared = {"x.md": 990, "y.md": 990}
     verdicts = assess(PAIR, policy="measured", context_limit=2000,
-                      material=_files(a={"shared.md": 600, "a.md": 600}, b={"shared.md": 600, "b.md": 600}))
+                      material=_files(a=shared | {"a.md": 30}, b=shared | {"b.md": 30}))
+    assert all("does not make the work fit" in v.refused for v in verdicts)
+
+
+def test_partly_shared_material_that_fits_once_split_is_a_reason():
+    verdicts = assess(PAIR, policy="measured", context_limit=2000,
+                      material=_files(a={"shared.md": 300, "a.md": 600}, b={"shared.md": 300, "b.md": 600}))
     assert all(v.legal and v.basis == "measured" for v in verdicts)
 
 
@@ -76,9 +81,9 @@ def test_the_room_is_the_limit_less_the_measured_overhead():
     # Without a measurement the gate falls back to fit_fraction of the limit, and 1500 does not fit 1000.
     guessed = assess(PAIR, policy="measured", material=sizes, context_limit=2000)
     assert all(v.legal and v.basis == "measured" for v in guessed)
-    # A brief that fills the call leaves no room at all.
+    # A brief that fills the call leaves no room at all, so no split can make the work fit.
     full = assess(PAIR, policy="measured", material=_sizes(a=1, b=1), context_limit=2000, overhead=2500)
-    assert all(v.legal for v in full)
+    assert all("does not make the work fit" in v.refused for v in full)
 
 
 def test_unknown_material_is_not_a_reason():
@@ -166,7 +171,8 @@ def test_the_overhead_is_the_leads_planning_call(tmp_path: Path):
 
 
 def test_large_notes_fan_out(tmp_path: Path):
-    m = _run(tmp_path, chars=9000, context=4000)
+    # One read returns at most READ_CAP characters, about 1000 tokens a note: two do not fit 2000 less the brief.
+    m = _run(tmp_path, chars=9000, context=2000)
     assert m.state.worker_count() == 2
     assert {e.detail["basis"] for e in m.log if e.event == "gate"} == {"measured"}
     d = diagnose(m)
@@ -189,7 +195,8 @@ def test_two_sub_tasks_over_one_large_file_stay_with_one_agent(tmp_path: Path):
     context = "subtask:part-1@retrieve=read_report.md_revenue subtask:part-2@retrieve=read_report.md_hiring"
     Engine(MemoryStore(tmp_path / "s"), budget=budget, toolbox=Toolbox(roots=[ws])).run_task(m, context=context)
     assert m.state.worker_count() == 0
-    assert "does not shrink the work" in m.notes["question-1"].reason
+    # One read returns at most READ_CAP characters of the file, and that fits one call.
+    assert "fits in one context: ~1000 tokens" in m.notes["question-1"].reason
 
 
 def test_operator_named_subtasks_count_as_declared(tmp_path: Path):
