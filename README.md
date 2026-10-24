@@ -47,6 +47,13 @@ A run has four steps:
 
 ## Shared ownership
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/ownership-dark.svg">
+  <img alt="One sub-agent's reply is malformed. Its part goes back to the lead, who merges the other results, covers the part and hands the product to the verifier. After any failure the kernel writes a blameless review, and its lessons reach every brief in the next run." src="docs/img/ownership-light.svg" width="100%">
+</picture>
+
+*A failed part is not lost, and a failure is not wasted. Authority violations, budget halts and crashes still stop the run at once.*
+
 The lead makes every decision; the outcome is the team's. When something goes wrong, the run does not single out an agent and stop. The team absorbs what it can, and records what happened so the next run starts better.
 
 - **A failed part goes back to the team.** When a sub-agent's reply is malformed (`SCHEMA`) or its call to the model fails (`LIVE`), the run goes on. The other sub-agents' results are merged, and the lead covers the failed part the same way it covers a part the gates refused. An authority violation, such as a tool the skill does not allow or a roster change, still stops the run at once, as do a budget halt and a crash.
