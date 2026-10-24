@@ -75,19 +75,28 @@ class AlwaysSplit(Engine):
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """No gates. Only what the kernel cannot run is dropped: bad ids, repeats, past the worker cap."""
-        out, seen = [], set()
+        out, seen, staffed = [], set(), 0
         for subtask in subtasks:
-            if _could_we(subtask) or subtask.channel_id in seen or len(out) >= MAX_WORKERS:
-                continue
-            seen.add(subtask.channel_id)
             failure = subtask.named_failure.strip() or "baseline: always split"
             a = Assessment(subtask, GateRecord(False, True, failure, True, subtask.channel_id, GATE_ORDER))
+            problem = _could_we(subtask)
+            # Refused, not dropped: run_task gives the lead every part no sub-agent took, as it does for genet.
+            if subtask.channel_id in seen:
+                a.refuse("can_someone_else", f"channel {subtask.channel_id} proposed twice")
+            elif problem:
+                a.refuse("could_we", problem)
+            elif staffed >= MAX_WORKERS:
+                a.refuse("could_we", "worker cap: no room for this sub-agent")
+            else:
+                staffed += 1
+            seen.add(subtask.channel_id)
             run._record("gate", a.as_dict() | {"policy": "always-split"})
             out.append(a)
         return out
 
 
 # genet uses the measured "should we"; genet-stated accepts the lead's reasons, for comparison.
+BASELINES = ("single", "always")
 STRATEGIES: dict[str, Callable[..., Engine]] = {
     "single": SingleAgent,
     "always": AlwaysSplit,
@@ -147,6 +156,8 @@ def run_trial(
             engine.run_task(run, context=CONTEXT, operator_question="Could a single agent have done this?")
         except InvariantError as e:
             code = e.code
+        except Exception:
+            code = "CRASH"
         latency = time.perf_counter() - started
     answer = extract_answer(_last_product(run))
     right = grade(answer, task)
@@ -237,7 +248,8 @@ def summarize(results: list[TrialResult], *, price_in: float | None = None, pric
     verdict = {}
     if {"single", "genet"} <= set(overall):
         g = overall["genet"]
-        best = max((s for s in strategies if s != "genet"), key=lambda s: overall[s]["accuracy"])
+        # Only the baselines compete for "best": genet-stated is a variant of genet, and order must not matter.
+        best = max((s for s in BASELINES if s in overall), key=lambda s: (overall[s]["accuracy"], -BASELINES.index(s)))
         verdict = {
             "best_baseline": best,
             "genet_accuracy_minus_best_baseline": round(g["accuracy"] - overall[best]["accuracy"], 3),

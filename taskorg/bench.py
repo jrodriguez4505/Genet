@@ -61,7 +61,7 @@ def _drive(spec: dict, store: MemoryStore):
             worker = Slot(id=f"w-{verdict.subtask.channel_id}", function="worker", channel_id=verdict.subtask.channel_id)
             m.set_roster(m.state.lead_id, m.state.slots + [worker], gates=verdict.gates)
         else:
-            raise ValueError(f"unknown bench mode: {mode}")
+            raise InvariantError("BENCH", f"unknown bench mode: {mode}")
     except InvariantError as e:
         return m, e.code
     return m, ""
@@ -93,14 +93,18 @@ def run_fixture(spec: dict) -> dict:
         else:
             ok = have == want
         checks.append({"key": key, "want": want, "got": have, "ok": ok})
-    return {"id": spec["id"], "mode": spec.get("mode"), "tier": spec.get("tier"), "ok": all(c["ok"] for c in checks), "checks": checks}
+    # A fixture with no expectations checks nothing, so it cannot pass.
+    return {"id": spec["id"], "mode": spec.get("mode"), "tier": spec.get("tier"), "ok": bool(checks) and all(c["ok"] for c in checks), "checks": checks}
 
 
 def run_bench(fixtures: Path | None = None) -> dict:
     root = Path(fixtures) if fixtures else DEFAULT_DIR
     if not root.is_dir():
         raise InvariantError("READ", f"no bench fixtures at {root}; pass --fixtures")
-    results = [run_fixture(json.loads(p.read_text(encoding="utf-8"))) for p in sorted(root.glob("*.json"))]
+    paths = sorted(root.glob("*.json"))
+    if not paths:
+        raise InvariantError("READ", f"no *.json fixtures in {root}")
+    results = [run_fixture(json.loads(p.read_text(encoding="utf-8"))) for p in paths]
     return {
         "fixtures": str(root),
         "passed": sum(r["ok"] for r in results),

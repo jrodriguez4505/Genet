@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from .budget import Budget
@@ -36,13 +37,33 @@ def _store(root) -> MemoryStore:
     return store
 
 
+def _whole(least: int):
+    """An argparse type: a whole number, at least `least`."""
+    def parse(text: str) -> int:
+        value = int(text)
+        if value < least:
+            raise argparse.ArgumentTypeError(f"must be at least {least}, got {value}")
+        return value
+    return parse
+
+
+def _finite(least: float, *, strict: bool):
+    """An argparse type: a finite number above (strict) or at least `least`. nan would switch a cap off."""
+    def parse(text: str) -> float:
+        value = float(text)
+        if not math.isfinite(value) or value < least or (strict and value == least):
+            raise argparse.ArgumentTypeError(f"must be a finite number {'above' if strict else 'at least'} {least}, got {text}")
+        return value
+    return parse
+
+
 def _add_budget_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--tier", default="tight", choices=["tight", "normal", "open"],
                    help="budget tier: tight = single agent; normal = may replan; open = may fan out")
-    p.add_argument("--max-calls", type=int, default=None)
-    p.add_argument("--max-tokens", type=int, default=None)
-    p.add_argument("--max-seconds", type=float, default=None)
-    p.add_argument("--max-tokens-per-call", type=int, default=None)
+    p.add_argument("--max-calls", type=_whole(1), default=None)
+    p.add_argument("--max-tokens", type=_whole(1), default=None)
+    p.add_argument("--max-seconds", type=_finite(0, strict=True), default=None)
+    p.add_argument("--max-tokens-per-call", type=_whole(1), default=None)
 
 
 def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (), **defaults: str) -> None:
@@ -54,7 +75,7 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
         else:
             p.add_argument(name, default=defaults[flag])
     p.add_argument("--store", default="data")
-    p.add_argument("--out", default=defaults["out"])
+    p.add_argument("--out", default=None, help="saved run (default data/runs/<id>.json)")
     p.add_argument("--adapter", default="stub", choices=["stub", "live"])
     p.add_argument("--read", action="append", default=[], help="file text into working memory; not a new sub-agent")
     p.add_argument("--criteria", action="append", default=[], help="success criterion the product must show")
@@ -87,7 +108,10 @@ def _new_run(args: argparse.Namespace, store: MemoryStore):
     store.reset_working(run.id)
     attach_reads(store, run, args.read)
     if args.criteria:
-        run.state.success_criteria = list(args.criteria)
+        criteria = [c for c in args.criteria if c.strip()]
+        if not criteria:
+            raise InvariantError("CLI", "--criteria is blank; name what the product must show")
+        run.state.success_criteria = criteria
     exists = [str(p) for p in args.exists]
     run.world = World(existing_files=exists, existing_channels=[Path(p).stem for p in exists])
     return run
@@ -100,6 +124,35 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
     toolbox = Toolbox(roots=args.workspace, files=args.read)
     return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
                   split_policy=args.split_policy, isolation_required=args.isolate)
+
+
+def _out_path(raw: str | None, default: Path) -> Path:
+    """Where results go, checked before any work starts, so a bad path cannot waste a run."""
+    out = Path(raw) if raw else default
+    if out.is_dir():
+        raise InvariantError("CLI", f"--out is a directory, not a file: {out}")
+    if out.parent.exists() and not out.parent.is_dir():
+        raise InvariantError("CLI", f"--out is inside something that is not a directory: {out.parent}")
+    return out
+
+
+def _start(args: argparse.Namespace):
+    """Everything that can fail before the run starts: the out path, the store, the run, the engine.
+    An error here writes nothing, so it can never overwrite the last saved run."""
+    out = _out_path(args.out, Path("data/runs") / f"{args.id}.json")
+    store = _store(args.store)
+    run = _new_run(args, store)
+    return store, run, _engine(args, store), out
+
+
+def _guarded(run, out: Path, call):
+    """The run itself. A halt saves the stopped run; so does a crash, as code CRASH."""
+    try:
+        return call(), None
+    except InvariantError as e:
+        return None, _save_halt(run, out, e)
+    except Exception as e:
+        return None, _save_halt(run, out, InvariantError("CRASH", f"{type(e).__name__}: {e}"))
 
 
 def _axes(raw: str) -> list[str]:
@@ -136,38 +189,28 @@ def _save_done(result, out: Path, **extra) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    store = _store(args.store)
-    run = _new_run(args, store)
-    try:
-        result = _engine(args, store).run_task(run, context=args.context, operator_question=args.question)
-    except InvariantError as e:
-        return _save_halt(run, args.out, e)
+    store, run, engine, out = _start(args)
+    result, halted = _guarded(run, out, lambda: engine.run_task(run, context=args.context, operator_question=args.question))
+    if result is None:
+        return halted
     gates = [
         {"channel": v.subtask.channel_id, "skill": v.subtask.skill, "legal": v.legal, "refused": v.refused}
         for v in result.verdicts or []
     ]
-    return _save_done(result, args.out, gates=gates, answer=run.notes["question-1"].reason)
+    return _save_done(result, out, gates=gates, answer=run.notes["question-1"].reason)
 
 
 def cmd_single(args: argparse.Namespace) -> int:
-    store = _store(args.store)
-    run = _new_run(args, store)
-    try:
-        result = _engine(args, store).run_single(
-            run,
-            context=args.context,
-            operator_question=args.question,
-            lead_response=args.response,
-            lead_reason=args.reason,
-        )
-    except InvariantError as e:
-        return _save_halt(run, args.out, e)
-    return _save_done(result, args.out)
+    store, run, engine, out = _start(args)
+    result, halted = _guarded(run, out, lambda: engine.run_single(
+        run, context=args.context, operator_question=args.question,
+        lead_response=args.response, lead_reason=args.reason,
+    ))
+    return halted if result is None else _save_done(result, out)
 
 
 def cmd_fanout(args: argparse.Namespace) -> int:
-    store = _store(args.store)
-    run = _new_run(args, store)
+    store, run, engine, out = _start(args)
     subtasks = parse_subtasks(args.context)
     if not subtasks:
         for part in args.subtasks.split(","):
@@ -176,52 +219,30 @@ def cmd_fanout(args: argparse.Namespace) -> int:
             spec, failure = part.split(":", 1)
             channel, _, skill = spec.partition("@")
             subtasks.append(Subtask(channel.strip(), failure.strip(), skill=skill.strip().lower() or "execute"))
-    try:
-        result = _engine(args, store).run_fanout(
-            run,
-            context=args.context,
-            subtasks=subtasks,
-            axes=_axes(args.axes),
-            operator_question=args.question,
-            lead_response=args.response,
-            lead_reason=args.reason,
-        )
-    except InvariantError as e:
-        return _save_halt(run, args.out, e)
-    return _save_done(result, args.out, split=result.split)
+    result, halted = _guarded(run, out, lambda: engine.run_fanout(
+        run, context=args.context, subtasks=subtasks, axes=_axes(args.axes),
+        operator_question=args.question, lead_response=args.response, lead_reason=args.reason,
+    ))
+    return halted if result is None else _save_done(result, out, split=result.split)
 
 
 def cmd_replan(args: argparse.Namespace) -> int:
-    store = _store(args.store)
-    run = _new_run(args, store)
-    try:
-        result = _engine(args, store).run_replan(
-            run,
-            context=args.context,
-            replan_reason=args.replan_reason,
-            new_method=args.method,
-            axes=_axes(args.axes),
-        )
-    except InvariantError as e:
-        return _save_halt(run, args.out, e)
-    return _save_done(result, args.out)
+    store, run, engine, out = _start(args)
+    result, halted = _guarded(run, out, lambda: engine.run_replan(
+        run, context=args.context, replan_reason=args.replan_reason, new_method=args.method, axes=_axes(args.axes),
+    ))
+    return halted if result is None else _save_done(result, out)
 
 
 def cmd_brief(args: argparse.Namespace) -> int:
     from .diagnostics import diagnose
     from .schema import state_contract
 
-    store = _store(args.store)
-    run = _new_run(args, store)
-    try:
-        result = _engine(args, store).run_single(
-            run,
-            context=args.context,
-            operator_question=args.question,
-        )
-    except InvariantError as e:
-        return _save_halt(run, args.out, e)
-    save_run(result.run, Path(args.out))
+    store, run, engine, out = _start(args)
+    result, halted = _guarded(run, out, lambda: engine.run_single(run, context=args.context, operator_question=args.question))
+    if result is None:
+        return halted
+    save_run(result.run, out)
     report = diagnose(result.run)
     print(json.dumps({
         "ok": True,
@@ -230,7 +251,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
         "could_this_have_been_one": result.run.state.worker_count() == 0,
         "health": report["health"],
         "tier": report["tier"]["name"],
-        "saved": str(args.out),
+        "saved": str(out),
     }, indent=2))
     return 0
 
@@ -247,7 +268,6 @@ def main(argv: list[str] | None = None) -> int:
         purpose="Keep the goal intact",
         done_when="Task finished",
         context="One source holds everything needed.",
-        out="data/runs/run-001.json",
     )
     m.add_argument("--question", default="Could a single agent have done this?")
     m.set_defaults(func=cmd_run)
@@ -260,7 +280,6 @@ def main(argv: list[str] | None = None) -> int:
         purpose="Keep one shared context and one plan",
         done_when="Task recorded and review closed",
         context="The first path is blocked. Two independent sources are visible.",
-        out="data/runs/single-001.json",
     )
     r.add_argument("--question", default="Why solve this with one agent instead of splitting the sources?")
     r.add_argument("--response", default="KEEP_ROSTER")
@@ -275,7 +294,6 @@ def main(argv: list[str] | None = None) -> int:
         purpose="Keep the goal intact",
         done_when="Task finished",
         context="The first path is blocked. source-a and source-b are independent.",
-        out="data/runs/fanout-001.json",
     )
     s.add_argument("--subtasks", default="source-a:independent source-a channel,source-b:independent source-b channel",
                    help="channel[@skill]:named failure, comma separated; used when --context tags no sub-tasks")
@@ -293,7 +311,6 @@ def main(argv: list[str] | None = None) -> int:
         purpose="Keep the goal intact",
         done_when="Task finished",
         context="The first source is stale. The second source is current.",
-        out="data/runs/replan-001.json",
     )
     a.add_argument("--replan-reason", default="The first plan no longer fits: the first source is stale")
     a.add_argument("--method", default="work from source-b")
@@ -306,7 +323,6 @@ def main(argv: list[str] | None = None) -> int:
         required=("goal", "purpose", "context"),
         id="brief-001",
         done_when="Goal met",
-        out="data/runs/brief-001.json",
     )
     p_b.add_argument("--question", default="Could a single agent have done this?")
     p_b.set_defaults(func=cmd_brief)
@@ -332,14 +348,14 @@ def main(argv: list[str] | None = None) -> int:
                      help="stub: plumbing only; sim: deterministic reader, structural cost at $0; live: a real model")
     p_c.add_argument("--strategies", default="single,always,genet")
     p_c.add_argument("--families", default="lookup,aggregate,compare,breadth")
-    p_c.add_argument("--per-family", type=int, default=5)
-    p_c.add_argument("--repeat", type=int, default=1)
+    p_c.add_argument("--per-family", type=_whole(1), default=5)
+    p_c.add_argument("--repeat", type=_whole(1), default=1)
     p_c.add_argument("--seed", type=int, default=7)
-    p_c.add_argument("--max-calls", type=int, default=40, help="per-trial call cap, same for every strategy")
-    p_c.add_argument("--context", type=int, default=16_000, help="per-call token cap, same for every strategy")
-    p_c.add_argument("--tool-rounds", type=int, default=3)
-    p_c.add_argument("--price-in", type=float, default=None, help="$ per 1M input tokens, for cost columns")
-    p_c.add_argument("--price-out", type=float, default=None, help="$ per 1M output tokens")
+    p_c.add_argument("--max-calls", type=_whole(1), default=40, help="per-trial call cap, same for every strategy")
+    p_c.add_argument("--context", type=_whole(1), default=16_000, help="per-call token cap, same for every strategy")
+    p_c.add_argument("--tool-rounds", type=_whole(0), default=3)
+    p_c.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens, for cost columns")
+    p_c.add_argument("--price-out", type=_finite(0, strict=False), default=None, help="$ per 1M output tokens")
     p_c.add_argument("--corpus", default=None, help="also write the corpus here, to read it")
     p_c.add_argument("--out", default=None, help="results JSON (default data/compare/compare-<time>.json)")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
@@ -356,11 +372,11 @@ def main(argv: list[str] | None = None) -> int:
     p_fit.add_argument("--out", default="data/policy/imitation.json")
     p_fit.set_defaults(func=cmd_policy_fit)
     p_rl = sub.add_parser("policy-rl", help="sparse RL vs stub on bench-shaped boards")
-    p_rl.add_argument("--episodes", type=int, default=60)
+    p_rl.add_argument("--episodes", type=_whole(1), default=60)
     p_rl.set_defaults(func=cmd_policy_rl)
     p_sft = sub.add_parser("policy-sft", help="write chat JSONL for a later model trainer")
     p_sft.add_argument("--out", default="data/policy/sft.jsonl")
-    p_sft.add_argument("--n", type=int, default=240)
+    p_sft.add_argument("--n", type=_whole(1), default=240)
     p_sft.set_defaults(func=cmd_policy_sft)
     p_ft = sub.add_parser("policy-finetune", help="fine-tune the local policy head on the SFT corpus")
     p_ft.add_argument("--out", default="data/policy/imitation.json")
@@ -372,6 +388,9 @@ def main(argv: list[str] | None = None) -> int:
     except InvariantError as e:
         print(json.dumps({"ok": False, "halt": True, "code": e.code, "error": str(e)}, indent=2))
         return 1
+    except OSError as e:  # a path that is missing, a directory, or not writable
+        print(json.dumps({"ok": False, "halt": True, "code": "IO", "error": f"{type(e).__name__}: {e}"}, indent=2))
+        return 1
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
@@ -380,11 +399,15 @@ def cmd_compare(args: argparse.Namespace) -> int:
     from .compare import STRATEGIES, comparison_budget, render, run_comparison, save, stderr, summarize
     from .suite import FAMILIES, build_suite
 
-    strategies = tuple(s.strip() for s in args.strategies.split(",") if s.strip())
-    families = tuple(f.strip() for f in args.families.split(",") if f.strip())
+    # Each once: a repeat would run every trial twice, or give two tasks the same id.
+    strategies = tuple(dict.fromkeys(s.strip() for s in args.strategies.split(",") if s.strip()))
+    families = tuple(dict.fromkeys(f.strip() for f in args.families.split(",") if f.strip()))
+    if not strategies or not families:
+        raise InvariantError("COMPARE", "name at least one strategy and one family")
     bad = (set(strategies) - set(STRATEGIES)) | (set(families) - set(FAMILIES))
     if bad:
         raise InvariantError("COMPARE", f"unknown strategy or family: {sorted(bad)}")
+    out = _out_path(args.out, Path(f"data/compare/compare-{time.strftime('%Y%m%d-%H%M%S')}.json"))
     if (args.price_in is None) != (args.price_out is None):
         raise InvariantError("COMPARE", "give both --price-in and --price-out, or neither")
     suite = build_suite(seed=args.seed, per_family=args.per_family, families=families)
@@ -412,7 +435,6 @@ def cmd_compare(args: argparse.Namespace) -> int:
         progress=stderr,
     )
     summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
-    out = Path(args.out or f"data/compare/compare-{time.strftime('%Y%m%d-%H%M%S')}.json")
     save(out, config=config, results=results, summary=summary)
     print(render(summary))
     print(f"saved {out}")
@@ -481,10 +503,9 @@ def cmd_policy_replay(args: argparse.Namespace) -> int:
 
 
 def cmd_policy_rl(args: argparse.Namespace) -> int:
-    from .rl import compare_to_stub, train
+    from .rl import compare_to_stub
 
-    _pol, _ = train(args.episodes)
-    print(json.dumps(compare_to_stub(), indent=2))
+    print(json.dumps(compare_to_stub(args.episodes), indent=2))
     return 0
 
 

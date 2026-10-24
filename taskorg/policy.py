@@ -6,6 +6,8 @@ path to the roster writer.
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -66,7 +68,8 @@ class PolicyDecision:
     def __post_init__(self):
         if self.action not in ACTIONS:
             raise InvariantError("SCHEMA", f"unknown policy action: {self.action}")
-        self.confidence = max(0.0, min(1.0, float(self.confidence)))
+        c = float(self.confidence)
+        self.confidence = max(0.0, min(1.0, c)) if math.isfinite(c) else 0.0
 
 
 class PolicyHead(Protocol):
@@ -141,6 +144,8 @@ def clamp(decision: PolicyDecision, threshold: float = 0.35) -> PolicyDecision:
 def apply_decision(run: Run, decision: PolicyDecision) -> str:
     """Mutate only legal fields. Never call set_roster. Channel proposals hit decide()."""
     decision = clamp(decision)
+    if run.status.value in ("complete", "abort"):
+        return "closed"
     run._record(
         "policy",
         {
@@ -219,8 +224,8 @@ def replay_log(events: list[dict]) -> list[dict]:
 
 
 def replay_path(path) -> list[dict]:
-    import json
-    from pathlib import Path
+    """A saved run's log, through load_run: malformed files are refused and old vocabularies upgraded."""
+    from .persist import load_run
 
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    return replay_log(raw.get("log") or [])
+    run = load_run(path)
+    return replay_log([{"event": e.event, "detail": e.detail} for e in run.log])

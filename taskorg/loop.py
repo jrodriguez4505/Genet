@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +19,13 @@ from .subtasks import parse_subtasks
 from .tools import RUNNABLE, Toolbox, parse_request
 
 
+def _criterion(token: str) -> re.Pattern:
+    """A criterion as a whole word or number: "4.1" is not met by "14.1" or "4.15"."""
+    left = r"(?<![\w.])" if token[0].isalnum() else ""
+    right = r"(?![\w])" if token[-1].isalnum() else ""
+    return re.compile(left + re.escape(token) + right)
+
+
 def score_criteria(product: Artifact | None, criteria: list[str]) -> dict:
     """Criteria must show in the product. The Verifier cannot vouch for them by echo."""
     parts = []
@@ -27,7 +35,7 @@ def score_criteria(product: Artifact | None, criteria: list[str]) -> dict:
     hits, misses = [], []
     for raw in criteria:
         token = raw.strip().lower()
-        if token and token in blob:
+        if token and _criterion(token).search(blob):
             hits.append(raw)
         elif token:
             misses.append(raw)
@@ -53,9 +61,18 @@ def world_misses(run: Run, product: Artifact | None) -> list[str]:
     return misses
 
 
+_VERDICT = re.compile(r"\s*(PASS|FAIL)(?:ED)?\b", re.IGNORECASE)
+
+
+def verdict(claim: str) -> str:
+    """PASS or FAIL when the claim leads with it, else "". "Passing this would be wrong" is not a pass,
+    and "PASS: nothing failed" is not a fail."""
+    m = _VERDICT.match(claim or "")
+    return m.group(1).upper() if m else ""
+
+
 def _verifier_accepts(check: Artifact, run: Run, product: Artifact | None = None) -> bool:
-    upper = check.claim.strip().upper()
-    if not upper.startswith("PASS") or "FAIL" in upper:
+    if verdict(check.claim) != "PASS":
         scored = score_criteria(product, run.state.success_criteria)
         scored["world_misses"] = ["claim is not PASS"]
         run.last_verify = scored
@@ -131,26 +148,19 @@ def _sibling_heard(run: Run, brief: Brief) -> list[str]:
     return heard
 
 
-def _first_per_channel(subtasks: list[Subtask]) -> list[Subtask]:
-    seen, out = set(), []
-    for s in subtasks:
-        if s.channel_id not in seen:
-            seen.add(s.channel_id)
-            out.append(s)
-    return out
+def _stop_reason(e: BaseException) -> str:
+    return str(e) if isinstance(e, InvariantError) else f"{type(e).__name__}: {e}"
 
 
 def _aborts_on_error(method):
-    """A run that dies on an invariant leaves the board ABORT, not ACTIVE."""
+    """A run that dies on anything, an invariant, a crash or Ctrl-C, leaves the board ABORT, not ACTIVE."""
 
     @functools.wraps(method)
     def wrapper(self, run: Run, *args, **kwargs):
         try:
             return method(self, run, *args, **kwargs)
-        except InvariantError as e:
-            if run.status == Status.ACTIVE:
-                run.stop_reason = run.stop_reason or str(e)
-                run.abort()
+        except BaseException as e:
+            self._abort(run, e)
             raise
 
     return wrapper
@@ -187,7 +197,7 @@ class Engine:
         self.policy = policy
         self.toolbox = toolbox or Toolbox()
         self.parallel = parallel
-        self.max_tool_rounds = max_tool_rounds
+        self.max_tool_rounds = max(0, int(max_tool_rounds))  # negative rounds would make a worker cost less than one call
         # "Should we" for the lead's proposals: "measured" needs declared isolation or
         # material that does not fit one context; "stated" accepts the lead's reasons.
         self.split_policy = split_policy
@@ -195,6 +205,32 @@ class Engine:
         self.fit_fraction = fit_fraction
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
+        # Calls started but not yet recorded, per run. Admission counts them, so parallel
+        # sub-agents cannot each spend past the budget; _settled wakes calls waiting on them.
+        self._settled = threading.Condition(self._lock)
+        self._inflight: dict[int, int] = {}
+
+    def _abort(self, run: Run, e: BaseException) -> None:
+        """Close the board at once, so sub-agents still running stop at their next call."""
+        with self._lock:
+            if run.status not in (Status.COMPLETE, Status.ABORT):
+                run.stop_reason = run.stop_reason or _stop_reason(e)
+                run.abort()
+
+    def _admit(self, run: Run) -> None:
+        """Before a call. Near a cap, wait for calls in flight and decide on what they really cost.
+
+        Call with the lock held. Far from every cap, calls start at once and run in parallel.
+        """
+        while True:
+            run.assert_running()
+            b, n = run.budget, self._inflight.get(id(run), 0)
+            if b is None or n == 0:
+                return
+            calls, tokens = run.usage()
+            if calls + n < b.max_calls and tokens + n * b.max_tokens_per_call < b.max_tokens:
+                return
+            self._settled.wait(timeout=1.0)
 
     def propose(self, run: Run):
         """Ask the policy head. The kernel does not write the roster here."""
@@ -207,8 +243,10 @@ class Engine:
         return decision, result
 
     def _arm(self, run: Run) -> None:
+        """A run gets its own copy of the engine's budget, with its own clock, so a reused engine
+        never hands one run's elapsed time to the next."""
         if run.budget is None:
-            run.attach_budget(self.budget)
+            run.attach_budget(replace(self.budget, started_at=time.time()))
 
     def handoff_peer(self, src: Run, dst: Run, claim: str) -> None:
         src.send_peer(src.state.lead_id, claim, peer_id=dst.id)
@@ -249,12 +287,25 @@ class Engine:
         size = _brief_tokens(brief)
         with self._lock:
             self._arm(run)
-            run.assert_running()
+            self._admit(run)
             b = run.budget
             if b and size > b.max_tokens_per_call:
                 # Checked before the call: an oversized brief is never sent, so it is never paid for.
                 run.halt(f"brief of ~{size} tokens exceeds max_tokens_per_call {b.max_tokens_per_call}; not sent")
             heard = _sibling_heard(run, brief)
+            self._inflight[id(run)] = self._inflight.get(id(run), 0) + 1
+        try:
+            return self._call_and_record(run, brief, slot, size, heard)
+        finally:
+            with self._lock:
+                left = self._inflight.get(id(run), 1) - 1
+                if left:
+                    self._inflight[id(run)] = left
+                else:
+                    self._inflight.pop(id(run), None)
+                self._settled.notify_all()
+
+    def _call_and_record(self, run: Run, brief: Brief, slot: Slot | None, size: int, heard: list[str]) -> Artifact:
         started = time.perf_counter()
         art = self.adapter.act(brief)
         latency = time.perf_counter() - started
@@ -300,10 +351,16 @@ class Engine:
             run.assert_within_budget()
         return art
 
-    def _act(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
-        """A call plus tool rounds. Allowed tools run, results come back in the next brief."""
+    def _act(self, run: Run, brief: Brief, slot: Slot | None = None, *, reserve: int | None = None) -> Artifact:
+        """A call plus tool rounds. Allowed tools run, results come back in the next brief.
+
+        reserve: calls that must be left afterwards (the verifier's), so tool rounds stop in time.
+        """
+        rounds = self.max_tool_rounds
+        if reserve is not None and run.budget:
+            rounds = max(0, min(rounds, self._calls_left(run) - 1 - reserve))
         art = self._call(run, brief, slot)
-        for _ in range(self.max_tool_rounds):
+        for _ in range(rounds):
             wanted = list(dict.fromkeys(r for r in art.requests if _tool_name(r) in RUNNABLE))
             if not wanted:
                 return art
@@ -312,6 +369,8 @@ class Engine:
                 results.append(f"[{len(wanted) - MAX_TOOL_REQUESTS} more tool requests not run: at most {MAX_TOOL_REQUESTS} per round]")
                 wanted = wanted[:MAX_TOOL_REQUESTS]
             for req in wanted:
+                with self._lock:
+                    run.assert_running()
                 out = self.toolbox.run(req)
                 results.append(out)
                 with self._lock:
@@ -335,6 +394,10 @@ class Engine:
         runnable = any(t in RUNNABLE for t in SKILL_TOOLS.get(subtask.skill, ()))
         return 1 + (self.max_tool_rounds if runnable else 0)
 
+    def _merge_cost(self) -> int:
+        """Calls the merge may spend: one, plus tool rounds when it may have to read for a left-over part."""
+        return 1 + (self.max_tool_rounds if (self.toolbox.roots or self.toolbox.files) else 0)
+
     def _material(self, subtask: Subtask) -> dict[str, int] | None:
         return self.toolbox.material(subtask.channel_id, subtask.named_failure)
 
@@ -353,7 +416,6 @@ class Engine:
     def _assess(self, run: Run, subtasks: list[Subtask], *, declared: bool = False) -> list[Assessment]:
         """declared: the operator named these sub-tasks, so the need is theirs to state."""
         b = run.budget
-        subtasks = _first_per_channel(subtasks)
         if len(subtasks) > MAX_PROPOSALS:
             run._record("gate_overflow", {"proposed": len(subtasks), "considered": MAX_PROPOSALS})
             subtasks = subtasks[:MAX_PROPOSALS]
@@ -364,6 +426,8 @@ class Engine:
             allow_split=getattr(b, "allow_split", True),
             tier=getattr(b, "tier", ""),
             calls_left=(b.max_calls - len(run.calls)) if b else None,
+            # Merge, which reads when it covers a part no sub-agent took, then verify.
+            calls_after_split=self._merge_cost() + 1,
             worker_slots_left=MAX_WORKERS - run.state.worker_count(),
             worker_cost=self._worker_cost,
             policy=self.split_policy,
@@ -401,12 +465,21 @@ class Engine:
                 + (f" Lead's note for this sub-agent: {note}" if note else ""),
                 slot=worker, context=split_context, mode="work",
             )
-            return self._act(run, brief, slot=worker)
+            try:
+                return self._act(run, brief, slot=worker)
+            except BaseException as e:
+                self._abort(run, e)
+                raise
 
         if self.parallel and len(added) > 1:
             with ThreadPoolExecutor(max_workers=len(added)) as pool:
                 futures = [pool.submit(one, w) for w in added]
-                arts = [f.result() for f in futures]
+                try:
+                    arts = [f.result() for f in futures]
+                except BaseException as e:
+                    # Before the pool joins its threads: Ctrl-C lands here, and siblings must stop now.
+                    self._abort(run, e)
+                    raise
         else:
             arts = [one(w) for w in added]
         for worker, art in zip(added, arts):
@@ -438,14 +511,14 @@ class Engine:
                     f"Misses: {', '.join(misses) or 'none named'}. Last product: {product.claim[:400]}"
                 ),
                 mode="rework",
-            ))
+            ), reserve=1)
             run.accept_artifact(product)
             check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)
         if not verified:
             run.mark_stop_rule_failed("verifier")
-            run.halt("verifier did not PASS named success criteria")
+            run.halt("verifier did not PASS named success criteria", code="VERIFY")
         return product, verified
 
     def _propose(self, run: Run) -> list[Subtask]:
@@ -532,12 +605,12 @@ class Engine:
                 extra += f" These parts got no sub-agent and are yours to cover: {', '.join(leftover)}."
             else:
                 run.switch_skill(lead, lead, "reason", "merge sub-agent results")
-            product = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"))
+            product = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"), reserve=1)
         else:
             skill = self._single_agent_skill(verdicts)
             run.set_method(lead, f"single agent: {skill}", axes or ["sequential"])
             run.switch_skill(lead, lead, skill, "a single agent does the work")
-            product = self._act(run, self._brief(run, "lead", extra="WORK. Do the work yourself, as a single agent.", mode="work"))
+            product = self._act(run, self._brief(run, "lead", extra="WORK. Do the work yourself, as a single agent.", mode="work"), reserve=1)
         run.accept_artifact(product)
         self.store.remember_working(run.id, "product", product.claim)
 
@@ -582,11 +655,20 @@ class Engine:
         legal = [v for v in verdicts if v.legal]
         added = self._staff(run, legal)
         self._run_workers(run, added, split_context, notes={v.subtask.channel_id: v.subtask.named_failure for v in legal})
-        integrate = self._act(run, self._brief(run, "lead", extra="integrate isolated artifacts; do not invent subtasks", mode="integrate"))
+        extra = "integrate isolated artifacts; do not invent subtasks"
+        leftover = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
+        if leftover:
+            # Refused for capacity or a malformed spec: never silently dropped.
+            run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent took")
+            extra += f". These parts got no sub-agent and are yours to cover: {', '.join(leftover)}."
+        integrate = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"), reserve=1)
         run.accept_artifact(integrate)
         integrate, verified = self._verify(run, integrate, adapt=False)
         if added:
             run.send_peer(lead, f"run {run.id} holding {len(added)} channels", peer_id="peer-run")
+        else:
+            # No sub-agent was staffed: the answer says so, from the gate record, instead of claiming a fan-out.
+            lead_response, lead_reason = "KEEP_ROSTER", self._account(verdicts, added)
         question = self._close(run, integrate, operator_question, lead_response, lead_reason, f"split={len(added)}; goal={run.state.goal}")
         return LoopResult(run=run, product=integrate, verified=verified, operator_question=question, lead_answer=lead_response, split=len(added) > 0, channels=[w.channel_id or "" for w in added], verdicts=verdicts)
 

@@ -63,10 +63,11 @@ class Run:
         })
 
     def halt(self, reason: str, code: str = "BUDGET") -> None:
-        self.stop_reason = reason
-        if self.status != Status.ABORT:
+        """Stop the run. The first halt names the reason; a later one, or one on a closed run, only raises."""
+        if self.status not in (Status.COMPLETE, Status.ABORT):
+            self.stop_reason = reason
             self.abort()
-        self._record("halt", {"reason": reason, "code": code})
+            self._record("halt", {"reason": reason, "code": code})
         raise InvariantError(code, reason)
 
     def usage(self) -> tuple[int, int]:
@@ -146,11 +147,9 @@ class Run:
         Everything is validated before the split is logged or the roster is written,
         so a refused change leaves no trace on the board.
         """
-        self.assert_running()
+        self._assert_open()
         if actor_id != self.state.lead_id and not human_override:
             raise InvariantError("INV-1", "only the lead or a logged human override may change the roster")
-        if human_override:
-            self._record("human_override_roster", {"actor": actor_id})
 
         ids = [s.id for s in new_slots]
         if len(ids) != len(set(ids)):
@@ -195,6 +194,8 @@ class Run:
                 },
             )
 
+        if human_override:
+            self._record("human_override_roster", {"actor": actor_id})
         self.state.slots = list(new_slots)
         self.state.lead_id = leads[0].id
         self._record("set_roster", {"actor": actor_id, "slots": [s.id for s in new_slots]})
@@ -458,6 +459,11 @@ class Run:
         )
 
     def abort(self) -> None:
+        """A completed run is a record and cannot be aborted after the fact. Aborting twice changes nothing."""
+        if self.status == Status.COMPLETE:
+            raise InvariantError("CLOSED", "run is complete; the board is a record now")
+        if self.status == Status.ABORT:
+            return
         self.status = Status.ABORT
         self._record("abort", {})
 

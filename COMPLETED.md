@@ -2,6 +2,44 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.3.2 — October 2026: review findings
+
+A review in four parallel parts: concurrency and run state, input handling, persistence and the CLI, and decision logic with the comparison harness. Each finding was reproduced on v0.3.1 before it was fixed, and each fix has a test in `tests/test_hardening.py`.
+
+**Concurrency and run state**
+- When one sub-agent failed, its siblings kept calling the model for every remaining tool round (9 extra calls in the repro), and Ctrl-C could not stop them. The board now closes at once; no call starts after a failure.
+- Parallel sub-agents each passed the pre-call budget check before any of them was recorded, so they overspent by one call each. Calls in flight now count; parallel spend matches sequential.
+- An exception other than a kernel rule left the run active and unsaved. Every failure now aborts the run with a reason, and the CLI saves it as `CRASH`.
+- A completed run could be aborted, a halt overwrote the first reason, a refused human override was still logged, and a roster change could halt a run that had spent its budget legally. All fixed.
+- A reused engine shared one budget clock between runs. Each run gets its own.
+
+**Budgets and decisions**
+- The gates reserved 2 calls after a split, but a merge that covers a left-over part reads first, so an admitted split could run out before the verifier. The merge's tool rounds are now reserved, and work, merge and rework stop their tool rounds in time to leave the verifier its call.
+- The verdict was read by prefix and substring: "PASS: nothing failed" failed and "Passing this would be wrong" passed. It is now the leading word.
+- Success criteria matched as substrings: "4.1" was met by "14.1". They now match whole words and numbers.
+- The measured gate counted whole files, but a read returns at most 4,000 characters, so it split work that fit. It now counts what one read returns, and refuses a split that leaves any sub-agent over the room in one call.
+- Duplicate proposals got no gate record, and `fanout` silently dropped parts refused for the cap or a bad skill and claimed a fan-out that did not happen. All fixed.
+
+**Comparison harness**
+- The crew baseline dropped parts past the worker cap or with a bad id, while genet's lead covered them: same plan, crew 0/5, genet 5/5. Both now hand such parts to the lead.
+- Grading took the first number on a line ("Q3" read as 3) and any "answer:" in prose. It now reads the capitalized `ANSWER:` marker and requires one value.
+- "Best baseline" could name genet-stated, a genet variant, depending on argument order. It now names single or always.
+- The published simulated-reader figures are unchanged.
+
+**Input handling**
+- A model's request with a NUL byte, a lone surrogate, an over-long name or a symlink loop, or a workspace folder without permission, crashed the kernel. These are now "not found" or skipped.
+- One folder with 200,000 files took 64 s and 351 MB of memory across a plan; the walk now stops at its cap mid-folder (4.7 s, 60 MB).
+- Partial search matches were all kept before trimming (about 1 GB in one repro); only the best 20 are kept now. Search terms are capped at 16.
+- A server could hold a call open by dripping headers or an error body; one deadline now covers the whole exchange. A stalled error body, a non-object `usage`, a non-string `claim`, an out-of-range timeout or a malformed base URL are clean `LIVE` or `SCHEMA` errors.
+- A snippet could drop the matched figure when lower-casing changed a line's length.
+
+**Persistence, CLI and diagnostics**
+- A setup error, such as a missing live configuration, overwrote `--out` with an empty run. Setup now happens before anything is written, and the default `--out` follows `--id`.
+- Wrongly typed fields in a run file crashed read commands later; they are refused as `PERSIST` at load. Old log vocabulary is upgraded, and a loaded run keeps its elapsed time and its world.
+- Aborted runs and failed stop rules reported `health: ok`; they are `degraded` now. The authority-language check is no longer evaded by quoting the rule first.
+- Missing files and directories, `nan` budgets, zero or negative counts, blank criteria and run ids ending in a newline are clean errors. `bench` fails when it checked nothing, `policy-replay` reads runs through `load_run`, and the policy flags take effect.
+- 36 new mutations, for 113.
+
 ## v0.3.1 — October 2026: security hardening
 
 A review for the class of bug behind the October 2026 PHP flaws: untrusted input that exhausts memory, escapes a sandbox or slips past parsing. Each fix has a test that fails on the code before it.
@@ -155,7 +193,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 5,100 lines in `taskorg/`. Suite: about 620 checks (including 300 fuzz sequences), 9 bench fixtures, and 62 mutation checks.
+Kernel: about 5,600 lines in `taskorg/`. Suite: about 830 checks (including 300 fuzz sequences), 9 bench fixtures, and 113 mutation checks.
 
 ## Run
 
