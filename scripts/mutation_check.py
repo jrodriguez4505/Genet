@@ -126,6 +126,12 @@ M = [
     ("cli.py", "nan switches a cap off", "        if not math.isfinite(value) or value < least", "        if value < least"),
     ("policy.py", "nan confidence passes", "        self.confidence = max(0.0, min(1.0, c)) if math.isfinite(c) else 0.0", "        self.confidence = max(0.0, min(1.0, c))"),
     ("bench.py", "an empty bench passes", '"ok": bool(checks) and all(', '"ok": all('),
+    # follow-ups
+    ("loop.py", "failed calls go unrecorded", "                run.record_call(call)\n            raise", "            raise"),
+    ("atomic.py", "a save writes in place first", "    mode = path.stat().st_mode & 0o777 if path.exists() else 0o644\n", "    mode = path.stat().st_mode & 0o777 if path.exists() else 0o644\n    path.write_text(text, encoding=\"utf-8\")\n"),
+    ("atomic.py", "a failed save leaves its temp file", "            os.unlink(tmp)\n", "            pass\n"),
+    ("run.py", "a closed note can be re-answered", '        if note.status == NoteStatus.CLOSED:\n            raise InvariantError("REVIEW"', '        if False:\n            raise InvariantError("REVIEW"'),
+    ("live.py", "size check ignores the system prompt", '        chars = sum(len(m["content"]) for m in self._payload(brief)["messages"])\n        return max(1, -(-chars // 4)) + 8  # plus message framing', "        return super().estimate_tokens(brief)"),
     # security: untrusted input stays bounded
     ("live.py", "redirects followed", "build_opener(_NoRedirect, _DeadlineHTTP, _DeadlineHTTPS)", "build_opener(_DeadlineHTTP, _DeadlineHTTPS)"),
     ("live.py", "key copied on redirect", 'req.add_unredirected_header("Authorization",', 'req.add_header("Authorization",'),

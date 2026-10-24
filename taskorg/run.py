@@ -106,7 +106,7 @@ class Run:
         self.calls.append(call)
         self._record(
             "call",
-            {k: call[k] for k in ("slot", "channel", "latency_s", "prompt_tokens", "completion_tokens") if k in call},
+            {k: call[k] for k in ("slot", "channel", "latency_s", "prompt_tokens", "completion_tokens", "failed") if k in call},
         )
 
     def __post_init__(self):
@@ -294,6 +294,9 @@ class Run:
         note = self.notes.get(note_id)
         if note is None:
             raise InvariantError("REVIEW", f"unknown note: {note_id}")
+        # An answer is a record. A deferred note may still be answered; a closed one may not be rewritten.
+        if note.status == NoteStatus.CLOSED:
+            raise InvariantError("REVIEW", f"note {note_id} is already answered ({note.response})")
         if note.kind == "replan" and response not in ("CHANGE_METHOD", "REVISE_GOAL"):
             raise InvariantError(
                 "INV-14",

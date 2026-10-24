@@ -32,6 +32,12 @@ class ModelAdapter:
     def act(self, brief: Brief) -> Artifact:
         raise NotImplementedError
 
+    def estimate_tokens(self, brief: Brief) -> int:
+        """About how many tokens sending this brief costs, about four characters a token. The kernel
+        checks it against the per-call cap before the call. An adapter that wraps the brief in more
+        text, such as a system prompt, counts that too."""
+        return max(1, len(brief.packet + brief.goal + brief.purpose + brief.context) // 4)
+
 
 class StubAdapter(ModelAdapter):
     """Deterministic stand-in for a compliant model. No network. Predictable fixtures.

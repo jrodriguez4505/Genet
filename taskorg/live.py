@@ -306,6 +306,11 @@ class LiveAdapter(ModelAdapter):
             ],
         }
 
+    def estimate_tokens(self, brief: Brief) -> int:
+        """What is actually sent: the system prompt and the JSON user message, not only the brief's text."""
+        chars = sum(len(m["content"]) for m in self._payload(brief)["messages"])
+        return max(1, -(-chars // 4)) + 8  # plus message framing
+
     def _post(self, payload: dict) -> str:
         url = self.base_url + "/chat/completions"
         raw = json.dumps(payload).encode("utf-8")

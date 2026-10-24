@@ -5,6 +5,7 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
+from . import atomic
 from .budget import Budget
 from .errors import InvariantError
 from .gates import World
@@ -86,8 +87,7 @@ def run_to_dict(m: Run) -> dict:
 
 def save_run(m: Run, path: Path) -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(run_to_dict(m), indent=2), encoding="utf-8")
+    atomic.write_text(path, json.dumps(run_to_dict(m), indent=2))
     return path
 
 

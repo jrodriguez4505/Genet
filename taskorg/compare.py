@@ -24,6 +24,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from . import atomic
 from .adapters import ModelAdapter
 from .budget import Budget
 from .errors import InvariantError
@@ -297,8 +298,7 @@ def render(summary: dict) -> str:
 
 def save(path: Path, *, config: dict, results: list[TrialResult], summary: dict) -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"config": config, "summary": summary, "results": [asdict(r) for r in results]}, indent=2), encoding="utf-8")
+    atomic.write_text(path, json.dumps({"config": config, "summary": summary, "results": [asdict(r) for r in results]}, indent=2))
     return path
 
 

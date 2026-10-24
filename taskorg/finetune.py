@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from . import atomic
 from .errors import InvariantError
 from .imitate import ImitationPolicy, fit, synthesize
 from .policy import ACTIONS, BoardState, PolicyDecision, clamp
@@ -65,13 +66,9 @@ def build_corpus(n: int = 240) -> list[dict]:
 
 def write_jsonl(path: Path, rows: list[dict] | None = None) -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     rows = rows if rows is not None else build_corpus()
-    with path.open("w", encoding="utf-8") as fh:
-        for row in rows:
-            slim = {"messages": row["messages"], "label": row["label"]}
-            fh.write(json.dumps(slim) + "\n")
-    return path
+    lines = (json.dumps({"messages": row["messages"], "label": row["label"]}) + "\n" for row in rows)
+    return atomic.write_text(path, "".join(lines))
 
 
 def parse_action_json(text: str) -> PolicyDecision:
