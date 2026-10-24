@@ -53,6 +53,8 @@ class Run:
     roster_at_start: list[str] = field(default_factory=list)
     adapter_name: str = ""
     world: object | None = None
+    # A blameless review of what went wrong, written by the kernel at the end of a run that had a failure.
+    review: dict | None = None
 
     def attach_budget(self, budget) -> None:
         self.budget = budget

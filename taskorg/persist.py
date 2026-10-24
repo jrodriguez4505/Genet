@@ -81,6 +81,7 @@ def run_to_dict(m: Run) -> dict:
         "budget": _budget_dict(m),
         # What already exists outside the run; the gates read it, so it travels with the run.
         "world": asdict(m.world) if getattr(m, "world", None) else None,
+        "review": getattr(m, "review", None),
         "summary": m.summary(),
     }
 
@@ -244,6 +245,7 @@ def _check_types(raw: dict) -> None:
             _need(c.get(k) is None or isinstance(c[k], str), f"calls[].{k}: a string")
         for k in ("prompt_tokens", "completion_tokens", "latency_s"):
             _number(c.get(k), f"calls[].{k}", optional=True)
+    _need(raw.get("review") is None or isinstance(raw["review"], dict), "review: an object")
     b = raw.get("budget")
     if b is not None:
         _need(isinstance(b, dict), "budget: an object")
@@ -310,6 +312,7 @@ def _from_dict(raw: dict) -> Run:
             tier=raw_b.get("tier", "open"),
             started_at=time.time() - float(raw_b.get("elapsed") or 0),
         )
+    m.review = raw.get("review")
     w = raw.get("world")
     if w is not None:
         _need(isinstance(w, dict), "world: an object")

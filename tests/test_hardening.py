@@ -78,14 +78,15 @@ def _fanout(engine, m, subtasks=FOUR):
 # --- concurrency and run state ---
 
 
-def test_a_failing_sub_agent_stops_its_siblings(tmp_path: Path):
+def test_a_sub_agent_crash_stops_its_siblings(tmp_path: Path):
+    """A crash is not a part failure the team absorbs: the board closes at once."""
     failed = {}
 
     def answer(brief):
         if brief.slot_function == "worker" and brief.channel_id == "part-a":
             time.sleep(0.01)
             failed["at"] = time.monotonic()
-            raise InvariantError("LIVE", "model endpoint returned 500")
+            raise RuntimeError("adapter bug")
         time.sleep(0.05)
         return _art(requests=["read:part-b.md"] if brief.slot_function == "worker" else [])
 
@@ -93,9 +94,9 @@ def test_a_failing_sub_agent_stops_its_siblings(tmp_path: Path):
     m = new_run("sib-1", "g", "p", "d")
     engine = Engine(MemoryStore(tmp_path / "s"), adapter=model, budget=Budget(max_calls=40, max_tokens=100_000),
                     toolbox=Toolbox(roots=[_workspace(tmp_path)]), max_tool_rounds=3)
-    with pytest.raises(InvariantError):
+    with pytest.raises(RuntimeError):
         _fanout(engine, m)
-    assert m.status == Status.ABORT and "500" in m.stop_reason
+    assert m.status == Status.ABORT and "adapter bug" in m.stop_reason
     assert [s for s in model.starts if s[0] > failed["at"]] == []  # no call started after the failure
 
 

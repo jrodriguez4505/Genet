@@ -16,6 +16,7 @@ from .memory_store import MemoryStore
 from .run import Run
 from .models import MAX_WORKERS, SKILL_TOOLS, SKILLS, Artifact, Delta, Slot, Status
 from .subtasks import parse_subtasks
+from .review import team_review
 from .tools import RUNNABLE, Toolbox, parse_request
 
 
@@ -54,7 +55,9 @@ def world_misses(run: Run, product: Artifact | None) -> list[str]:
         misses.append("world: product claim empty")
     if run.state.worker_count() > 0:
         merged = [d for d in run.deltas if d.stream == "merge"]
-        if not merged:
+        # A part whose sub-agent failed is accounted for: the lead covered it.
+        covered = any(e.event == "part_failed" for e in run.log)
+        if not merged and not covered:
             misses.append("world: workers exist but merged no results")
     if run.open_review_ids():
         misses.append("world: a review is still open")
@@ -98,6 +101,10 @@ class LoopResult:
 
 # Tool names the kernel recognizes in artifact.requests. Anything else is free text.
 TOOL_NAMES = {"write", "verify", "observe", "read", "retrieve", "simulate", "spawn"}
+# Shared ownership: a sub-agent's own bad reply, or one failed call to the model, is the team's to absorb.
+# Its part goes back to the lead and the run goes on. Authority violations, budget halts and crashes
+# still stop the run at once.
+PART_FAILURES = ("SCHEMA", "LIVE")
 # Model output is untrusted. These bound what one reply can make the kernel do.
 MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
 MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
@@ -153,10 +160,13 @@ def _aborts_on_error(method):
     @functools.wraps(method)
     def wrapper(self, run: Run, *args, **kwargs):
         try:
-            return method(self, run, *args, **kwargs)
+            result = method(self, run, *args, **kwargs)
         except BaseException as e:
             self._abort(run, e)
+            self._team_review(run, e)
             raise
+        self._team_review(run, None)
+        return result
 
     return wrapper
 
@@ -185,6 +195,7 @@ class Engine:
         split_policy: str = "measured",
         isolation_required: bool = False,
         fit_fraction: float = 0.5,
+        lessons: bool = True,
     ):
         self.store = store
         self.adapter = adapter or StubAdapter()
@@ -198,6 +209,8 @@ class Engine:
         self.split_policy = split_policy
         self.isolation_required = isolation_required
         self.fit_fraction = fit_fraction
+        # After a failed run, write its lessons to the shared guidelines every agent reads.
+        self.lessons = lessons
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
         # Calls started but not yet recorded, per run. Admission counts them, so parallel
@@ -211,6 +224,30 @@ class Engine:
             if run.status not in (Status.COMPLETE, Status.ABORT):
                 run.stop_reason = run.stop_reason or _stop_reason(e)
                 run.abort()
+
+    @staticmethod
+    def _record_verify_failed(run: Run) -> None:
+        last = run.last_verify or {}
+        run._record("verify_failed", {"misses": list(last.get("misses") or []), "world_misses": list(last.get("world_misses") or [])})
+
+    def _team_review(self, run: Run, error: BaseException | None) -> None:
+        """At the end of a run that had a failure: the kernel's blameless review, on the run and last
+        on its record, and its lessons in the shared guidelines. A review never changes the outcome."""
+        try:
+            review = team_review(run, error)
+            if review is None or run.review is not None:
+                return
+            with self._lock:
+                run.review = review
+                run._record("team_review", {"what_failed": review["what_failed"], "lessons": review["lessons"]})
+            if self.lessons:
+                for lesson in review["lessons"]:
+                    self.store.add_lesson(lesson)
+        except Exception as e:  # never mask the run's own outcome
+            try:
+                run._record("team_review_failed", {"error": type(e).__name__})
+            except Exception:
+                pass
 
     def _admit(self, run: Run) -> None:
         """Before a call. Near a cap, wait for calls in flight and decide on what they really cost.
@@ -462,11 +499,12 @@ class Engine:
             added.append(worker)
         return added
 
-    def _run_workers(self, run: Run, added: list[Slot], split_context: str, notes: dict[str, str] | None = None) -> list[Artifact]:
+    def _run_workers(self, run: Run, added: list[Slot], split_context: str, notes: dict[str, str] | None = None) -> list[Artifact | None]:
         """Sub-agents work at the same time, each blind to its siblings, then report in sub-task order.
 
         notes carries the lead's text from each sub-task to its sub-agent, so a sub-agent
-        knows its part and not only its channel name.
+        knows its part and not only its channel name. A sub-agent that failed in a way the team
+        absorbs (PART_FAILURES) reports None, and its part is the lead's to cover.
         """
 
         def one(worker: Slot) -> Artifact:
@@ -479,6 +517,15 @@ class Engine:
             )
             try:
                 return self._act(run, brief, slot=worker)
+            except InvariantError as e:
+                if e.code in PART_FAILURES and run.status == Status.ACTIVE:
+                    # The part is not lost: it goes back to the lead, and the siblings carry on.
+                    with self._lock:
+                        run._record("part_failed", {"channel": worker.channel_id, "slot": worker.id,
+                                                    "code": e.code, "error": str(e)[:200]})
+                    return None
+                self._abort(run, e)
+                raise
             except BaseException as e:
                 self._abort(run, e)
                 raise
@@ -487,18 +534,40 @@ class Engine:
             with ThreadPoolExecutor(max_workers=len(added)) as pool:
                 futures = [pool.submit(one, w) for w in added]
                 try:
-                    arts = [f.result() for f in futures]
+                    errors = [f.exception() for f in futures]
                 except BaseException as e:
                     # Before the pool joins its threads: Ctrl-C lands here, and siblings must stop now.
                     self._abort(run, e)
                     raise
+            errors = [e for e in errors if e is not None]
+            if errors:
+                # Raise the cause. A sibling that found the board closed only reports the consequence.
+                raise next((e for e in errors if _stop_reason(e) == run.stop_reason), errors[0])
+            arts = [f.result() for f in futures]
         else:
             arts = [one(w) for w in added]
         for worker, art in zip(added, arts):
+            if art is None:  # failed; the lead covers this part
+                continue
             run.accept_artifact(art)
             run.post_delta(Delta(claim=art.context_update or art.claim, evidence=list(art.evidence), uncertainty=art.uncertainty, channel_id=art.channel_id, stream="merge"))
             self.store.remember_working(run.id, f"channel:{worker.channel_id}", art.claim)
         return arts
+
+    def _cover(self, run: Run, verdicts: list[Assessment], failed: list[str]) -> str:
+        """Parts the lead covers in the merge: refused for capacity or a malformed proposal, or whose
+        sub-agent failed. Gives the lead a skill that can read, and returns the brief text naming them."""
+        refused = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
+        if not refused and not failed:
+            return ""
+        lead = run.state.lead_id
+        run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent finished")
+        text = ""
+        if refused:
+            text += f" These parts got no sub-agent and are yours to cover: {', '.join(refused)}."
+        if failed:
+            text += f" These parts' sub-agents failed, so they are yours to cover: {', '.join(failed)}."
+        return text
 
     def _calls_left(self, run: Run) -> int:
         b = run.budget
@@ -510,6 +579,8 @@ class Engine:
         check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
         verified = _verifier_accepts(check, run, product)
         run.accept_artifact(check)
+        if not verified:
+            self._record_verify_failed(run)
         b = run.budget
         if not verified and adapt and getattr(b, "allow_adapt", True) and self._calls_left(run) >= 2:
             last = run.last_verify or {}
@@ -528,6 +599,8 @@ class Engine:
             check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)
+            if not verified:
+                self._record_verify_failed(run)
         if not verified:
             run.mark_stop_rule_failed("verifier")
             run.halt("verifier did not PASS named success criteria", code="VERIFY")
@@ -555,9 +628,11 @@ class Engine:
         return skill
 
     @staticmethod
-    def _account(verdicts: list[Assessment], added: list[Slot]) -> str:
+    def _account(verdicts: list[Assessment], added: list[Slot], failed: list[str] | None = None) -> str:
         """The lead's answer to the operator, built from the gate record."""
         refused = [f"{v.subtask.channel_id}: {v.refused}" for v in verdicts if not v.legal]
+        if failed:
+            refused = refused + [f"{c}: its sub-agent failed, and the lead covered the part" for c in failed]
         if added:
             answer = f"{len(added)} sub-agents: {', '.join(w.channel_id or '' for w in added)}"
         elif verdicts:
@@ -608,13 +683,14 @@ class Engine:
             run.set_method(lead, "sub-agents: " + ", ".join(v.subtask.channel_id for v in legal), axes or ["parallel", "fan_in"])
             split_context = run.state.context
             added = self._staff(run, legal)
-            self._run_workers(run, added, split_context, notes={v.subtask.channel_id: v.subtask.named_failure for v in legal})
-            # Parts refused for capacity or a malformed proposal still need doing: the lead covers them.
-            leftover = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
+            arts = self._run_workers(run, added, split_context, notes={v.subtask.channel_id: v.subtask.named_failure for v in legal})
+            failed = [w.channel_id or "" for w, a in zip(added, arts) if a is None]
             extra = "MERGE. Integrate the sub-agent results against the goal. Do not invent what a sub-agent did not report."
-            if leftover:
-                run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent took")
-                extra += f" These parts got no sub-agent and are yours to cover: {', '.join(leftover)}."
+            # Parts refused for capacity or a malformed proposal, and parts whose sub-agent failed, still
+            # need doing: the lead covers them.
+            cover = self._cover(run, verdicts, failed)
+            if cover:
+                extra += cover
             else:
                 run.switch_skill(lead, lead, "reason", "merge sub-agent results")
             product = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"), reserve=1)
@@ -627,7 +703,7 @@ class Engine:
         self.store.remember_working(run.id, "product", product.claim)
 
         product, verified = self._verify(run, product, adapt=True)
-        reason = self._account(verdicts, added)
+        reason = self._account(verdicts, added, failed if added else [])
         question = self._close(run, product, operator_question, "KEEP_ROSTER", reason, f"workers={len(added)}; goal={run.state.goal}")
         return LoopResult(
             run=run, product=product, verified=verified, operator_question=question,
@@ -666,18 +742,17 @@ class Engine:
         split_context = run.state.context
         legal = [v for v in verdicts if v.legal]
         added = self._staff(run, legal)
-        self._run_workers(run, added, split_context, notes={v.subtask.channel_id: v.subtask.named_failure for v in legal})
-        extra = "integrate isolated artifacts; do not invent subtasks"
-        leftover = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
-        if leftover:
-            # Refused for capacity or a malformed spec: never silently dropped.
-            run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent took")
-            extra += f". These parts got no sub-agent and are yours to cover: {', '.join(leftover)}."
+        arts = self._run_workers(run, added, split_context, notes={v.subtask.channel_id: v.subtask.named_failure for v in legal})
+        failed = [w.channel_id or "" for w, a in zip(added, arts) if a is None]
+        # Refused for capacity or a malformed spec, or a sub-agent that failed: never silently dropped.
+        extra = "integrate isolated artifacts; do not invent subtasks." + self._cover(run, verdicts, failed)
         integrate = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"), reserve=1)
         run.accept_artifact(integrate)
         integrate, verified = self._verify(run, integrate, adapt=False)
         if added:
             run.send_peer(lead, f"run {run.id} holding {len(added)} channels", peer_id="peer-run")
+            if failed:
+                lead_reason = f"{lead_reason}; {', '.join(failed)}: the sub-agent failed, and the lead covered the part"
         else:
             # No sub-agent was staffed: the answer says so, from the gate record, instead of claiming a fan-out.
             lead_response, lead_reason = "KEEP_ROSTER", self._account(verdicts, added)

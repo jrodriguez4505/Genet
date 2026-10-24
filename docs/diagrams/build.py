@@ -247,13 +247,55 @@ def control(theme: str) -> str:
     c.text(470, 152, "no direct write", size=11, color="accent", anchor="start", weight=600)
 
     c.rect(40, 372, 880, 26, stroke="faint", fill="fill", rx=6, sw=1)
-    c.text(56, 389, "Budget meter: every call counts calls, tokens and seconds; the run halts at the cap", size=12, anchor="start")
+    c.text(56, 389, "Budget meter: briefs are sized before they are sent, calls in flight count, and the run halts at the cap", size=12, anchor="start")
     c.rect(40, 404, 880, 26, stroke="faint", fill="fill", rx=6, sw=1)
     c.text(56, 421, "Audit log: every gate record, tool call, verdict and halt", size=12, anchor="start")
     return c.svg()
 
 
-FIGURES = {"patterns": patterns, "gates": gates, "control": control}
+# --- 4. shared ownership ---
+
+OWNERSHIP = (
+    "One sub-agent's reply is malformed. Its part goes back to the lead, who merges the other results, "
+    "covers the part and hands the product to the verifier. After any failure the kernel writes a "
+    "blameless review, and its lessons reach every brief in the next run. Authority violations, budget "
+    "halts and crashes still stop the run at once."
+)
+
+
+def ownership(theme: str) -> str:
+    c = Canvas("ownership", 960, 360, theme, OWNERSHIP)
+    c.text(40, 32, "ONE RUN", size=12, color="muted", anchor="start", weight=600)
+    c.box(40, 85, 130, 50, "Lead", "proposes · decides")
+    parts = [("part-a", 60), ("part-b", 110), ("part-c", 160)]
+    for name, y in parts:
+        c.arrow(f"M170,110 H200 V{y} H230")
+        c.box(230, y - 17, 140, 34, name, "sub-agent")
+    c.box(560, 80, 160, 60, "Lead merges", "and covers part-b", accent=True)
+    c.arrow("M370,60 H520 V98 H560")
+    c.arrow("M370,160 H520 V122 H560")
+    # part-b fails; its part is not lost
+    c.cross(392, 110)
+    c.arrow("M410,110 H560", color="accent", dash=True)
+    c.text(462, 102, "its part goes back", size=11, color="accent", weight=600)
+    c.text(392, 136, "reply malformed", size=11, color="muted")
+    c.box(780, 85, 140, 50, "Verifier", "checks the product")
+    c.arrow("M720,110 H780")
+
+    c.line(20, 205, 940, 205)
+    c.text(40, 232, "AFTER ANY FAILURE", size=12, color="muted", anchor="start", weight=600)
+    c.arrow("M640,140 V190 H340 V248", color="accent")
+    c.box(230, 248, 220, 54, "Team review", "what failed · each part · what was done", accent=True)
+    c.box(500, 248, 200, 54, "Lessons", "fixed sentences, at most 10")
+    c.box(750, 248, 170, 54, "Next run", "every brief reads them")
+    c.arrow("M450,275 H500")
+    c.arrow("M700,275 H750")
+    c.arrow("M835,302 V338 H105 V135", color="line", dash=True)
+    c.text(470, 332, "the next run starts with what this one learned", size=11, color="muted")
+    return c.svg()
+
+
+FIGURES = {"patterns": patterns, "gates": gates, "control": control, "ownership": ownership}
 
 
 def main() -> None:
