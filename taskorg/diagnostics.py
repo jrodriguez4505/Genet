@@ -158,6 +158,7 @@ def _performance(run: Run) -> dict:
         "prompt_tokens": pt,
         "completion_tokens": ct,
         "tokens": pt + ct,
+        "failed_calls": sum(1 for c in calls if c.get("failed")),
         "latency_s_total": round(sum(lat), 4),
         "latency_s_max": round(max(lat), 4) if lat else 0,
         "by_channel": [

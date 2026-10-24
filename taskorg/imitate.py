@@ -7,6 +7,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import atomic
 from .budget import Budget
 from .factory import new_run
 from .gates import World
@@ -248,14 +249,13 @@ def vs_stub(rows: list[tuple[BoardState, str]]) -> dict:
 
 def dump(head: LogisticHead, path: Path) -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
+    atomic.write_text(path, json.dumps({
         "labels": list(head.labels),
         "feature_names": list(head.feature_names),
         "weights": head.weights,
         "mean": head.mean,
         "std": head.std,
-    }, indent=2), encoding="utf-8")
+    }, indent=2))
     return path
 
 

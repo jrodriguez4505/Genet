@@ -209,7 +209,7 @@ Genet treats three things as untrusted input: what the model endpoint sends back
 |---|---|---|
 | Response size from the endpoint | 8 MB | A reply that exhausts memory |
 | Time for the whole exchange: connect, headers, body | the timeout | A server that sends a byte at a time to hold a run open |
-| Brief size, checked before sending | the per-call token cap | An oversized request that is sent and paid for |
+| Brief size, checked before sending, counting the system prompt and wrapping | the per-call token cap | An oversized request that is sent and paid for |
 | Tools run per reply | 8, repeats once | One reply that triggers thousands of reads |
 | Sub-tasks the gates judge per plan | 16 | A proposal flood |
 | Text one search scans | 20M characters | A search that reads an entire disk |
@@ -217,6 +217,8 @@ Genet treats three things as untrusted input: what the model endpoint sends back
 | Entries one walk looks at | 20,000 | A huge or hostile directory tree |
 | Reported token counts | whole numbers, not negative | A reply that hides its own spend |
 | Calls in flight | counted against the budget | Parallel sub-agents that each spend past the cap |
+
+A call that fails after it was sent, for example on malformed JSON, stays on the record marked `failed`: it counts toward the budget and toward every cost the comparison reports. Saved runs, working memory and results are written atomically, so a crash mid-save leaves the previous file, never a truncated one. An answered review note is a record and cannot be answered again; a deferred one can.
 
 When one sub-agent fails, or you press Ctrl-C, the run closes at once and the sub-agents still running start no further calls. Any other failure inside a run, not only a rule the kernel enforces, leaves it aborted with a reason, and the CLI saves it as `CRASH`. A request string from a model, such as a path with a NUL byte or a symlink loop, comes back as "not found" instead of stopping the run.
 
@@ -247,7 +249,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 830 checks with no network and no key:
+`pytest -q` runs about 845 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -259,7 +261,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 113 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 113 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 118 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 118 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -285,7 +287,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.3.2 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.3.3 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

@@ -718,3 +718,123 @@ def test_tools_stop_when_the_runs_time_is_up(tmp_path: Path):
         Engine(MemoryStore(tmp_path / "s"), adapter=Model(answer), budget=Budget(max_seconds=0.4),
                toolbox=Slow(roots=[_workspace(tmp_path)])).run_task(m, context="c")
     assert "max_seconds" in str(e.value) and Slow.ran < 8
+
+
+# --- follow-ups: failed calls, atomic saves, review notes, the size of what is sent ---
+
+
+class Fails(ModelAdapter):
+    """Fails on its first call, after the endpoint may have billed it."""
+
+    name = "fails"
+
+    def __init__(self, code, usage=None):
+        self.code, self.usage = code, usage
+        self._local = threading.local()
+
+    @property
+    def last_usage(self):
+        return getattr(self._local, "usage", {})
+
+    def act(self, brief):
+        self._local.usage = dict(self.usage or {})
+        raise InvariantError(self.code, "model returned no JSON object")
+
+
+def test_a_call_that_failed_stays_on_the_record(tmp_path: Path):
+    m = new_run("fail-1", "g", "p", "d")
+    with pytest.raises(InvariantError):
+        Engine(MemoryStore(tmp_path / "s"), adapter=Fails("SCHEMA", {"prompt_tokens": 900, "completion_tokens": 300})).run_single(
+            m, context="c", operator_question="?")
+    assert m.status == Status.ABORT
+    assert [(c["failed"], c["prompt_tokens"], c["completion_tokens"], c["tokens_estimated"]) for c in m.calls] == [("SCHEMA", 900, 300, False)]
+    assert m.usage() == (1, 1200)
+    assert diagnose(m)["performance"]["failed_calls"] == 1
+    loaded = load_run(save_run(m, tmp_path / "r.json"))
+    assert loaded.calls[0]["failed"] == "SCHEMA"
+
+
+def test_a_failed_call_without_usage_counts_its_brief(tmp_path: Path):
+    m = new_run("fail-2", "g", "p", "d")
+    with pytest.raises(InvariantError):
+        Engine(MemoryStore(tmp_path), adapter=Fails("LIVE")).run_single(m, context="c" * 400, operator_question="?")
+    call = m.calls[0]
+    assert call["failed"] == "LIVE" and call["prompt_tokens"] >= 100 and call["completion_tokens"] == 0 and call["tokens_estimated"]
+
+
+def test_a_refused_brief_is_not_a_call(tmp_path: Path):
+    m = new_run("fail-3", "g", "p", "d")
+    with pytest.raises(InvariantError):
+        Engine(MemoryStore(tmp_path), adapter=Fails("LIVE"), budget=Budget(max_tokens_per_call=10)).run_single(
+            m, context="c" * 400, operator_question="?")
+    assert m.calls == []
+
+
+def test_a_comparison_counts_the_calls_that_failed(tmp_path: Path):
+    from taskorg.compare import comparison_budget, run_trial
+    from taskorg.suite import build_suite
+
+    suite = build_suite(per_family=1, families=("lookup",))
+    res = run_trial(suite.tasks[0], "single", Fails("SCHEMA", {"prompt_tokens": 700, "completion_tokens": 50}),
+                    suite.write_corpus(tmp_path / "c"), budget=comparison_budget())
+    assert (res.code, res.calls, res.tokens) == ("SCHEMA", 1, 750)
+
+
+def test_a_save_lands_whole_or_not_at_all(tmp_path: Path, monkeypatch):
+    from taskorg import atomic
+
+    target = tmp_path / "run.json"
+    target.write_text("previous")
+    os.chmod(target, 0o640)
+
+    def crash(src, dst):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(atomic.os, "replace", crash)
+    with pytest.raises(OSError):
+        atomic.write_text(target, "new")
+    assert target.read_text() == "previous"
+    assert [p.name for p in tmp_path.iterdir()] == ["run.json"]  # no temporary file left behind
+    monkeypatch.undo()
+    atomic.write_text(target, "new")
+    assert target.read_text() == "new" and (target.stat().st_mode & 0o777) == 0o640
+
+
+def test_damaged_working_memory_is_a_clean_error(tmp_path: Path):
+    store = MemoryStore(tmp_path)
+    (tmp_path / "working" / "run-1.json").write_text('{"context": "trunc')
+    with pytest.raises(InvariantError) as e:
+        store.remember_working("run-1", "k", "v")
+    assert e.value.code == "STORE"
+
+
+def test_an_answered_note_cannot_be_answered_again():
+    m = new_run("note-1", "g", "p", "d")
+    m.open_review("Why one agent?", "q")
+    m.answer_review("lead-1", "q", "KEEP_ROSTER", "the context is enough")
+    with pytest.raises(InvariantError) as e:
+        m.answer_review("lead-1", "q", "CHANGE_METHOD", "a different method")
+    assert e.value.code == "REVIEW"
+    assert (m.notes["q"].response, m.notes["q"].reason) == ("KEEP_ROSTER", "the context is enough")
+    assert m.state.method != "a different method"
+
+
+def test_a_deferred_note_can_still_be_answered():
+    m = new_run("note-2", "g", "p", "d")
+    m.open_review("Revisit after the read?", "q")
+    m.answer_review("lead-1", "q", "DEFER", "waiting on the notes")
+    m.answer_review("lead-1", "q", "KEEP_ROSTER", "the notes agree")
+    assert m.notes["q"].status.value == "closed"
+
+
+def test_the_size_check_counts_what_is_actually_sent(tmp_path: Path):
+    live = LiveAdapter("https://api.example.invalid/v1", "test-key", "m")
+    brief = Brief(slot_function="lead", skill="draft", channel_id=None, goal="g", purpose="p", context="c",
+                  done_when="d", packet="x" * 400, isolated=False, mode="work", tools=[], success_criteria=[])
+    base = ModelAdapter().estimate_tokens(brief)
+    assert live.estimate_tokens(brief) > base + 100  # the system prompt and the JSON wrapping
+    m = new_run("size-1", "g", "p", "d")
+    engine = Engine(MemoryStore(tmp_path), adapter=live, budget=Budget(max_tokens_per_call=base + 50))
+    with pytest.raises(InvariantError) as e:
+        engine._call(m, brief)  # refused before any network: example.invalid is never contacted
+    assert "not sent" in str(e.value) and m.calls == []

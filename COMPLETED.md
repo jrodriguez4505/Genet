@@ -2,6 +2,15 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.3.3 — October 2026: four follow-ups
+
+The four items v0.3.2 left open, each with a test and a mutation:
+
+- **Failed calls are counted.** A call that fails after it was sent stays on the record, marked `failed` with its error code. It counts toward the budget, toward `diagnose`'s `failed_calls`, and toward the calls, tokens and cost a comparison reports. It uses the endpoint's token counts when the endpoint sent them, and the brief's estimate otherwise. Before this, a failed trial looked free.
+- **Saves are atomic.** Saved runs, working memory, episodes, guidelines, comparison results and policy files go to a temporary file that replaces the old one in a single step, keeping its permissions. A crash mid-save leaves the previous file. Damaged working memory is a `STORE` error, not a traceback.
+- **An answered review note stays answered.** Answering a closed note again is refused, so a record cannot be rewritten or used to change the method after the fact. A deferred note can still be answered.
+- **The size check counts what is sent.** An adapter now estimates its own request, and the live adapter counts its system prompt and JSON wrapping, so an oversized request is refused before it is sent rather than after. The stub and simulated adapters are unchanged, and so are the published figures.
+
 ## v0.3.2 — October 2026: review findings
 
 A review in four parallel parts: concurrency and run state, input handling, persistence and the CLI, and decision logic with the comparison harness. Each finding was reproduced on v0.3.1 before it was fixed, and each fix has a test in `tests/test_hardening.py`.
@@ -39,6 +48,7 @@ A review in four parallel parts: concurrency and run state, input handling, pers
 - Aborted runs and failed stop rules reported `health: ok`; they are `degraded` now. The authority-language check is no longer evaded by quoting the rule first.
 - Missing files and directories, `nan` budgets, zero or negative counts, blank criteria and run ids ending in a newline are clean errors. `bench` fails when it checked nothing, `policy-replay` reads runs through `load_run`, and the policy flags take effect.
 - 36 new mutations, for 113.
+- Left open, fixed in v0.3.3: failed calls missing from cost reports, non-atomic saves, re-answerable review notes, and a size estimate that left out the system prompt.
 
 ## v0.3.1 — October 2026: security hardening
 
@@ -193,7 +203,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 5,600 lines in `taskorg/`. Suite: about 830 checks (including 300 fuzz sequences), 9 bench fixtures, and 113 mutation checks.
+Kernel: about 5,700 lines in `taskorg/`. Suite: about 845 checks (including 300 fuzz sequences), 9 bench fixtures, and 118 mutation checks.
 
 ## Run
 

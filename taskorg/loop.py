@@ -118,11 +118,6 @@ def _tool_name(request: str) -> str:
     return parse_request(request)[0]
 
 
-def _brief_tokens(brief: Brief) -> int:
-    """The kernel's own estimate of a brief's size, about four characters a token."""
-    return max(1, len(brief.packet + brief.goal + brief.purpose + brief.context) // 4)
-
-
 def _reported(value) -> int | None:
     """A token count an adapter reports, if it is one: a whole number, not negative.
     Anything else is ignored and the kernel's estimate stands, so a reply cannot spend negative tokens."""
@@ -284,7 +279,7 @@ class Engine:
 
     def _call(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
         """One budgeted model call. The model runs outside the lock; the board inside it."""
-        size = _brief_tokens(brief)
+        size = self.adapter.estimate_tokens(brief)
         with self._lock:
             self._arm(run)
             self._admit(run)
@@ -305,9 +300,38 @@ class Engine:
                     self._inflight.pop(id(run), None)
                 self._settled.notify_all()
 
+    def _call_record(self, brief: Brief, slot: Slot | None, heard: list[str], latency: float,
+                     prompt: int, completion: int, usage_real: bool) -> dict:
+        return {
+            "slot": (slot.id if slot else brief.slot_function),
+            "function": brief.slot_function,
+            "channel": brief.channel_id or brief.slot_function,
+            "mode": brief.mode,
+            "latency_s": round(latency, 4),
+            "prompt_tokens": int(prompt),
+            "completion_tokens": int(completion),
+            "packet": brief.packet,
+            "heard_channels": heard,
+            "adapter": getattr(self.adapter, "name", ""),
+            "tokens_estimated": not usage_real,
+        }
+
     def _call_and_record(self, run: Run, brief: Brief, slot: Slot | None, size: int, heard: list[str]) -> Artifact:
         started = time.perf_counter()
-        art = self.adapter.act(brief)
+        try:
+            art = self.adapter.act(brief)
+        except BaseException as e:
+            # The request went out and may have been billed: it stays on the record, marked failed,
+            # so the budget and every cost report count it.
+            usage = getattr(self.adapter, "last_usage", None) or {}
+            reported_prompt, reported_completion = _reported(usage.get("prompt_tokens")), _reported(usage.get("completion_tokens"))
+            call = self._call_record(brief, slot, heard, time.perf_counter() - started, reported_prompt or size,
+                                     reported_completion or 0, bool(reported_prompt or reported_completion))
+            call["failed"] = e.code if isinstance(e, InvariantError) else type(e).__name__
+            with self._lock:
+                run.adapter_name = getattr(self.adapter, "name", "") or run.adapter_name
+                run.record_call(call)
+            raise
         latency = time.perf_counter() - started
         usage = getattr(self.adapter, "last_usage", None) or {}
         reported_prompt, reported_completion = _reported(usage.get("prompt_tokens")), _reported(usage.get("completion_tokens"))
@@ -323,19 +347,7 @@ class Engine:
             art.channel_id = brief.channel_id
         with self._lock:
             run.adapter_name = getattr(self.adapter, "name", "") or run.adapter_name
-            run.record_call({
-                "slot": (slot.id if slot else brief.slot_function),
-                "function": brief.slot_function,
-                "channel": brief.channel_id or brief.slot_function,
-                "mode": brief.mode,
-                "latency_s": round(latency, 4),
-                "prompt_tokens": int(prompt),
-                "completion_tokens": int(completion),
-                "packet": brief.packet,
-                "heard_channels": heard,
-                "adapter": getattr(self.adapter, "name", ""),
-                "tokens_estimated": not usage_real,
-            })
+            run.record_call(self._call_record(brief, slot, heard, latency, prompt, completion, usage_real))
             # Only known tool names. Schema words like "purpose" are not tools.
             toolish = [_tool_name(r) for r in art.requests if _tool_name(r) in TOOL_NAMES]
             if toolish:

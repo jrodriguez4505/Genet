@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from . import atomic
 from .errors import InvariantError
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -32,7 +33,7 @@ class MemoryStore:
 
     def write_guidelines(self, name: str, text: str) -> Path:
         path = self.guidelines / f"{name}.md"
-        path.write_text(text.strip() + "\n", encoding="utf-8")
+        atomic.write_text(path, text.strip() + "\n")
         return path
 
     def read_guidelines(self, name: str) -> str:
@@ -48,11 +49,22 @@ class MemoryStore:
     def remember_working(self, run_id: str, key: str, value: Any) -> None:
         path = self.working / f"{_safe_id(run_id)}.json"
         with self._lock:
-            data = {}
-            if path.exists():
-                data = json.loads(path.read_text(encoding="utf-8"))
+            data = self._facts(path)
             data[key] = value
-            path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            atomic.write_text(path, json.dumps(data, indent=2))
+
+    @staticmethod
+    def _facts(path: Path) -> dict:
+        """A run's working memory. A damaged file is a clean STORE error, not a traceback."""
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, RecursionError) as e:
+            raise InvariantError("STORE", f"working memory is damaged: {path}: {type(e).__name__}") from e
+        if not isinstance(data, dict):
+            raise InvariantError("STORE", f"working memory is damaged: {path}: not an object")
+        return data
 
     def reset_working(self, run_id: str) -> None:
         """Start a run clean. A reused id must not inherit the last run's facts."""
@@ -63,9 +75,7 @@ class MemoryStore:
     def working_facts(self, run_id: str) -> dict:
         path = self.working / f"{_safe_id(run_id)}.json"
         with self._lock:
-            if not path.exists():
-                return {}
-            return json.loads(path.read_text(encoding="utf-8"))
+            return self._facts(path)
 
     def scoped_brief(self, run_id: str, extra: str = "", channel_id: str | None = None) -> str:
         """INV-6 / INV-12: guidelines + this run, minus sibling channel packets."""
@@ -84,5 +94,5 @@ class MemoryStore:
 
     def archive_episode(self, run_id: str, summary: dict) -> Path:
         path = self.episodic / f"{_safe_id(run_id)}.json"
-        path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        atomic.write_text(path, json.dumps(summary, indent=2))
         return path
