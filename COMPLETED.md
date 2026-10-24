@@ -2,6 +2,24 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.4.0 — October 2026: shared ownership
+
+The lead makes every decision; the outcome is the team's. Two pieces:
+
+- **A failed part goes back to the team.**
+  - A sub-agent whose reply is malformed (`SCHEMA`) or whose call to the model fails (`LIVE`) no longer ends the run. Its part is recorded as `part_failed`.
+  - The other sub-agents' results are merged, and the lead covers the failed part in the merge, the same way it covers a part the gates refused. This works in `run_task` and in `fanout`, and the operator's answer says which parts the lead covered.
+  - An authority violation (`TOOLS`, `ROSTER`, `INV-*`), a budget halt and a crash still stop the run at once.
+  - When several sub-agents stop, the error raised is the one that caused it, not a sibling's "run already abort".
+- **A blameless review after every failure, and lessons for the next run.**
+  - When a run had any failure, even one the team recovered from, the kernel writes `Run.review`. It holds what failed, what became of each part, what the team did and the outcome, and it is the last entry on the record.
+  - The review is built from the record (event codes, criteria misses, part statuses), never from model text.
+  - Each kind of failure maps to one fixed lesson, which is added to `guidelines/lessons.md`. Every later brief carries it. Repeats are counted, at most 10 lessons are kept, and `--no-lessons` (`Engine(lessons=False)`) turns lessons off.
+  - An operator's Ctrl-C is not a team failure, and writing a review can never change a run's outcome.
+- `diagnose` reports `team` (each part's outcome) and `review`, and the CLI prints the review with the run.
+- Comparison trials each use a fresh store, so no lesson carries between strategies. The published figures are unchanged.
+- `tests/test_ownership.py`, and 11 new mutations, for 129, all caught.
+
 ## v0.3.3 — October 2026: four follow-ups
 
 The four items v0.3.2 left open, each with a test and a mutation:
@@ -203,7 +221,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 5,700 lines in `taskorg/`. Suite: about 845 checks (including 300 fuzz sequences), 9 bench fixtures, and 118 mutation checks.
+Kernel: about 5,950 lines in `taskorg/`. Suite: about 875 checks (including 300 fuzz sequences), 9 bench fixtures, and 129 mutation checks.
 
 ## Run
 

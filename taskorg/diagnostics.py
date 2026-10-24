@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 
+from .review import part_statuses
 from .run import Run
 
 
@@ -97,6 +98,9 @@ def diagnose(run: Run) -> dict:
         "isolation": iso,
         "roster": roster,
         "authority": auth,
+        # Shared ownership: what became of each part, and the kernel's review when something failed.
+        "team": {"parts": part_statuses(run), "failed_parts": [e.detail.get("channel") for e in run.log if e.event == "part_failed"]},
+        "review": getattr(run, "review", None),
         "adapter": getattr(run, "adapter_name", "") or next((c.get("adapter") for c in getattr(run, "calls", []) if c.get("adapter")), ""),
         "flags": flags,
         "health": "degraded" if flags else "ok",

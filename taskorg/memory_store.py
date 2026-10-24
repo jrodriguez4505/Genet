@@ -10,6 +10,9 @@ from . import atomic
 from .errors import InvariantError
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+LESSONS = "lessons"      # guidelines/lessons.md, kept by the kernel
+MAX_LESSONS = 10
+_LESSON_LINE = re.compile(r"^- (.+) \(seen (\d+)x\)$")
 
 
 def _safe_id(run_id: str) -> str:
@@ -39,6 +42,29 @@ class MemoryStore:
     def read_guidelines(self, name: str) -> str:
         path = self.guidelines / f"{name}.md"
         return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def lessons(self) -> list[tuple[str, int]]:
+        """(lesson, times seen), most recently seen first."""
+        path = self.guidelines / f"{LESSONS}.md"
+        if not path.exists():
+            return []
+        found = (_LESSON_LINE.match(line) for line in path.read_text(encoding="utf-8").splitlines())
+        return [(m.group(1), int(m.group(2))) for m in found if m]
+
+    def add_lesson(self, lesson: str) -> None:
+        """A lesson from a failed run, into the shared guidelines every brief carries.
+
+        The kernel writes these from fixed sentences (see review.py), never from model text.
+        A repeat is counted, not repeated; the most recently seen come first; at most MAX_LESSONS stay.
+        """
+        lesson = " ".join(str(lesson).split())[:240]
+        with self._lock:
+            seen = self.lessons()
+            count = next((n for text, n in seen if text == lesson), 0) + 1
+            seen = [(lesson, count)] + [(text, n) for text, n in seen if text != lesson]
+            body = ("# Lessons from earlier runs\n\nWritten by the kernel from runs that had a failure. "
+                    "Every agent reads these.\n\n" + "\n".join(f"- {t} (seen {n}x)" for t, n in seen[:MAX_LESSONS]) + "\n")
+            atomic.write_text(self.guidelines / f"{LESSONS}.md", body)
 
     def guidelines_packet(self) -> str:
         parts = []

@@ -41,9 +41,19 @@ Models only fill a fixed JSON artifact: `claim`, `evidence`, `uncertainty`, `cha
 A run has four steps:
 
 1. **Read and propose.** The lead reads the context and proposes sub-tasks, or none.
-2. **Judge.** The gates decide. Two or more legal sub-tasks run as parallel sub-agents, each blind to the others, and the lead merges their results. Otherwise a single agent does the work, switching to whatever skill the job needs.
+2. **Judge.** The gates decide. Two or more legal sub-tasks run as parallel sub-agents, each blind to the others, and the lead merges their results. A sub-agent that fails hands its part back to the lead. Otherwise a single agent does the work, switching to whatever skill the job needs.
 3. **Verify.** If the product fails and the budget tier allows, the lead requests a replan, changes the method and reworks once.
-4. **Answer from the record.** The operator's question is answered from the gate record, and the run closes. A closed run is read-only.
+4. **Answer from the record.** The operator's question is answered from the gate record, and the run closes. A closed run is read-only. If anything failed, the kernel's review is the last entry on the record.
+
+## Shared ownership
+
+The lead makes every decision; the outcome is the team's. When something goes wrong, the run does not single out an agent and stop. The team absorbs what it can, and records what happened so the next run starts better.
+
+- **A failed part goes back to the team.** When a sub-agent's reply is malformed (`SCHEMA`) or its call to the model fails (`LIVE`), the run goes on. The other sub-agents' results are merged, and the lead covers the failed part the same way it covers a part the gates refused. An authority violation, such as a tool the skill does not allow or a roster change, still stops the run at once, as do a budget halt and a crash.
+- **A blameless review after every failure.** When anything failed, even if the team recovered, the kernel writes a review on the run: what failed, what became of each part, and what the team did about it. It is built from the record, never from model text, and it names no agent as the cause.
+- **Lessons for the next run.** Each kind of failure maps to one fixed lesson, which goes into `guidelines/lessons.md` in the store. Every agent's brief carries the guidelines, so the next run starts with what the last one learned. Repeats are counted, at most 10 lessons are kept, and `--no-lessons` turns it off. Comparison trials each use a fresh store, so no lesson carries from one strategy to another.
+
+Decisions stay with one owner because shared authority is no authority: the roster, the gates and the budget answer to the lead and the kernel alone. What is shared is responsibility for the result.
 
 ## Gates
 
@@ -236,7 +246,7 @@ The verifier always gets its call. When a split is judged, the gates reserve the
 
 ## Diagnose
 
-`diagnose` reports health, the budget used and remaining, and every gate verdict and tool call. It also reports isolation: whether any sub-agent's brief carried another sub-agent's result. That is checked at call time over the whole brief, and the verdict survives save and load.
+`diagnose` reports health, the budget used and remaining, and every gate verdict and tool call. It shows what became of each part under `team`, and the run's review when anything failed. It also reports isolation: whether any sub-agent's brief carried another sub-agent's result. That is checked at call time over the whole brief, and the verdict survives save and load.
 
 These count as fails:
 
@@ -249,7 +259,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 845 checks with no network and no key:
+`pytest -q` runs about 875 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -258,10 +268,11 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Live adapter.** Driven against a fake OpenAI-compatible endpoint: prompts, usage accounting, HTTP errors, timeouts.
 - **Security.** One test per attack on the trust boundaries: redirects that would carry the key, plain-HTTP endpoints, oversized and slow responses, malformed JSON, fake token counts, oversized briefs, tool floods, hidden files and symlinks to them, huge trees, and tampered saved runs.
 - **Review findings.** `tests/test_hardening.py` has one test per finding from a review of concurrency, input handling, persistence, the CLI and decision logic: siblings that kept spending after a failure, parallel overspend, unpaid merges, verdicts read by substring, crew parts dropped silently, grading by first number, hostile request strings, dripped headers, typed run files, and more.
+- **Shared ownership.** `tests/test_ownership.py`: a failed part goes back to the lead and the run goes on; authority violations, budget halts and crashes still stop it; every failure is reviewed; lessons reach the next run, never carry model text, are counted and bounded, and can be turned off; and a review never changes a run's outcome.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 118 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 118 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 129 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 129 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -280,6 +291,8 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 | Review | A concern raised to the lead, which must answer it. | `Run.open_review()`, `Run.answer_review()` |
 | Replan request | A review that says the plan no longer fits; only a method or goal change closes it. | `Run.request_replan()`, INV-14 |
 | Run log | The trace and audit log of every decision. | `Run.log`, `diagnose()` |
+| Team review | The kernel's blameless review of a run that had a failure: what failed, each part's outcome, what the team did. | `Run.review`, `review.team_review()` |
+| Lessons | Fixed sentences, one per kind of failure, that every later brief carries. | `guidelines/lessons.md`, `MemoryStore.add_lesson()`, `--no-lessons` |
 | Streams | Typed message channels: merge, escalate, report, peer. | `STREAMS`, `Delta.stream` |
 | Budget tier | Tight, normal or open. | `Budget.for_tier()` |
 
@@ -287,7 +300,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.3.3 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.4.0 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

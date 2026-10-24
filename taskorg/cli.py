@@ -83,6 +83,8 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--workspace", action="append", default=[], help="directory specialists may read and search")
     p.add_argument("--isolate", action="store_true",
                    help="the sub-tasks must not share a context (a declared reason to fan out)")
+    p.add_argument("--no-lessons", action="store_true",
+                   help="do not write lessons from a failed run to the shared guidelines")
     p.add_argument("--split-policy", default="measured", choices=["measured", "stated"],
                    help="measured: fan out only for declared isolation or material that does not fit one context; "
                         "stated: the lead's named reasons are enough")
@@ -123,7 +125,7 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
             raise InvariantError("READ", f"workspace is not a directory: {root}")
     toolbox = Toolbox(roots=args.workspace, files=args.read)
     return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
-                  split_policy=args.split_policy, isolation_required=args.isolate)
+                  split_policy=args.split_policy, isolation_required=args.isolate, lessons=not args.no_lessons)
 
 
 def _out_path(raw: str | None, default: Path) -> Path:
@@ -173,6 +175,7 @@ def _save_halt(run, out: Path, err: InvariantError) -> int:
         "error": str(err),
         "status": getattr(run, "status", None) and run.status.value,
         "stop_reason": getattr(run, "stop_reason", ""),
+        "review": getattr(run, "review", None),
         "saved": saved,
     }, indent=2))
     if saved:
@@ -183,7 +186,8 @@ def _save_halt(run, out: Path, err: InvariantError) -> int:
 def _save_done(result, out: Path, **extra) -> int:
     out = Path(out)
     save_run(result.run, out)
-    print(json.dumps(result.run.summary() | {"product": result.product.claim} | extra, indent=2))
+    review = {"review": result.run.review} if result.run.review else {}
+    print(json.dumps(result.run.summary() | {"product": result.product.claim} | review | extra, indent=2))
     print(f"\nsaved {out}")
     return 0
 
