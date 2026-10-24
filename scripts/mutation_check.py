@@ -76,6 +76,7 @@ M = [
     ("diagnostics.py", "aborted run reads ok", '    if run.status.value == "abort":\n        flags.append("aborted")', '    if False:\n        flags.append("aborted")'),
     ("cli.py", "working memory not reset", "    store.reset_working(run.id)", "    pass"),
     ("persist.py", "old files not upgraded", '    if "state" in raw:\n        # Format 2', '    if True:\n        # Format 2'),
+    ("persist.py", "oldest review answers kept", '_LEGACY_RESPONSE = {"HOLD_ORG": "KEEP_ROSTER", "CHANGE_HOW": "CHANGE_METHOD"}', "_LEGACY_RESPONSE = {}"),
     ("persist.py", "old log names kept", '    return {**e, "event": _LEGACY_EVENT.get(e.get("event"), e.get("event")), "detail": detail}', '    return e'),
     ("persist.py", "run file types unchecked", "        _check_types(raw)\n", ""),
     ("persist.py", "loaded run gets a fresh clock", 'started_at=time.time() - float(raw_b.get("elapsed") or 0),', "started_at=time.time(),"),

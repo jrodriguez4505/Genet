@@ -2,6 +2,12 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.4.1 — October 2026: findings from the past live data and longer tests
+
+- **The oldest review answers are translated.** Real pre-0.2 runs answered reviews with `HOLD_ORG` and `CHANGE_HOW`, which the loader kept as they were, so `policy-replay` read a method change as a hold. They now load as `KEEP_ROSTER` and `CHANGE_METHOD`, in notes and in the log, whatever the file's format.
+- **Failed parts are recorded in sub-task order.** A part whose sub-agent failed was logged from that sub-agent's thread, so the record's order depended on timing, and one test failed now and then. Failures are now recorded with the other results, in sub-task order, so the board stays deterministic.
+- One new mutation, for 130.
+
 ## v0.4.0 — October 2026: shared ownership
 
 The lead makes every decision; the outcome is the team's. Two pieces:
@@ -221,7 +227,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 5,950 lines in `taskorg/`. Suite: about 875 checks (including 300 fuzz sequences), 9 bench fixtures, and 129 mutation checks.
+Kernel: about 5,950 lines in `taskorg/`. Suite: about 875 checks (including 300 fuzz sequences), 9 bench fixtures, and 130 mutation checks.
 
 ## Run
 

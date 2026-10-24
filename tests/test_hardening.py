@@ -839,3 +839,16 @@ def test_the_size_check_counts_what_is_actually_sent(tmp_path: Path):
     with pytest.raises(InvariantError) as e:
         engine._call(m, brief)  # refused before any network: example.invalid is never contacted
     assert "not sent" in str(e.value) and m.calls == []
+
+
+def test_the_oldest_review_answers_are_read_in_todays_vocabulary(saved: Path):
+    """Real pre-0.2 runs answered reviews with HOLD_ORG and CHANGE_HOW."""
+    raw = json.loads(saved.read_text())
+    raw["notes"] = {"q": {"id": "q", "body": "why?", "status": "closed", "response": "CHANGE_HOW", "reason": "new method", "kind": "review"},
+                    "p": {"id": "p", "body": "still?", "status": "closed", "response": "HOLD_ORG", "reason": "holds", "kind": "review"}}
+    raw["log"] = [{"event": "why_respond", "detail": {"id": "q", "response": "CHANGE_HOW", "reason": "new method"}, "ts": 1}]
+    saved.write_text(json.dumps(raw))
+    m = load_run(saved)
+    assert (m.notes["q"].response, m.notes["p"].response) == ("CHANGE_METHOD", "KEEP_ROSTER")
+    assert m.log[0].detail["response"] == "CHANGE_METHOD"
+    assert [p["action"] for p in replay_path(saved)] == ["CHANGE_METHOD"]

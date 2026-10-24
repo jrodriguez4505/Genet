@@ -102,12 +102,21 @@ _LEGACY_FUNCTION = {"head": "lead", "why": "reviewer"}
 _LEGACY_KIND = {"why": "review", "plan_wrong": "replan"}
 _LEGACY_STREAM = {"element": "merge", "up": "escalate", "out": "report", "adjacent": "peer"}
 _LEGACY_TIER = {"crawl": "tight", "walk": "normal", "run": "open"}
+# The lead's answers to a review, in the oldest files. Seen in real pre-0.2 runs; nothing else was used.
+_LEGACY_RESPONSE = {"HOLD_ORG": "KEEP_ROSTER", "CHANGE_HOW": "CHANGE_METHOD"}
 _LEGACY_EVENT = {
     "mission_open": "run_open", "look": "context", "slide": "switch_skill", "set_how": "set_method",
     "why_submit": "review_open", "why_respond": "review_answer", "write_who": "set_roster",
     "write_net": "open_stream", "adjacent_in": "peer_in", "human_override_who": "human_override_roster",
 }
 _LEGACY_DETAIL = {"net": "stream", "who": "roster", "picture": "context"}
+
+
+def _legacy_note(n):
+    """A review note in today's vocabulary: the lead's answer uses today's response names."""
+    if isinstance(n, dict) and n.get("response") in _LEGACY_RESPONSE:
+        return n | {"response": _LEGACY_RESPONSE[n["response"]]}
+    return n
 
 
 def _legacy_entry(e: dict) -> dict:
@@ -119,6 +128,8 @@ def _legacy_entry(e: dict) -> dict:
             v = _LEGACY_STREAM.get(v, v)
         elif k == "kind":
             v = _LEGACY_KIND.get(v, v)
+        elif k == "response":
+            v = _LEGACY_RESPONSE.get(v, v)
         detail[key] = v
     return {**e, "event": _LEGACY_EVENT.get(e.get("event"), e.get("event")), "detail": detail}
 
@@ -132,8 +143,12 @@ def _legacy_skill(slot: dict) -> str:
 def _upgrade(raw: dict) -> dict:
     if "state" in raw:
         # Format 2, possibly re-saved from an older file by older code: the log may still use old names.
-        log = raw.get("log")
-        return raw | {"log": [_legacy_entry(e) for e in log if isinstance(e, dict)]} if isinstance(log, list) else raw
+        log, notes = raw.get("log"), raw.get("notes")
+        if isinstance(log, list):
+            raw = raw | {"log": [_legacy_entry(e) for e in log if isinstance(e, dict)]}
+        if isinstance(notes, dict):
+            raw = raw | {"notes": {k: _legacy_note(n) for k, n in notes.items()}}
+        return raw
     raw = dict(raw)
     state = {}
     for k, v in raw.pop("picture").items():
@@ -149,7 +164,7 @@ def _upgrade(raw: dict) -> dict:
         for s in state["slots"]
     ]
     raw["state"] = state
-    raw["notes"] = {k: n | {"kind": _LEGACY_KIND.get(n.get("kind", "why"), n.get("kind"))} for k, n in raw.get("notes", {}).items()}
+    raw["notes"] = {k: _legacy_note(n | {"kind": _LEGACY_KIND.get(n.get("kind", "why"), n.get("kind"))}) for k, n in raw.get("notes", {}).items()}
     raw["artifacts"] = [
         {("context_update" if k == "delta_to_picture" else k): v for k, v in a.items()} for a in raw.get("artifacts", [])
     ]

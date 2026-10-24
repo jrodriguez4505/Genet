@@ -520,10 +520,7 @@ class Engine:
             except InvariantError as e:
                 if e.code in PART_FAILURES and run.status == Status.ACTIVE:
                     # The part is not lost: it goes back to the lead, and the siblings carry on.
-                    with self._lock:
-                        run._record("part_failed", {"channel": worker.channel_id, "slot": worker.id,
-                                                    "code": e.code, "error": str(e)[:200]})
-                    return None
+                    return e
                 self._abort(run, e)
                 raise
             except BaseException as e:
@@ -546,8 +543,12 @@ class Engine:
             arts = [f.result() for f in futures]
         else:
             arts = [one(w) for w in added]
-        for worker, art in zip(added, arts):
-            if art is None:  # failed; the lead covers this part
+        # Accepted in sub-task order, failures too, so the record does not depend on timing.
+        for i, (worker, art) in enumerate(zip(added, arts)):
+            if isinstance(art, InvariantError):  # failed; the lead covers this part
+                run._record("part_failed", {"channel": worker.channel_id, "slot": worker.id,
+                                            "code": art.code, "error": str(art)[:200]})
+                arts[i] = None
                 continue
             run.accept_artifact(art)
             run.post_delta(Delta(claim=art.context_update or art.claim, evidence=list(art.evidence), uncertainty=art.uncertainty, channel_id=art.channel_id, stream="merge"))

@@ -87,7 +87,7 @@ python -m taskorg.cli compare --adapter live     # a real model</pre>
     <p>Genet treats three things as untrusted: what the model endpoint sends back, what a model asks for, and what is in the workspace. The API key goes only to the host you named, over HTTPS (plain HTTP only to this machine), and redirects are refused. A reply is capped at 8 MB, and one deadline covers the whole exchange. A brief is sized before it is sent, one reply runs at most 8 tools, and a saved run is checked before it loads. To report a vulnerability, use <em>Report a vulnerability</em> on the repository's Security tab.</p>
 
     <h2>Status</h2>
-    <p>Version 0.4.0, a kernel rather than a platform. About 875 tests run with no network and no key. A mutation check deliberately breaks 129 rules, one at a time, and a test catches every one. The comparison has been run with the simulated reader. No live-model results are published yet.</p>
+    <p>Version 0.4.1, a kernel rather than a platform. About 875 tests run with no network and no key. A mutation check deliberately breaks 130 rules, one at a time, and a test catches every one. The comparison has been run with the simulated reader. No live-model results are published yet.</p>
 
     <h2>Try it</h2>
     <p>Python 3.11 or later. No runtime dependencies.</p>
