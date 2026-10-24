@@ -81,6 +81,9 @@ class LoopResult:
 
 # Tool names the kernel recognizes in artifact.requests. Anything else is free text.
 TOOL_NAMES = {"write", "verify", "observe", "read", "retrieve", "simulate", "spawn"}
+# Model output is untrusted. These bound what one reply can make the kernel do.
+MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
+MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
 
 PLAN_BRIEF = (
     "PLAN. Decide how to staff this task. Default is a single agent: you do the work yourself. "
@@ -96,6 +99,19 @@ PLAN_BRIEF = (
 
 def _tool_name(request: str) -> str:
     return parse_request(request)[0]
+
+
+def _brief_tokens(brief: Brief) -> int:
+    """The kernel's own estimate of a brief's size, about four characters a token."""
+    return max(1, len(brief.packet + brief.goal + brief.purpose + brief.context) // 4)
+
+
+def _reported(value) -> int | None:
+    """A token count an adapter reports, if it is one: a whole number, not negative.
+    Anything else is ignored and the kernel's estimate stands, so a reply cannot spend negative tokens."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 def _sibling_heard(run: Run, brief: Brief) -> list[str]:
@@ -230,17 +246,23 @@ class Engine:
 
     def _call(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
         """One budgeted model call. The model runs outside the lock; the board inside it."""
+        size = _brief_tokens(brief)
         with self._lock:
             self._arm(run)
             run.assert_running()
+            b = run.budget
+            if b and size > b.max_tokens_per_call:
+                # Checked before the call: an oversized brief is never sent, so it is never paid for.
+                run.halt(f"brief of ~{size} tokens exceeds max_tokens_per_call {b.max_tokens_per_call}; not sent")
             heard = _sibling_heard(run, brief)
         started = time.perf_counter()
         art = self.adapter.act(brief)
         latency = time.perf_counter() - started
         usage = getattr(self.adapter, "last_usage", None) or {}
-        prompt = usage.get("prompt_tokens") or max(1, len(brief.packet + brief.goal + brief.purpose + brief.context) // 4)
-        completion = usage.get("completion_tokens") or max(1, len(art.claim) // 4)
-        usage_real = bool(usage.get("prompt_tokens") or usage.get("completion_tokens"))
+        reported_prompt, reported_completion = _reported(usage.get("prompt_tokens")), _reported(usage.get("completion_tokens"))
+        prompt = reported_prompt or size
+        completion = reported_completion or max(1, len(art.claim) // 4)
+        usage_real = bool(reported_prompt or reported_completion)
         # The kernel names the channel, not the model.
         if brief.slot_function == "lead":
             art.channel_id = "lead-plan" if brief.mode == "plan" else "lead-merge"
@@ -282,10 +304,13 @@ class Engine:
         """A call plus tool rounds. Allowed tools run, results come back in the next brief."""
         art = self._call(run, brief, slot)
         for _ in range(self.max_tool_rounds):
-            wanted = [r for r in art.requests if _tool_name(r) in RUNNABLE]
+            wanted = list(dict.fromkeys(r for r in art.requests if _tool_name(r) in RUNNABLE))
             if not wanted:
                 return art
             results = []
+            if len(wanted) > MAX_TOOL_REQUESTS:
+                results.append(f"[{len(wanted) - MAX_TOOL_REQUESTS} more tool requests not run: at most {MAX_TOOL_REQUESTS} per round]")
+                wanted = wanted[:MAX_TOOL_REQUESTS]
             for req in wanted:
                 out = self.toolbox.run(req)
                 results.append(out)
@@ -328,8 +353,12 @@ class Engine:
     def _assess(self, run: Run, subtasks: list[Subtask], *, declared: bool = False) -> list[Assessment]:
         """declared: the operator named these sub-tasks, so the need is theirs to state."""
         b = run.budget
+        subtasks = _first_per_channel(subtasks)
+        if len(subtasks) > MAX_PROPOSALS:
+            run._record("gate_overflow", {"proposed": len(subtasks), "considered": MAX_PROPOSALS})
+            subtasks = subtasks[:MAX_PROPOSALS]
         verdicts = assess(
-            _first_per_channel(subtasks),
+            subtasks,
             world=getattr(run, "world", None),
             occupied_channels=[s.channel_id for s in run.state.slots if s.channel_id],
             allow_split=getattr(b, "allow_split", True),

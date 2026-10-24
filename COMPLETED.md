@@ -2,6 +2,21 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.3.1 — October 2026: security hardening
+
+A review for the class of bug behind the October 2026 PHP flaws: untrusted input that exhausts memory, escapes a sandbox or slips past parsing. Each fix has a test that fails on the code before it.
+
+- **The API key stays with the host you named.** Redirects are refused, and the key is never copied onto a redirected request. The base URL must be `https://`, or `http://` to this machine; `TASKORG_MODEL_ALLOW_HTTP=1` allows plain HTTP elsewhere.
+- **The endpoint's reply is bounded.** At most 8 MB, read within the timeout. Malformed JSON, nesting too deep and over-long numbers are clean `LIVE` or `SCHEMA` errors, not crashes. An error body is read only as far as the message needs.
+- **Token counts are checked.** A reported count that is negative, fractional or not a number is ignored, and the kernel's estimate stands, so a reply cannot spend negative tokens past the budget.
+- **An oversized brief is never sent.** Its size is checked against the per-call cap before the call. Before this, one reply asking for the same file 2,000 times produced an 8 MB brief that was sent before the cap stopped the run.
+- **One reply does a bounded amount of work.** At most 8 tools a round (repeats count once) and 16 sub-task proposals judged per plan.
+- **Hidden files stay hidden.** `read` and `observe` could reach `.env` and `.git/`, and search could reach a hidden file through a symlink. Now no tool reaches a path with a dot-named part below a workspace root.
+- **The workspace walk is bounded.** It no longer lists a whole tree before applying its cap, it prunes hidden and tool folders as it goes, and one search scans at most 20M characters. The scan for file names in a sub-task note is linear; a long note used to take seconds to minutes.
+- **Saved runs are untrusted.** A malformed file is a `PERSIST` error, and a saved slot cannot hold tools its skill does not allow.
+- **Repository.** No secrets in any commit, no key files ever committed, and the site loads no scripts or third-party resources. Added `SECURITY.md`.
+- 15 new mutations, for 77, all caught.
+
 ## v0.3 — October 2026
 
 - **Measured "should we".** A fan-out of the lead's proposals needs one of two reasons:

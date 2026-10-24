@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -51,6 +54,62 @@ TOOLS_ON = (
 TOOLS_OFF = "You have no tools. Leave requests empty unless the brief asks for proposals."
 _EXAMPLES = {"read": '"read:notes/a.md"', "retrieve": '"retrieve:quarterly revenue"', "observe": '"observe"'}
 
+# The endpoint's reply is untrusted input. A chat completion is kilobytes; this is generous.
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+ERROR_DETAIL_BYTES = 2048
+CHUNK = 64 * 1024
+
+
+def _is_loopback(host: str) -> bool:
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def check_base_url(base_url: str) -> str:
+    """https, or plain http only to this machine (a local model server), so the key never crosses
+    a network in clear text. TASKORG_MODEL_ALLOW_HTTP=1 allows plain http elsewhere, such as a LAN server."""
+    parts = urllib.parse.urlsplit(base_url)
+    host = (parts.hostname or "").lower()
+    if host and parts.scheme == "https":
+        return base_url
+    if host and parts.scheme == "http" and (_is_loopback(host) or os.environ.get("TASKORG_MODEL_ALLOW_HTTP") == "1"):
+        return base_url
+    # Scheme and host only: the URL itself may carry credentials.
+    raise InvariantError(
+        "LIVE", f"model base URL must be https:// (or http:// to this machine), got {parts.scheme or '?'}://{host or '?'}"
+    )
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A model API answers; it does not redirect. Following one would carry the request, and with
+    some redirects the key, to a host the operator never named."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _read_capped(resp, limit: int, deadline: float) -> bytes:
+    """The body, refused past limit bytes or past the deadline, so an endpoint cannot exhaust memory or stall a run."""
+    read = getattr(resp, "read1", resp.read)
+    chunks, total = [], 0
+    while True:
+        if time.monotonic() > deadline:
+            raise InvariantError("LIVE", "model endpoint too slow: the response did not finish within the timeout")
+        chunk = read(CHUNK)
+        if not chunk:
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > limit:
+            raise InvariantError("LIVE", f"model endpoint response is over {limit} bytes; refused")
+        chunks.append(chunk)
+
 
 def system_prompt(brief: Brief) -> str:
     runnable = [t for t in (brief.tools or []) if t in RUNNABLE]
@@ -76,8 +135,8 @@ def _extract_json(text: str) -> dict[str, Any]:
         raise InvariantError("SCHEMA", "model returned no JSON object")
     try:
         data = json.loads(text[start : end + 1])
-    except json.JSONDecodeError as e:
-        raise InvariantError("SCHEMA", f"model JSON invalid: {e}") from e
+    except (ValueError, RecursionError) as e:  # bad JSON, a number too long to convert, or nesting too deep
+        raise InvariantError("SCHEMA", f"model JSON invalid: {type(e).__name__}: {str(e)[:120]}") from e
     if not isinstance(data, dict):
         raise InvariantError("SCHEMA", "model JSON is not an object")
     return data
@@ -127,7 +186,7 @@ class LiveAdapter(ModelAdapter):
     name = "live"
 
     def __init__(self, base_url: str, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = check_base_url(base_url).rstrip("/")
         self.api_key = api_key
         self.model = model
         # Optional model per skill, e.g. a stronger model for reason.
@@ -197,25 +256,23 @@ class LiveAdapter(ModelAdapter):
     def _post(self, payload: dict) -> str:
         url = self.base_url + "/chat/completions"
         raw = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=raw,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            method="POST",
-        )
+        req = urllib.request.Request(url, data=raw, headers={"Content-Type": "application/json"}, method="POST")
+        # Never copied onto a redirected request.
+        req.add_unredirected_header("Authorization", f"Bearer {self.api_key}")
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                body = json.loads(resp.read().decode("utf-8"))
+            with _OPENER.open(req, timeout=self.timeout) as resp:
+                data = _read_capped(resp, MAX_RESPONSE_BYTES, time.monotonic() + self.timeout)
         except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="replace")[:300]
+            if 300 <= e.code < 400:
+                raise InvariantError("LIVE", f"model endpoint redirected ({e.code}); redirects are not followed") from e
+            detail = e.read(ERROR_DETAIL_BYTES).decode("utf-8", errors="replace")[:300]
             raise InvariantError("LIVE", f"model endpoint returned {e.code}: {detail}") from e
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             raise InvariantError("LIVE", f"model endpoint failed: {e}") from e
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            raise InvariantError("LIVE", f"model endpoint returned non-JSON: {e}") from e
+        try:
+            body = json.loads(data.decode("utf-8"))
+        except (ValueError, RecursionError) as e:  # includes UnicodeDecodeError and over-long numbers
+            raise InvariantError("LIVE", f"model endpoint returned non-JSON: {type(e).__name__}: {str(e)[:120]}") from e
         try:
             content = body["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as e:

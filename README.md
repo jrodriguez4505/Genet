@@ -82,7 +82,7 @@ Every slot carries one active skill. The lead can switch its own. A sub-agent is
 | `simulate` | — | Run the plan forward; report where it breaks. |
 | `verify` | — | Judge the product: PASS or FAIL. |
 
-The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. They reach only the `--workspace` directories and the `--read` files. Hidden files, binaries and symlinks that lead outside are refused. The allowlist is checked before any tool runs, and each tool round is a budgeted call (at most 2 rounds per sub-agent).
+The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. They reach only the `--workspace` directories and the `--read` files. Hidden files (anything whose name or folder starts with a dot, such as `.env` or `.git/`), binaries, and symlinks that lead outside the workspace or into a hidden file are refused. A file you attach with `--read` is readable even if hidden, because you named it. The allowlist is checked before any tool runs, and each tool round is a budgeted call (at most 2 rounds per sub-agent).
 
 ## Budget tiers
 
@@ -197,6 +197,25 @@ export TASKORG_MODEL_NAME_REASON=...          # optional: a model per skill
 python -m taskorg.cli run --adapter live --tier normal --context "..."
 ```
 
+The base URL must be `https://`, or `http://` to this machine (a local model server). Plain `http://` to any other host would send the key in clear text, so it is refused unless you set `TASKORG_MODEL_ALLOW_HTTP=1`, for example for a server on your own network. Redirects are never followed, so the key reaches only the host you named.
+
+## Security
+
+Genet treats three things as untrusted input: what the model endpoint sends back, what the model asks for, and what is in the workspace. A planted instruction in a workspace file is assumed to reach the model, so the limits are enforced in code, not in the prompt:
+
+| Limit | Value | What it stops |
+|---|---|---|
+| Response size from the endpoint | 8 MB | A reply that exhausts memory |
+| Time to read a response | the timeout | A reply that drips in to hold a run open |
+| Brief size, checked before sending | the per-call token cap | An oversized request that is sent and paid for |
+| Tools run per reply | 8, repeats once | One reply that triggers thousands of reads |
+| Sub-tasks the gates judge per plan | 16 | A proposal flood |
+| Text one search scans | 20M characters | A search that reads an entire disk |
+| Entries one walk looks at | 20,000 | A huge or hostile directory tree |
+| Reported token counts | whole numbers, not negative | A reply that hides its own spend |
+
+Malformed JSON from the endpoint or the model, including nesting too deep and numbers too long to convert, stops the call as a `LIVE` or `SCHEMA` error. A malformed saved run is refused as `PERSIST`, and a saved run cannot give a slot tools its skill does not allow. See [SECURITY.md](SECURITY.md) to report a vulnerability.
+
 ## Verification
 
 The verifier's claim must start with PASS. Then every success criterion must appear in the product itself: its claim, evidence or context update. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. These run-state checks must also hold:
@@ -219,17 +238,18 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 620 checks with no network and no key:
+`pytest -q` runs about 670 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
 - **Fuzzing.** 300 random sequences of 40 calls from random actors. The roster rules hold after every call.
 - **Concurrency.** Parallel sub-agents never lose, double-count or cross results, and a tight budget is never overspent.
 - **Live adapter.** Driven against a fake OpenAI-compatible endpoint: prompts, usage accounting, HTTP errors, timeouts.
+- **Security.** One test per attack on the trust boundaries: redirects that would carry the key, plain-HTTP endpoints, oversized and slow responses, malformed JSON, fake token counts, oversized briefs, tool floods, hidden files and symlinks to them, huge trees, and tampered saved runs.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 62 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox and model-output checks, and confirms that some test fails for each. All 62 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 77 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output and security checks, and confirms that some test fails for each. All 77 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -255,7 +275,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.3 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.3.1 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

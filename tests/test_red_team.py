@@ -16,7 +16,7 @@ from taskorg.diagnostics import diagnose
 from taskorg.errors import InvariantError
 from taskorg.factory import new_run
 from taskorg.live import ScriptedLive
-from taskorg.loop import Engine
+from taskorg.loop import MAX_PROPOSALS, Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.tools import Toolbox
 
@@ -198,7 +198,9 @@ def test_subtask_flood_is_capped(tmp_path: Path):
                  budget=Budget(max_calls=40, max_tokens=500_000, max_tokens_per_call=40_000))
     eng.run_task(m, context="many parts")
     assert m.state.worker_count() == 4
-    assert sum(1 for e in m.log if e.event == "gate") == 50
+    # Only the first MAX_PROPOSALS are judged; one record says how many were dropped.
+    assert sum(1 for e in m.log if e.event == "gate") == MAX_PROPOSALS
+    assert [e.detail for e in m.log if e.event == "gate_overflow"] == [{"proposed": 50, "considered": MAX_PROPOSALS}]
 
 
 def test_hostile_channel_ids_are_refused(tmp_path: Path):
