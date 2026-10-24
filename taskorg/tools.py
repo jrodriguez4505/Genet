@@ -6,12 +6,15 @@ slot's allowlist first (Run.assert_tools), then runs the tool here and
 hands the result back in the next brief. Every round is a budgeted call.
 
 Tools only read. They see the workspace roots the operator declared and the
-files the operator attached with --read. Nothing outside them, nothing hidden,
-no symlink escapes.
+files the operator attached with --read. Nothing outside them, nothing hidden
+(no dot-file or dot-directory below a root, such as .env or .git), no symlink
+escapes. Requests come from model output, so every tool is bounded in what it
+reads and returns.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -23,8 +26,16 @@ READ_CAP = 4000          # chars returned by one read
 MATCH_CAP = 20           # lines returned by one retrieve
 LIST_CAP = 50            # paths returned by one observe
 WALK_CAP = 2000          # files visited per walk
+VISIT_CAP = 20_000       # directory entries looked at per walk, so a huge tree cannot exhaust memory or time
 FILE_BYTES_CAP = 1_000_000
+SCAN_CHARS_CAP = 20_000_000  # text one retrieve scans
+NOTE_CAP = 2000          # chars of a sub-task note searched for file names
 SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache"}
+_FILE_NAME = re.compile(r"[\w.-]+\.\w+")
+
+
+def _skipped(name: str) -> bool:
+    return name in SKIP_DIRS or name.startswith(".")
 
 
 def parse_request(request: str) -> tuple[str, str]:
@@ -57,9 +68,13 @@ class Toolbox:
     # --- sandbox ---
 
     def _allowed(self, path: Path) -> bool:
+        """An attached file, or a path inside a root with no hidden part below that root."""
         if path in self.files:
             return True
-        return any(path == root or path.is_relative_to(root) for root in self.roots)
+        return any(
+            path == root or (path.is_relative_to(root) and not any(p.startswith(".") for p in path.relative_to(root).parts))
+            for root in self.roots
+        )
 
     def _resolve(self, raw: str) -> Path | None:
         """Relative paths are tried against each root. The resolved path must stay inside."""
@@ -78,15 +93,26 @@ class Toolbox:
         return None
 
     def _walk(self, start: Path | None = None):
+        """Files under the roots (or start), in path order, without hidden or tool directories.
+
+        Directory symlinks are not followed. At most VISIT_CAP entries are looked at
+        and WALK_CAP files yielded, however large the tree.
+        """
         seen = 0
         starts = [start] if start else self.roots
         for top in starts:
             if top.is_file():
                 yield top
                 continue
-            for path in sorted(top.rglob("*")):
-                if any(part in SKIP_DIRS or part.startswith(".") for part in path.relative_to(top).parts):
-                    continue
+            found: list[Path] = []
+            visited = 0
+            for dirpath, dirnames, filenames in os.walk(top):
+                dirnames[:] = sorted(d for d in dirnames if not _skipped(d))
+                found.extend(Path(dirpath) / f for f in filenames if not _skipped(f))
+                visited += len(dirnames) + len(filenames)
+                if visited > VISIT_CAP:
+                    break
+            for path in sorted(found):
                 if not path.is_file() or not self._allowed(path.resolve()):
                     continue
                 seen += 1
@@ -117,7 +143,9 @@ class Toolbox:
         kernel uses this to judge whether the work fits in one context; it never
         reads the text into a brief.
         """
-        wanted = {channel.lower()} | {n.lower() for n in re.findall(r"[\w.-]+\.\w+", note)}
+        # Word by word, so a long run of characters cannot make the scan quadratic.
+        names = {n.lower() for word in note[:NOTE_CAP].split() if len(word) <= 255 for n in _FILE_NAME.findall(word)}
+        wanted = {channel.lower()} | names
         found: dict[str, int] = {}
         for path in self._walk():
             if path.stem.lower() in wanted or path.name.lower() in wanted:
@@ -162,10 +190,15 @@ class Toolbox:
         need = max(1, -(-len(terms) // 2))
         full: list[str] = []
         partial: list[tuple[int, str]] = []
+        scanned, stopped = 0, ""
         for path in self._walk():
             text = self._text(path)
             if text is None:
                 continue
+            scanned += len(text)
+            if scanned > SCAN_CHARS_CAP:
+                stopped = f"\n[stopped after scanning {SCAN_CHARS_CAP // 1_000_000}M characters; narrow the query]"
+                break
             in_name = {t for t in terms if t in path.name.lower()}
             for n, line in enumerate(text.splitlines(), 1):
                 if not line.strip():
@@ -180,12 +213,12 @@ class Toolbox:
                 elif len(terms) > 1 and hit >= need:
                     partial.append((hit, row))
         if full:
-            return f"[retrieve {query}]\n" + "\n".join(full)
+            return f"[retrieve {query}]\n" + "\n".join(full) + stopped
         if partial:
             partial.sort(key=lambda x: -x[0])
             more = "\n[more not shown]" if len(partial) > MATCH_CAP else ""
-            return f"[retrieve {query}] no line has every term; closest:\n" + "\n".join(r for _, r in partial[:MATCH_CAP]) + more
-        return f"[retrieve {query}] no matches"
+            return f"[retrieve {query}] no line has every term; closest:\n" + "\n".join(r for _, r in partial[:MATCH_CAP]) + more + stopped
+        return f"[retrieve {query}] no matches" + stopped
 
     def observe(self, raw: str = "") -> str:
         start = self._resolve(raw) if raw else None

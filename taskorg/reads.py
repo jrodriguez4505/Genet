@@ -17,7 +17,8 @@ def attach_reads(store: MemoryStore, run: Run, paths: list[str], *, cap: int = C
         path = Path(raw)
         if not path.is_file():
             raise InvariantError("READ", f"missing file: {path}")
-        text = path.read_text(encoding="utf-8", errors="replace")[:cap]
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            text = fh.read(cap)  # only what is kept, however large the file
         loaded.append({"path": str(path.resolve()), "chars": len(text), "text": text})
     if loaded:
         store.remember_working(run.id, "reads", loaded)

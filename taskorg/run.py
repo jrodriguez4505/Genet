@@ -221,7 +221,7 @@ class Run:
 
     def assert_tools(self, slot_id: str, requested: list[str]) -> None:
         allowed = set(self.state.slot(slot_id).tools)
-        extra = [t for t in requested if t not in allowed]
+        extra = sorted({t for t in requested if t not in allowed})  # each tool once, however often a reply asks
         if extra:
             raise InvariantError("TOOLS", f"{slot_id} requested {extra}; allowlist is {sorted(allowed)}")
 

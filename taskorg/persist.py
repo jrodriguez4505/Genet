@@ -5,7 +5,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .budget import Budget
-from .models import SKILLS, Artifact, Cue, Delta, NoteStatus, ReviewNote, RunState, Slot, Status
+from .errors import InvariantError
+from .models import SKILL_TOOLS, SKILLS, Artifact, Cue, Delta, NoteStatus, ReviewNote, RunState, Slot, Status
 from .run import LogEntry, Run
 
 
@@ -137,12 +138,29 @@ def _upgrade(raw: dict) -> dict:
     return raw
 
 
+def _slot(saved: dict) -> Slot:
+    """A saved slot. Its tools are never wider than its skill allows, whatever the file says."""
+    saved = dict(saved)
+    allowed = SKILL_TOOLS.get(saved.get("skill") or "execute", ())
+    saved["tools"] = [t for t in saved.get("tools") or [] if t in allowed]
+    return Slot(**saved)
+
+
 def load_run(path: Path) -> Run:
-    raw = _upgrade(json.loads(Path(path).read_text(encoding="utf-8")))
+    """A saved run. The file is untrusted input: anything malformed is refused as a PERSIST error."""
+    try:
+        return _from_dict(_upgrade(json.loads(Path(path).read_text(encoding="utf-8"))))
+    except InvariantError:
+        raise
+    except (KeyError, TypeError, ValueError, AttributeError, RecursionError) as e:
+        raise InvariantError("PERSIST", f"not a valid run file: {path}: {type(e).__name__}: {str(e)[:120]}") from e
+
+
+def _from_dict(raw: dict) -> Run:
     st = raw["state"]
     state = RunState(
         lead_id=st["lead_id"],
-        slots=[Slot(**s) for s in st["slots"]],
+        slots=[_slot(s) for s in st["slots"]],
         primary=st["primary"],
         goal=st["goal"],
         success_criteria=st["success_criteria"],
