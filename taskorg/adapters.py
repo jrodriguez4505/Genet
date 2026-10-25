@@ -28,6 +28,9 @@ class ModelAdapter:
     """Models sit behind the graph. They return text or a structured artifact."""
 
     name = "base"
+    # Tokens a reply is assumed to need before this adapter has replied in a run. The kernel then uses
+    # the largest reply it has seen. 0 for the stand-ins, whose replies are short and known.
+    min_reply_tokens = 0
 
     def act(self, brief: Brief) -> Artifact:
         raise NotImplementedError

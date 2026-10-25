@@ -184,8 +184,12 @@ def _save_halt(run, out: Path, err: InvariantError) -> int:
 
 
 def _save_done(result, out: Path, **extra) -> int:
+    from .diagnostics import DEFAULT_CRITERIA_WARNING, default_criteria
+
     out = Path(out)
     save_run(result.run, out)
+    if default_criteria(result.run):
+        extra["warning"] = DEFAULT_CRITERIA_WARNING
     review = {"review": result.run.review} if result.run.review else {}
     print(json.dumps(result.run.summary() | {"product": result.product.claim} | review | extra, indent=2))
     print(f"\nsaved {out}")

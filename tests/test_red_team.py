@@ -82,7 +82,7 @@ def test_authority_keys_are_refused(tmp_path: Path, payload):
 def test_malformed_output_is_refused(tmp_path: Path, text):
     m = new_run("rt-2", "E", "P", "S")
     with pytest.raises(InvariantError) as e:
-        _engine(tmp_path, ScriptedLive([text])).run_single(m, context="x", operator_question="?")
+        _engine(tmp_path, ScriptedLive([text, text])).run_single(m, context="x", operator_question="?")  # and its retry
     assert e.value.code == "SCHEMA"
 
 

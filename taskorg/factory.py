@@ -2,6 +2,11 @@ from .run import Run
 from .models import RunState, Slot
 
 
+# What a run checks when the operator names nothing. Any reply that echoes its brief meets these,
+# so a run verified against them alone is flagged: see diagnostics.default_criteria.
+DEFAULT_CRITERIA = ("default task", "purpose")
+
+
 def new_run(run_id: str, goal: str, purpose: str, done_when: str) -> Run:
     """A new run: one lead, a verifier, memory and a reviewer. Skills latent; no workers."""
     lead = Slot(id="lead-1", function="lead", skill="execute")
@@ -13,7 +18,7 @@ def new_run(run_id: str, goal: str, purpose: str, done_when: str) -> Run:
         slots=[lead, verifier, memory, reviewer],
         primary="lead-1",
         goal=goal,
-        success_criteria=["default task", "purpose"],
+        success_criteria=list(DEFAULT_CRITERIA),
         cadence="run",
         checkpoints=["context", "switch_skill", "gates", "complete"],
         context="initial context",

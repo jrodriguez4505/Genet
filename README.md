@@ -226,7 +226,7 @@ Genet treats three things as untrusted input: what the model endpoint sends back
 |---|---|---|
 | Response size from the endpoint | 8 MB | A reply that exhausts memory |
 | Time for the whole exchange: connect, headers, body | the timeout | A server that sends a byte at a time to hold a run open |
-| Brief size, checked before sending, counting the system prompt and wrapping | the per-call token cap | An oversized request that is sent and paid for |
+| Brief size plus room for the reply, checked before sending, counting the system prompt and wrapping | the per-call token cap | A request that is sent, paid for, and then overruns |
 | Tools run per reply | 8, repeats once | One reply that triggers thousands of reads |
 | Sub-tasks the gates judge per plan | 16 | A proposal flood |
 | Text one search scans | 20M characters | A search that reads an entire disk |
@@ -235,7 +235,7 @@ Genet treats three things as untrusted input: what the model endpoint sends back
 | Reported token counts | whole numbers, not negative | A reply that hides its own spend |
 | Calls in flight | counted against the budget | Parallel sub-agents that each spend past the cap |
 
-A call that fails after it was sent, for example on malformed JSON, stays on the record marked `failed`: it counts toward the budget and toward every cost the comparison reports. Saved runs, working memory and results are written atomically, so a crash mid-save leaves the previous file, never a truncated one. An answered review note is a record and cannot be answered again; a deferred one can.
+A malformed reply is asked again once, with a note saying what was wrong; models slip on the format now and then, and a retry is cheaper than losing the run or the part. Only a malformed reply is retried, never an authority violation, and the retry is a budgeted call like any other. The room kept for a reply is the largest reply in the run so far, and 200 tokens for a live model before it has replied; the gates count the same room when they decide what fits. A call that fails after it was sent, for example on malformed JSON, stays on the record marked `failed`: it counts toward the budget and toward every cost the comparison reports. Saved runs, working memory and results are written atomically, so a crash mid-save leaves the previous file, never a truncated one. An answered review note is a record and cannot be answered again; a deferred one can.
 
 When one sub-agent fails, or you press Ctrl-C, the run closes at once and the sub-agents still running start no further calls. Any other failure inside a run, not only a rule the kernel enforces, leaves it aborted with a reason, and the CLI saves it as `CRASH`. A request string from a model, such as a path with a NUL byte or a symlink loop, comes back as "not found" instead of stopping the run.
 
@@ -243,11 +243,13 @@ Malformed JSON from the endpoint or the model, including nesting too deep and nu
 
 ## Verification
 
-The verifier's verdict is the first word of its claim: PASS passes, and anything else fails, so "Passing this would be wrong" is not a pass. Then every success criterion must appear in the product itself, as a whole word or number ("4.1" is not met by "14.1"): its claim, evidence or context update. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. These run-state checks must also hold:
+The verifier's verdict is the first word of its claim: PASS passes, and anything else fails, so "Passing this would be wrong" is not a pass. A live verifier is told to pass a product only if it answers the goal, its subject and its question, and to fail one about something else even when it repeats the criteria: a past live run passed an answer about Jean Genet the playwright on a task about this kernel. Then every success criterion must appear in the product itself, as a whole word or number ("4.1" is not met by "14.1"): its claim, evidence or context update. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. These run-state checks must also hold:
 
 - The context and the method are not empty.
 - Sub-agents merged their results.
 - No review is open.
+
+Name the criteria with `--criteria`. The defaults, "default task" and "purpose", are met by any reply that echoes its brief, so a run verified only against them carries the warning `verified_against_default_criteria` in `diagnose` and in the CLI's output. The comparison does not depend on this: it grades every answer against known ground truth.
 
 The verifier always gets its call. When a split is judged, the gates reserve the merge, including the tool rounds it needs to cover a part no sub-agent took, and the verify call. A single agent's work and a rework stop their tool rounds in time to leave that call.
 
@@ -266,7 +268,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 875 checks with no network and no key:
+`pytest -q` runs about 905 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -276,10 +278,11 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Security.** One test per attack on the trust boundaries: redirects that would carry the key, plain-HTTP endpoints, oversized and slow responses, malformed JSON, fake token counts, oversized briefs, tool floods, hidden files and symlinks to them, huge trees, and tampered saved runs.
 - **Review findings.** `tests/test_hardening.py` has one test per finding from a review of concurrency, input handling, persistence, the CLI and decision logic: siblings that kept spending after a failure, parallel overspend, unpaid merges, verdicts read by substring, crew parts dropped silently, grading by first number, hostile request strings, dripped headers, typed run files, and more.
 - **Shared ownership.** `tests/test_ownership.py`: a failed part goes back to the lead and the run goes on; authority violations, budget halts and crashes still stop it; every failure is reviewed; lessons reach the next run, never carry model text, are counted and bounded, and can be turned off; and a review never changes a run's outcome.
+- **Live readiness.** `tests/test_readiness.py`, for gaps found in the past live data: room for the reply, one retry for a malformed reply (over HTTP too), the warning for default criteria, and a verifier that checks the goal.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 129 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 129 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 139 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 139 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -307,7 +310,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.4.0 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.4.2 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 
