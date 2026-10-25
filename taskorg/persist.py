@@ -102,6 +102,8 @@ _LEGACY_FUNCTION = {"head": "lead", "why": "reviewer"}
 _LEGACY_KIND = {"why": "review", "plan_wrong": "replan"}
 _LEGACY_STREAM = {"element": "merge", "up": "escalate", "out": "report", "adjacent": "peer"}
 _LEGACY_TIER = {"crawl": "tight", "walk": "normal", "run": "open"}
+# The default success criteria of the oldest runs, before today's DEFAULT_CRITERIA.
+LEGACY_DEFAULT_CRITERIA = ("standing order", "purpose")
 # The lead's answers to a review, in the oldest files. Seen in real pre-0.2 runs; nothing else was used.
 _LEGACY_RESPONSE = {"HOLD_ORG": "KEEP_ROSTER", "CHANGE_HOW": "CHANGE_METHOD"}
 _LEGACY_EVENT = {

@@ -6,6 +6,7 @@ import re
 from collections import Counter
 
 from .factory import DEFAULT_CRITERIA
+from .persist import LEGACY_DEFAULT_CRITERIA
 from .review import part_statuses
 from .run import Run
 
@@ -14,7 +15,7 @@ PHASES = ("context", "switch_skill", "split", "artifact", "delta", "review_open"
 
 
 # The default criteria, today's and those of the oldest runs on record.
-_DEFAULT_SETS = ({c.lower() for c in DEFAULT_CRITERIA}, {"standing order", "purpose"})
+_DEFAULT_SETS = ({c.lower() for c in DEFAULT_CRITERIA}, set(LEGACY_DEFAULT_CRITERIA))
 DEFAULT_CRITERIA_WARNING = ("verified only against the default criteria, which any reply that echoes its brief meets; "
                             "pass --criteria to name what the product must show")
 

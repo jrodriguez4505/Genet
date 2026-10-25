@@ -235,7 +235,7 @@ class LiveAdapter(ModelAdapter):
     """OpenAI-compatible chat adapter. Fills artifacts only."""
 
     name = "live"
-    # Real replies on record ran 110 to 205 tokens a call (docs/LIVE_TESTS.md); room for the larger.
+    # Real replies on record ran 109 to 205 tokens a call (docs/LIVE_TESTS.md); room for the larger.
     min_reply_tokens = 200
 
     def __init__(self, base_url: str, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None):

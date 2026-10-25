@@ -26,7 +26,7 @@ from taskorg.live import LiveAdapter, ScriptedLive, system_prompt
 from taskorg.loop import RETRY_NOTE, Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import Artifact, Status
-from taskorg.persist import load_run, save_run
+from taskorg.persist import LEGACY_DEFAULT_CRITERIA, load_run, save_run
 from taskorg.review import LESSONS
 
 GOOD = json.dumps({"claim": "PASS ANSWER: 1", "evidence": [], "uncertainty": "", "channel_id": "c",
@@ -218,7 +218,7 @@ def test_the_cli_says_when_only_the_defaults_were_checked(tmp_path: Path, capsys
 
 
 def test_the_oldest_default_criteria_are_flagged_too(tmp_path: Path):
-    m = _run("crit-3", criteria=["Standing order", "purpose"])
+    m = _run("crit-3", criteria=[c.title() for c in LEGACY_DEFAULT_CRITERIA])
     assert diagnose(load_run(save_run(m, tmp_path / "r.json")))["warnings"] == ["verified_against_default_criteria"]
 
 
@@ -237,8 +237,8 @@ def test_the_verifier_is_told_to_check_the_goal_and_is_given_it():
 
 def test_an_off_goal_product_fails_even_when_it_repeats_the_criteria(tmp_path: Path):
     """The playwright case from the past live data, with a verifier that judges the goal."""
-    playwright = _art(claim="Jean Genet proved that identity is fluid. Standing order kept; purpose served.")
-    m = _run("goal-1", criteria=["standing order", "purpose"])
+    playwright = _art(claim="Jean Genet proved that identity is fluid. Default task done; purpose served.")
+    m = _run("goal-1", criteria=list(DEFAULT_CRITERIA))
     m.state.goal = "Write a five-line status of what the Genet kernel proved"
     with pytest.raises(InvariantError) as e:
         Engine(MemoryStore(tmp_path), adapter=Replies(playwright, _art(claim="FAIL: about the playwright, not the kernel")),
