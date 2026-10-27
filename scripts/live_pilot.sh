@@ -30,8 +30,12 @@ echo "Genet live pilot on Claude. Prices per million tokens, input / output; cos
 echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.10 to \$0.15, capped at \$0.50"
 echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$1.90 to \$2.90, capped at \$3.50"
 echo "  3) claude-opus-5-5     \$4 / \$20        about \$3.90 to \$5.70, capped at \$7.00"
-read -r -p "Model [1]: " pick
-case "${pick:-1}" in
+# No default: pressing Enter alone ran Haiku twice when Sonnet was meant.
+pick=""
+while [ -z "$pick" ]; do
+  read -r -p "Model, type 1, 2 or 3: " pick
+done
+case "$pick" in
   1) model=claude-haiku-5-5;  pin=0.10; pout=0.50; cap=0.50 ;;
   2) model=claude-sonnet-5-5; pin=2;    pout=10;   cap=3.50 ;;
   3) model=claude-opus-5-5;   pin=4;    pout=20;   cap=7.00 ;;
@@ -51,7 +55,8 @@ if [ -z "$key" ]; then
 fi
 export TASKORG_ANTHROPIC_KEY="$key" TASKORG_MODEL_NAME="$model" TASKORG_MODEL_EFFORT=low
 unset key
-echo "Key received (${#TASKORG_ANTHROPIC_KEY} characters, not shown). Model $model, effort low."
+echo "Key received (${#TASKORG_ANTHROPIC_KEY} characters, not shown)."
+echo ">>> Model: $model, effort low, $((per * 16)) trials, capped at \$$cap. Ctrl-C now if that is not what you meant."
 
 tag="${model#claude-}-$(date +%Y%m%d-%H%M%S)"
 mkdir -p data/compare data/tapes
