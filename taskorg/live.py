@@ -4,6 +4,7 @@ import http.client
 import ipaddress
 import json
 import os
+import re
 import socket
 import threading
 import time
@@ -62,6 +63,15 @@ MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 ERROR_DETAIL_BYTES = 2048
 CHUNK = 64 * 1024
 TIMEOUT_RANGE = (1, 3600)  # seconds; a call that may not wait at all, or forever, is a typo
+# The request field that caps a reply's length. OpenAI-compatible endpoints take max_tokens; some newer
+# APIs want max_completion_tokens. TASKORG_MODEL_MAX_TOKENS_PARAM chooses; "none" sends no cap.
+MAX_REPLY_PARAM = "max_tokens"
+_PARAM_NAME = re.compile(r"[a-z][a-z_]{0,39}")
+
+
+def _count(value) -> bool:
+    """A token count as an endpoint should report it: a whole number, not negative."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def _is_loopback(host: str) -> bool:
@@ -238,8 +248,12 @@ class LiveAdapter(ModelAdapter):
     # Real replies on record ran 109 to 205 tokens a call (docs/LIVE_TESTS.md); room for the larger.
     min_reply_tokens = 200
 
-    def __init__(self, base_url: str, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None):
+    def __init__(self, base_url: str, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None,
+                 max_reply_param: str | None = MAX_REPLY_PARAM):
         self.base_url = check_base_url(base_url).rstrip("/")
+        if max_reply_param is not None and not _PARAM_NAME.fullmatch(max_reply_param):
+            raise InvariantError("LIVE", f"reply-cap field must be a lower-case name or none, got {max_reply_param!r}")
+        self.max_reply_param = max_reply_param
         self.api_key = api_key
         self.model = model
         # Optional model per skill, e.g. a stronger model for reason.
@@ -283,7 +297,9 @@ class LiveAdapter(ModelAdapter):
             for q in SKILLS
             if os.environ.get(f"TASKORG_MODEL_NAME_{q.upper()}", "").strip()
         }
-        return cls(base, key, model, timeout=timeout, models=models)
+        raw_param = os.environ.get("TASKORG_MODEL_MAX_TOKENS_PARAM", "").strip() or MAX_REPLY_PARAM
+        return cls(base, key, model, timeout=timeout, models=models,
+                   max_reply_param=None if raw_param.lower() == "none" else raw_param)
 
     def _payload(self, brief: Brief) -> dict:
         user = {
@@ -300,7 +316,7 @@ class LiveAdapter(ModelAdapter):
             "tools": list(brief.tools or []),
             "success_criteria": list(brief.success_criteria or []),
         }
-        return {
+        payload = {
             "model": self.model_for(brief),
             "temperature": 0,
             "messages": [
@@ -308,6 +324,11 @@ class LiveAdapter(ModelAdapter):
                 {"role": "user", "content": json.dumps(user)},
             ],
         }
+        if brief.max_reply_tokens and self.max_reply_param:
+            # The endpoint stops the reply at what is left of the per-call cap, so a reply that runs on
+            # is never billed past it.
+            payload[self.max_reply_param] = int(brief.max_reply_tokens)
+        return payload
 
     def estimate_tokens(self, brief: Brief) -> int:
         """What is actually sent: the system prompt and the JSON user message, not only the brief's text."""
@@ -352,10 +373,18 @@ class LiveAdapter(ModelAdapter):
             raise InvariantError("LIVE", "model returned no text content")
         usage = body.get("usage")
         usage = usage if isinstance(usage, dict) else {}
-        self.last_usage = {
-            "prompt_tokens": usage.get("prompt_tokens"),
-            "completion_tokens": usage.get("completion_tokens"),
-        }
+        p, c = usage.get("prompt_tokens"), usage.get("completion_tokens")
+        if _count(p) and _count(c):
+            self.last_usage = {"prompt_tokens": p, "completion_tokens": c}
+        else:
+            # Nothing usable reported: estimate from what crossed the wire, the exact request and the
+            # raw reply, malformed or not, and say it is an estimate.
+            sent = sum(len(m["content"]) for m in payload["messages"])
+            self.last_usage = {
+                "prompt_tokens": p if _count(p) else max(1, -(-sent // 4)) + 8,
+                "completion_tokens": c if _count(c) else max(1, -(-len(content) // 4)),
+                "estimated": True,
+            }
         return content
 
     def act(self, brief: Brief) -> Artifact:

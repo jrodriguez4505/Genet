@@ -197,8 +197,8 @@ What the simulated reader shows. These are structural results from a perfect rea
 
 | Per-call context | Single agent | Always-split crew | Genet |
 |---|---|---|---|
-| Roomy, `--context 16000` | 100% · 1,913 tokens/task | 100% · 3,503 | 100% · 2,284 (1.19× single) |
-| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 3,503 | 100% · 3,179 (0.91× crew) |
+| Roomy, `--context 16000` | 100% · 1,952 tokens/task | 100% · 3,623 | 100% · 2,372 (1.22× single) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 3,623 | 100% · 3,291 (0.91× crew) |
 
 When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. Whether real models also read worse with everything in one context, which is the other reason to split, is what the live run measures.
 
@@ -218,6 +218,8 @@ python -m taskorg.cli run --adapter live --tier normal --context "..."
 
 The base URL must be `https://`, or `http://` to this machine (a local model server). Plain `http://` to any other host would send the key in clear text, so it is refused unless you set `TASKORG_MODEL_ALLOW_HTTP=1`, for example for a server on your own network. Redirects are never followed, so the key reaches only the host you named.
 
+Every request asks the endpoint to stop the reply at what is left of the per-call cap, in the `max_tokens` field, so a reply that runs on is never billed past it. Set `TASKORG_MODEL_MAX_TOKENS_PARAM=max_completion_tokens` for an API that names the field that way, or `none` to send no cap. When an endpoint reports no token usage, the adapter estimates it from the exact request it sent and the raw reply it got, and marks the call `tokens_estimated`.
+
 ## Security
 
 Genet treats three things as untrusted input: what the model endpoint sends back, what the model asks for, and what is in the workspace. A planted instruction in a workspace file is assumed to reach the model, so the limits are enforced in code, not in the prompt:
@@ -234,6 +236,7 @@ Genet treats three things as untrusted input: what the model endpoint sends back
 | Entries one walk looks at | 20,000 | A huge or hostile directory tree |
 | Reported token counts | whole numbers, not negative | A reply that hides its own spend |
 | Calls in flight | counted against the budget | Parallel sub-agents that each spend past the cap |
+| Reply length, asked of the endpoint | what is left of the per-call cap | A reply that runs on and is billed |
 
 A malformed reply is asked again once, with a note saying what was wrong; models slip on the format now and then, and a retry is cheaper than losing the run or the part. Only a malformed reply is retried, never an authority violation, and the retry is a budgeted call like any other. The room kept for a reply is the largest reply in the run so far, and 200 tokens for a live model before it has replied; the gates count the same room when they decide what fits. A call that fails after it was sent, for example on malformed JSON, stays on the record marked `failed`: it counts toward the budget and toward every cost the comparison reports. Saved runs, working memory and results are written atomically, so a crash mid-save leaves the previous file, never a truncated one. An answered review note is a record and cannot be answered again; a deferred one can.
 
@@ -268,7 +271,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 905 checks with no network and no key:
+`pytest -q` runs about 1,320 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -278,11 +281,12 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Security.** One test per attack on the trust boundaries: redirects that would carry the key, plain-HTTP endpoints, oversized and slow responses, malformed JSON, fake token counts, oversized briefs, tool floods, hidden files and symlinks to them, huge trees, and tampered saved runs.
 - **Review findings.** `tests/test_hardening.py` has one test per finding from a review of concurrency, input handling, persistence, the CLI and decision logic: siblings that kept spending after a failure, parallel overspend, unpaid merges, verdicts read by substring, crew parts dropped silently, grading by first number, hostile request strings, dripped headers, typed run files, and more.
 - **Shared ownership.** `tests/test_ownership.py`: a failed part goes back to the lead and the run goes on; authority violations, budget halts and crashes still stop it; every failure is reviewed; lessons reach the next run, never carry model text, are counted and bounded, and can be turned off; and a review never changes a run's outcome.
+- **Bounds.** `tests/test_bounds.py` runs 400 seeded runs against a hostile stand-in model that floods tools and proposals, sends malformed replies, fails calls, breaks authority rules and reports random, missing or invalid token counts. Every run must end without leaving a thread, stay within `max_calls`, record every call it made exactly once, record tokens as reported or as marked estimates, stay under `max_tokens` plus one call's cap, and report the same totals in the run, `diagnose` and a saved copy. It also checks that a reply cut at the cap ends after one retry and that a model always asking for tools runs out of rounds.
 - **Live readiness.** `tests/test_readiness.py`, for gaps found in the past live data: room for the reply, one retry for a malformed reply (over HTTP too), the warning for default criteria, and a verifier that checks the goal.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 139 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 139 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 147 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 147 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -310,7 +314,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.4.2 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.4.3 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

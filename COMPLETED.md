@@ -2,6 +2,20 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.4.3 — October 2026: calls end, and every token is counted
+
+**Calls cannot loop.** An audit of every loop in the kernel found three that are open-ended, each with a hard stop. Reading a reply ends at the size cap or the exchange's deadline. Walking a workspace ends at 20,000 entries. Waiting to admit a call near the budget re-checks the budget and the clock every second, and calls in flight always finish or time out. Everything else that calls a model runs a fixed number of times: tool rounds are counted, a retry happens at most once, a rework at most once.
+
+**Tested against a hostile model.** `tests/test_bounds.py` runs 400 seeded runs, and 5,000 more were run outside the suite. A stand-in model floods tools and proposals, sends malformed replies, fails calls, breaks authority rules, fails verdicts, and reports token counts that are random, missing or not numbers. Budgets, strategies, entry points and parallelism are all random. Every run ended without leaving a thread, stayed within `max_calls`, and recorded every call it made exactly once. Tokens were recorded as reported or as marked estimates, spend stayed under `max_tokens` plus one call's cap, and the totals matched in the run, `diagnose` and a saved copy.
+
+**Two token gaps, closed:**
+- **An unreported reply was counted by its claim alone.** When an endpoint reported no usage, the kernel estimated the reply from its `claim` field. A reply of about 2,000 tokens was counted as 3. The kernel now counts everything the model wrote. The live adapter estimates from the exact request it sent and the raw reply it got, malformed or not, and marks those calls `tokens_estimated`.
+- **Nothing stopped a reply that ran on.** No request carried a reply limit, so a runaway reply would be billed before the kernel could see it. Every live request now asks the endpoint to stop the reply at what is left of the per-call cap (`max_tokens`; `TASKORG_MODEL_MAX_TOKENS_PARAM` renames the field or turns it off). A reply cut off there ends after one retry.
+
+**Sim figures, recounted.** Counting whole replies raises the simulated reader's token counts a little. Genet's planning reply, with its proposed sub-tasks, now counts in full. With a roomy context Genet costs 2,372 tokens a task against 1,952 for a single agent (1.22×, was 1.19×). With a tight context it costs 3,291 against 3,623 for the crew (0.91×, unchanged). Accuracy is unchanged everywhere.
+
+- 8 new mutations, for 147, all caught.
+
 ## v0.4.2 — October 2026: ready for a live run
 
 Four gaps, found in the past live data and in a rehearsal of the live path against a stand-in endpoint on this machine:
@@ -237,7 +251,7 @@ Not a product. Not a GAIA score. Not a fine-tuned Grok checkpoint. GAIA vs CrewA
 
 ## Size
 
-Kernel: about 6,000 lines in `taskorg/`. Suite: about 905 checks (including 300 fuzz sequences), 9 bench fixtures, and 139 mutation checks.
+Kernel: about 6,100 lines in `taskorg/`. Suite: about 1,320 checks (including 300 fuzz sequences and 400 hostile-model runs), 9 bench fixtures, and 147 mutation checks.
 
 ## Run
 

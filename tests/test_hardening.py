@@ -500,7 +500,9 @@ def test_usage_that_is_not_an_object_is_ignored(usage):
     adapter = LiveAdapter(url, "test-key", "m", timeout=2)
     assert adapter.act(BRIEF).claim == "ok"
     sock.close()
-    assert adapter.last_usage == {"prompt_tokens": None, "completion_tokens": None}
+    # Nothing usable reported: estimated from the wire, and marked as an estimate.
+    u = adapter.last_usage
+    assert u["estimated"] is True and u["prompt_tokens"] > 100 and u["completion_tokens"] == -(-len(GOOD) // 4)
 
 
 @pytest.mark.parametrize("raw", ["0", "-1", "99999999999999999999", "3601"])

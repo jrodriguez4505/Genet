@@ -22,6 +22,9 @@ class Brief:
     success_criteria: list[str] | None = None
     # What this call is for: plan | work | integrate | rework | verify. "" for older flows.
     mode: str = ""
+    # The most the reply may run to: what is left of the per-call cap after the brief. The kernel sets
+    # it before each call; an adapter that can, asks the endpoint to stop the reply there.
+    max_reply_tokens: int | None = None
 
 
 class ModelAdapter:

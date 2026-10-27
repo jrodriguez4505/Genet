@@ -127,6 +127,15 @@ M = [
     ("cli.py", "nan switches a cap off", "        if not math.isfinite(value) or value < least", "        if value < least"),
     ("policy.py", "nan confidence passes", "        self.confidence = max(0.0, min(1.0, c)) if math.isfinite(c) else 0.0", "        self.confidence = max(0.0, min(1.0, c))"),
     ("bench.py", "an empty bench passes", '"ok": bool(checks) and all(', '"ok": all('),
+    # token usage
+    ("loop.py", "an unreported reply counted by its claim", "        completion = reported_completion or _reply_estimate(art)", "        completion = reported_completion or max(1, len(art.claim) // 4)"),
+    ("loop.py", "an estimate passes as reported", "        usage_real = bool(reported_prompt or reported_completion) and not usage.get(\"estimated\")", "        usage_real = bool(reported_prompt or reported_completion)"),
+    ("loop.py", "no reply cap set", "                brief = replace(brief, max_reply_tokens=max(1, b.max_tokens_per_call - size))", "                pass"),
+    ("loop.py", "the reply cap ignores the brief", "max_reply_tokens=max(1, b.max_tokens_per_call - size)", "max_reply_tokens=b.max_tokens_per_call"),
+    ("live.py", "the reply cap is not sent", "            payload[self.max_reply_param] = int(brief.max_reply_tokens)", "            pass"),
+    ("live.py", "no wire estimate without usage", '                "completion_tokens": c if _count(c) else max(1, -(-len(content) // 4)),', '                "completion_tokens": c if _count(c) else None,'),
+    ("live.py", "estimates not marked", '                "estimated": True,\n', ""),
+    ("live.py", "any reply-cap field name accepted", "        if max_reply_param is not None and not _PARAM_NAME.fullmatch(max_reply_param):", "        if False:"),
     # shared ownership
     ("loop.py", "a part failure stops the run", "                if e.code in PART_FAILURES and run.status == Status.ACTIVE:", "                if False:"),
     ("loop.py", "authority violations absorbed", 'PART_FAILURES = ("SCHEMA", "LIVE")', 'PART_FAILURES = ("SCHEMA", "LIVE", "ROSTER", "TOOLS", "INV-1")'),
