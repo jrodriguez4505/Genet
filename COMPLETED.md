@@ -13,7 +13,13 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 **Tool results name files relative to the workspace.** They showed the absolute path, so a comparison's temp folder reached the model, and every run's requests differed, which kept a tape from replaying. A name that would read a different file back stays absolute.
 
 - `scripts/live_pilot.sh`: the pilot on Claude, with a smoke test, a cap per model and a tape.
-- `tests/test_anthropic_tape.py`, and 14 new mutations, for 161, all caught.
+**The first live pilot, on Claude Haiku 5.5.** 32 trials, 220 calls, $0.14 (`docs/LIVE_TESTS.md`). The verifier failed 36 of 50 products, and 12 runs with the right answer ended on a failed verdict, so eight tasks a strategy could not rank the strategies. It found four problems, all fixed:
+- **`claim` is the product.** Replies put the answer in a key of its own, which the schema refuses, and repeated it on the retry. The prompt now says that `claim` is the product and that any other key is refused, and the retry note says where its content goes.
+- **The verifier judged the old product.** After a rework, working memory kept the old product and the new one sat under BRIEF, which a model reads as its brief. The verifier now gets the product under a heading that names it, and working memory holds the reworked product.
+- **The harness asked for more than grading.** "One line ANSWER:" was read as a line of its own, though grading takes the marker anywhere; the notes named quarters by month and never said which months make FY2026 Q1. The harness now asks for "ends with ANSWER: <value>" and states the calendar. The simulated reader's figures, recounted: 2,556 tokens a task for Genet against 2,082 for a single agent with a roomy context (1.23×), and 3,650 against 4,045 for the crew with a tight one (0.90×).
+- **Claude counts more tokens.** 1.39 to 1.73 times Genet's estimate from characters; the Claude adapter's size estimate is now 1.75 times it.
+
+- `tests/test_anthropic_tape.py` and `tests/test_live_findings.py`, and 19 new mutations, for 166, all caught.
 
 ## v0.4.3 — October 2026: calls end, and every token is counted
 

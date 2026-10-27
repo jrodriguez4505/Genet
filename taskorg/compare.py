@@ -42,10 +42,11 @@ CONTEXT = (
     "The workspace holds FY2026 operating notes, one markdown file per company, named after it "
     "(for example halvorsen-freight.md for Halvorsen Freight). "
     "Figures are written in prose and the notes contain prior-year figures and look-alike company names. "
+    "FY2026 is calendar 2026: Q1 is January to March, Q2 April to June, Q3 July to September, Q4 October to December. "
     "Use the files; do not guess."
 )
-PURPOSE = "Answer exactly from the notes. End the product with one line: ANSWER: <value>"
-DONE_WHEN = "The product ends with one line 'ANSWER: <value>': a number for amounts, a company name for which-questions."
+PURPOSE = "Answer exactly from the notes. End the product with ANSWER: <value>"
+DONE_WHEN = "The product ends with 'ANSWER: <value>': a number for amounts, a company name for which-questions."
 
 DECOMPOSE_BRIEF = (
     "PLAN. You lead a crew. Break the work into 2 to 4 subtasks and give each its own worker. "

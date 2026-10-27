@@ -8,6 +8,7 @@ live adapter (TASKORG_MODEL_BASE) never receives this key.
 
 from __future__ import annotations
 
+import math
 import os
 
 from .adapters import Brief
@@ -20,6 +21,9 @@ EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULT_MAX_REPLY = 4096
 # Past about 21,000 the SDK refuses a request that is not streamed; replies here run a few hundred tokens.
 MAX_REPLY_CEILING = 16_000
+# Claude counts more tokens than four characters a token: on the Haiku 5.5 pilot, 1.39 to 1.73 times that
+# estimate, median 1.52. The size check before a call must not undercount, so it takes the top, rounded up.
+TOKEN_RATIO = 1.75
 
 
 def _sdk():
@@ -88,7 +92,7 @@ class AnthropicAdapter(LiveAdapter):
     def estimate_tokens(self, brief: Brief) -> int:
         payload = self._payload(brief)
         chars = len(payload["system"]) + sum(len(m["content"]) for m in payload["messages"])
-        return max(1, -(-chars // 4)) + 8
+        return math.ceil((max(1, -(-chars // 4)) + 8) * TOKEN_RATIO)
 
     def _post(self, payload: dict) -> str:
         try:

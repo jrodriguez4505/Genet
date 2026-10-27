@@ -197,6 +197,18 @@ M = [
     ("compare.py", "spend cap looks back only", "        if costs and spent + max(costs) > max_spend:", "        if False:"),
     ("compare.py", "spend cap off", '                        reason = stop_when(results) if stop_when else ""', '                        reason = ""'),
     ("cli.py", "spend cap without prices", "    if args.max_spend is not None and args.price_in is None:", "    if False:"),
+    # findings from the Haiku 5.5 pilot
+    ("loop.py", "rework product not remembered",
+     "            # The reworked product replaces the last one everywhere the verifier looks.\n            self.store.remember_working(run.id, \"product\", product.claim)\n", ""),
+    ("loop.py", "product under review unnamed",
+     'f"PRODUCT UNDER REVIEW (the lead\'s current product, the same as WORKING product)\\n{extra}\\n" if extra else ""',
+     'f"{extra}\\n" if extra else ""'),
+    ("live.py", "claim not named the product", "  claim (string): your product, all of it. When the brief says how the product must end, claim ends that way.\n",
+     "  claim (string),\n"),
+    ("compare.py", "fiscal calendar unstated",
+     '    "FY2026 is calendar 2026: Q1 is January to March, Q2 April to June, Q3 July to September, Q4 October to December. "\n', ""),
+    ("anthropic_live.py", "claude estimate uncalibrated", "        return math.ceil((max(1, -(-chars // 4)) + 8) * TOKEN_RATIO)",
+     "        return max(1, -(-chars // 4)) + 8"),
 ]
 
 

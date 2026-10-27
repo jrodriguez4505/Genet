@@ -78,7 +78,7 @@
     </table>
 
     <h2>Proving it</h2>
-    <p><code>taskorg compare</code> runs the same tasks three ways: one agent, an always-split crew, and Genet. The model, tools and budget are the same for all three. The claim is that Genet matches the better baseline's accuracy at close to single-agent cost. A perfect simulated reader shows the mechanism. With a roomy context, Genet stays a single agent at 1.22× its cost. With a tight one, a single agent fails where the material overflows, and Genet fans out on exactly those tasks, at 0.91× the cost of a crew. The claim stays a claim until a live run says so.</p>
+    <p><code>taskorg compare</code> runs the same tasks three ways: one agent, an always-split crew, and Genet. The model, tools and budget are the same for all three. The claim is that Genet matches the better baseline's accuracy at close to single-agent cost. A perfect simulated reader shows the mechanism. With a roomy context, Genet stays a single agent at 1.23× its cost. With a tight one, a single agent fails where the material overflows, and Genet fans out on exactly those tasks, at 0.90× the cost of a crew. The claim stays a claim until a live run says so.</p>
     <pre>python -m taskorg.cli compare --dry-run          # plan and call ceiling
 python -m taskorg.cli compare --adapter sim      # structural cost at $0
 python -m taskorg.cli compare --adapter live     # a real model</pre>
@@ -87,7 +87,7 @@ python -m taskorg.cli compare --adapter live     # a real model</pre>
     <p>Genet treats three things as untrusted: what the model endpoint sends back, what a model asks for, and what is in the workspace. The API key goes only to the host you named, over HTTPS (plain HTTP only to this machine), and redirects are refused. A reply is capped at 8 MB, and one deadline covers the whole exchange. A call is sized before it is sent, with room for its reply, the endpoint is asked to stop the reply at the call's cap, a malformed reply gets one retry, one reply runs at most 8 tools, and a saved run is checked before it loads. To report a vulnerability, use <em>Report a vulnerability</em> on the repository's Security tab.</p>
 
     <h2>Status</h2>
-    <p>Version 0.5.0, a kernel rather than a platform. About 1,380 tests run with no network and no key, 400 of them against a hostile stand-in model that tries to make calls loop or slip past the token count. A mutation check deliberately breaks 161 rules, one at a time, and a test catches every one. The comparison has been run with the simulated reader, and rehearsed end to end over the live path and through Claude's own SDK against stand-in endpoints. No live-model results are published yet.</p>
+    <p>Version 0.5.0, a kernel rather than a platform. About 1,390 tests run with no network and no key, 400 of them against a hostile stand-in model that tries to make calls loop or slip past the token count. A mutation check deliberately breaks 166 rules, one at a time, and a test catches every one. The comparison has been run with the simulated reader and rehearsed against stand-in endpoints. A first live pilot, on Claude Haiku 5.5, found four problems the simulation could not show, all now fixed, and was too small to rank the strategies; its record is in the <a href="https://github.com/jrodriguez4505/Genet/blob/main/docs/LIVE_TESTS.md">live test log</a>.</p>
 
     <h2>Try it</h2>
     <p>Python 3.11 or later. No runtime dependencies.</p>

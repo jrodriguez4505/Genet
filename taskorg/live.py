@@ -41,13 +41,13 @@ Your skill right now: {skill}. {skill_brief}
 You do not command. You do not change the roster. You do not spawn.
 {tools}
 Return ONLY a JSON object with keys:
-  claim (string),
+  claim (string): your product, all of it. When the brief says how the product must end, claim ends that way.
   evidence (array of strings),
   uncertainty (string),
   channel_id (string),
   context_update (string),
   requests (array of strings)
-No markdown. No extra keys. No authority language.
+No markdown. No authority language. No extra keys: a reply with any other key is refused, so what it would hold goes in claim.
 """
 
 TOOLS_ON = (

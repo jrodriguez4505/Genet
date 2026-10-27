@@ -108,7 +108,8 @@ TOOL_NAMES = {"write", "verify", "observe", "read", "retrieve", "simulate", "spa
 PART_FAILURES = ("SCHEMA", "LIVE")
 # A malformed reply is asked again once, with this note. Only SCHEMA: an authority violation is never retried.
 RETRY_NOTE = ("\nRETRY. Your last reply was not the JSON object the schema asks for. Reply with only that "
-              "object: claim, evidence, uncertainty, channel_id, context_update and requests.")
+              "object: claim, evidence, uncertainty, channel_id, context_update and requests. Any other key is "
+              "refused; what it held belongs in claim, which is the product.")
 # Model output is untrusted. These bound what one reply can make the kernel do.
 MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
 MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
@@ -300,8 +301,9 @@ class Engine:
         slot = slot or next(s for s in run.state.slots if s.function == function)
         if function == "verifier":
             crit = "; ".join(run.state.success_criteria)
+            # The product under review, named as such: a model reads a section called BRIEF as its brief.
             extra = (
-                (extra + "\n") if extra else ""
+                f"PRODUCT UNDER REVIEW (the lead's current product, the same as WORKING product)\n{extra}\n" if extra else ""
             ) + (
                 "VERIFIER RULE: claim MUST start with PASS or FAIL. "
                 "PASS only if the product itself meets every success criterion. "
@@ -635,6 +637,8 @@ class Engine:
                 mode="rework",
             ), reserve=1)
             run.accept_artifact(product)
+            # The reworked product replaces the last one everywhere the verifier looks.
+            self.store.remember_working(run.id, "product", product.claim)
             check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)

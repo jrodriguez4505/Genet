@@ -7,7 +7,7 @@
 # only if you answer y. Each run stops itself before it could pass its cap. Every exchange is saved
 # to a tape under data/tapes/, so the run can be replayed later with no key and no spend:
 #
-#   .venv/bin/python -m taskorg.cli compare --replay data/tapes/<tape>.jsonl --per-family 2 \
+#   .venv/bin/python -m taskorg.cli compare --replay data/tapes/<tape>.jsonl --per-family <1 or 2> \
 #     --strategies single,always,genet,genet-stated
 #
 # The key lives only in this process and the Python it starts: not in shell history, not on any
@@ -23,15 +23,23 @@ export PYTHONDONTWRITEBYTECODE=1
 # Credentials, endpoints and headers set for other tools never reach these runs.
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFILE ANTHROPIC_CUSTOM_HEADERS TASKORG_ANTHROPIC_BASE
 
-echo "Genet live pilot on Claude. Prices per million tokens, input / output:"
-echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   pilot about \$0.05, capped at \$0.50"
-echo "  2) claude-sonnet-5-5   \$2 / \$10        pilot about \$0.60 to \$1.10, capped at \$2.00"
-echo "  3) claude-opus-5-5     \$4 / \$20        pilot about \$1.20 to \$2.20, capped at \$3.50"
+# Estimates scale the Haiku 5.5 pilot of 27 October 2026: 220 calls, 472,498 prompt and 190,428 completion
+# tokens at 2 tasks per family. Other models may think more or less, so each run keeps a cap.
+echo "Genet live pilot on Claude. Prices per million tokens, input / output; cost of the full pilot:"
+echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.15, capped at \$0.50"
+echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$2.40 to \$2.90, capped at \$3.50"
+echo "  3) claude-opus-5-5     \$4 / \$20        about \$4.80 to \$5.70, capped at \$7.00"
 read -r -p "Model [1]: " pick
 case "${pick:-1}" in
   1) model=claude-haiku-5-5;  pin=0.10; pout=0.50; cap=0.50 ;;
-  2) model=claude-sonnet-5-5; pin=2;    pout=10;   cap=2.00 ;;
-  3) model=claude-opus-5-5;   pin=4;    pout=20;   cap=3.50 ;;
+  2) model=claude-sonnet-5-5; pin=2;    pout=10;   cap=3.50 ;;
+  3) model=claude-opus-5-5;   pin=4;    pout=20;   cap=7.00 ;;
+  *) echo "No such choice. Nothing was run."; exit 1 ;;
+esac
+read -r -p "Tasks per family: 2 is the full pilot (32 trials), 1 is half the trials, the cost and the cap [2]: " per
+case "${per:-2}" in
+  2) per=2 ;;
+  1) per=1; cap=$(awk -v c="$cap" 'BEGIN { printf "%.2f", c / 2 }') ;;
   *) echo "No such choice. Nothing was run."; exit 1 ;;
 esac
 read -r -s -p "Anthropic API key (typing is hidden; paste and press Enter): " key
@@ -65,10 +73,13 @@ print(f"smoke: status {r['status']}, code {r['code'] or 'none'}, answer {r['answ
       f"usage {'estimated' if r['tokens_estimated'] else 'reported by the API'}")
 if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH"):
     sys.exit("the API did not answer properly")
+if not r["correct"]:
+    print("WARNING: the smoke test did not get the right answer; the pilot will likely show the same problem.")
+    print("The tape above has every reply, to see why before spending more.")
 EOF
 
 echo
-echo "The pilot is 32 trials, about 188 calls. It stops itself before it could pass \$$cap."
+echo "The pilot is $((per * 16)) trials, about $((per * 110)) calls. It stops itself before it could pass \$$cap."
 read -r -p "Run the pilot now on $model? [y/N]: " go
 case "$go" in
   y|Y|yes|Yes|YES) ;;
@@ -76,8 +87,8 @@ case "$go" in
 esac
 
 echo
-echo "== Pilot: single, always, genet, genet-stated; 2 tasks per family"
-"$PY" -m taskorg.cli compare "${price[@]}" --per-family 2 --strategies single,always,genet,genet-stated --max-spend "$cap" \
+echo "== Pilot: single, always, genet, genet-stated; $per task(s) per family"
+"$PY" -m taskorg.cli compare "${price[@]}" --per-family "$per" --strategies single,always,genet,genet-stated --max-spend "$cap" \
   --record "data/tapes/pilot-$tag.jsonl" --out "data/compare/pilot-$tag.json" 2>&1 | tee "data/compare/pilot-$tag.log"
 echo
 echo "Results: data/compare/pilot-$tag.json   Tape: data/tapes/pilot-$tag.jsonl"
