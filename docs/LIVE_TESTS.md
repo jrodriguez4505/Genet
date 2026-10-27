@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude and two reruns with fixes (27 October 2026), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). Run files and tapes stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, and 16-trial runs on Haiku 5.5 and Sonnet 5.5 (27 October 2026), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). Run files and tapes stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -64,6 +64,28 @@ The same 32 trials on Haiku 5.5, with proposals read whole and plan prompts that
 - **The answer key, once.** One worker added an `ANSWER` key; the retry recovered it.
 
 What changed because of it (v0.5.0): the verifier reads the evidence given with the product, as the kernel's own criteria check already did, up to 12 items of 400 characters. Its effect needs another live run.
+
+## 27 October 2026: 16 trials, Haiku 5.5 twice and Sonnet 5.5
+
+v0.5.0 as merged, with every fix above, at `--per-family 1`: the same 16 trials on each run, effort `low`, a 16,000-token cap.
+
+| Run | Correct | Calls | Tokens | Thinking | Cost |
+|---|---|---|---|---|---|
+| Haiku 5.5, first | 16 of 16 | 89 | 254,065 | 25,525 | $0.054 |
+| Haiku 5.5, second | 16 of 16 | 81 | 231,451 | 22,305 | $0.048 |
+| Sonnet 5.5 | 16 of 16 | 80 | 162,223 | 0 | $0.58 |
+
+| Tokens a task | single | always | genet | genet-stated |
+|---|---|---|---|---|
+| Haiku, first | 9,426 | 19,761 | 11,024 | 23,305 |
+| Haiku, second | 9,341 | 16,760 | 12,176 | 19,586 |
+| Sonnet | 6,626 | 16,332 | 8,099 | 9,499 |
+
+- **The verifier passed all 48 products** across the three runs, each shown the evidence given with it. No rework, no refused reply.
+- **Genet stayed single** at 1.17, 1.30 and 1.22 times the single agent's tokens; the crew cost 1.79 to 2.46 times. The spread between the two Haiku runs, on the same tasks, is the noise in any one figure.
+- **Sonnet used fewer tokens and no thinking** at effort `low`, and cost eleven times what Haiku did, for the same score.
+- **These tasks do not tell the models or the strategies apart.** With a roomy context every task fits one call, and Haiku already gets every answer. The case Genet is built for is the other one: material that does not fit one call, where the simulated single agent fails. Testing that live needs a tighter cap than 16,000, chosen for real prompt sizes: 1,500 is below what one Claude call with its tool results needs.
+- **Two setup slips.** Pressing Enter at the model prompt ran Haiku twice when Sonnet was meant, so the script now has no default model and states the model, trials and cap before any call. A shortened key was refused with a 401 at the smoke test, before any billed call.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
