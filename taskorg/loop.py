@@ -16,7 +16,7 @@ from .gates import LEAD_COVERS, Assessment, Subtask, assess
 from .memory_store import MemoryStore
 from .run import Run
 from .models import MAX_WORKERS, SKILL_TOOLS, SKILLS, Artifact, Delta, Slot, Status
-from .subtasks import parse_subtasks
+from .subtasks import parse_proposals
 from .review import team_review
 from .tools import RUNNABLE, Toolbox, parse_request
 
@@ -75,6 +75,21 @@ def verdict(claim: str) -> str:
     return m.group(1).upper() if m else ""
 
 
+# How much of a product's evidence the verifier reads: enough to judge its sources, bounded however long the reply.
+REVIEW_EVIDENCE = 12
+REVIEW_EVIDENCE_CHARS = 400
+
+
+def _for_review(product: Artifact) -> str:
+    """The product as the verifier reads it: the claim and the evidence given with it, which the kernel's own
+    criteria check counts too. Shown the claim alone, a verifier failed sourced answers as unsourced."""
+    shown = [e[:REVIEW_EVIDENCE_CHARS] for e in product.evidence[:REVIEW_EVIDENCE] if e.strip()]
+    if not shown:
+        return product.claim
+    more = f"\n[{len(product.evidence) - REVIEW_EVIDENCE} more not shown]" if len(product.evidence) > REVIEW_EVIDENCE else ""
+    return product.claim + "\nEVIDENCE GIVEN WITH IT\n" + "\n".join(f"- {e}" for e in shown) + more
+
+
 def _verifier_accepts(check: Artifact, run: Run, product: Artifact | None = None) -> bool:
     if verdict(check.claim) != "PASS":
         scored = score_criteria(product, run.state.success_criteria)
@@ -108,7 +123,8 @@ TOOL_NAMES = {"write", "verify", "observe", "read", "retrieve", "simulate", "spa
 PART_FAILURES = ("SCHEMA", "LIVE")
 # A malformed reply is asked again once, with this note. Only SCHEMA: an authority violation is never retried.
 RETRY_NOTE = ("\nRETRY. Your last reply was not the JSON object the schema asks for. Reply with only that "
-              "object: claim, evidence, uncertainty, channel_id, context_update and requests.")
+              "object: claim, evidence, uncertainty, channel_id, context_update and requests. Any other key is "
+              "refused; what it held belongs in claim, which is the product.")
 # Model output is untrusted. These bound what one reply can make the kernel do.
 MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
 MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
@@ -116,9 +132,11 @@ MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
 PLAN_BRIEF = (
     "PLAN. Decide how to staff this task. Default is a single agent: you do the work yourself. "
     "Propose a sub-agent only for a part of the work that is independent of the rest "
-    "and should not share a context with it. For each, add a request "
-    "'subtask:<channel>@<skill>=<named_failure>' where skill is one of {skills} and named_failure "
-    "says what goes wrong if a single agent does it (underscores for spaces). "
+    "and should not share a context with it. For each, add one request in the form "
+    "subtask:CHANNEL@SKILL=NAMED_FAILURE, for example subtask:north-region@retrieve=two_regions_figures_get_mixed. "
+    "CHANNEL is a short name of letters, digits and hyphens, one per part: for a part that reads one file, "
+    "that file's name without its extension. SKILL is one of {skills}. NAMED_FAILURE says what goes wrong if a "
+    "single agent does it. "
     "A sub-agent that must search or read the workspace needs skill retrieve (or observe to list files). "
     "Propose nothing if a single agent is enough. The kernel judges the proposal; you do not change the roster. "
     "claim: your read of the situation in one or two sentences."
@@ -300,8 +318,9 @@ class Engine:
         slot = slot or next(s for s in run.state.slots if s.function == function)
         if function == "verifier":
             crit = "; ".join(run.state.success_criteria)
+            # The product under review, named as such: a model reads a section called BRIEF as its brief.
             extra = (
-                (extra + "\n") if extra else ""
+                f"PRODUCT UNDER REVIEW (the lead's current product, the same as WORKING product)\n{extra}\n" if extra else ""
             ) + (
                 "VERIFIER RULE: claim MUST start with PASS or FAIL. "
                 "PASS only if the product itself meets every success criterion. "
@@ -615,7 +634,7 @@ class Engine:
     def _verify(self, run: Run, product: Artifact, *, adapt: bool) -> tuple[Artifact, bool]:
         """Check the product. On a failed check, change the method once if the tier and budget allow."""
         lead = run.state.lead_id
-        check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
+        check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
         verified = _verifier_accepts(check, run, product)
         run.accept_artifact(check)
         if not verified:
@@ -635,7 +654,9 @@ class Engine:
                 mode="rework",
             ), reserve=1)
             run.accept_artifact(product)
-            check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
+            # The reworked product replaces the last one everywhere the verifier looks.
+            self.store.remember_working(run.id, "product", product.claim)
+            check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)
             if not verified:
@@ -651,7 +672,7 @@ class Engine:
         run.switch_skill(lead, lead, "reason", "read the context; propose sub-tasks only for independent work")
         plan = self._act(run, self._brief(run, "lead", extra=PLAN_BRIEF.format(skills="|".join(SKILLS)), mode="plan"))
         run.accept_artifact(plan)
-        return parse_subtasks(" ".join(plan.requests))
+        return parse_proposals(plan.requests)
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""

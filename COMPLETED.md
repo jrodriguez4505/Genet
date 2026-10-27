@@ -2,6 +2,31 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.5.0 — October 2026: Claude, a spend cap, and tapes
+
+**Claude through the Messages API.** `--adapter anthropic` uses the official SDK, an optional extra (`pip install -e '.[anthropic]'`); Genet itself still needs nothing. The prompts, the JSON gate and the token accounting are the live adapter's. The OpenAI-compatible adapter could not reach Claude: it sends `temperature: 0`, which current Claude models reject with a 400. The key is read from `TASKORG_ANTHROPIC_KEY` only, so a key exported for another tool is never spent and the live adapter's endpoint never receives it. Redirects are not followed. `TASKORG_MODEL_EFFORT` sets how much the model thinks; thinking tokens count as output and are recorded on their own. A refusal fails as `LIVE`, with its tokens counted.
+
+**A spend cap.** `compare --max-spend` stops before a trial that could take spending past the cap, judged by the costliest trial so far. Ctrl-C stops a comparison too. Either way the trials already run are saved, with `stopped_after` in the results.
+
+**Tapes.** `compare --record` saves every exchange as it happens, and `compare --replay` reruns a comparison from the tape with no key and no spend. Rehearsed through the real SDK against a local endpoint with 5% overload faults: 188 exchanges recorded, and the replay reproduced all 32 trials exactly. A request the tape does not have fails as `LIVE` and is counted.
+
+**Tool results name files relative to the workspace.** They showed the absolute path, so a comparison's temp folder reached the model, and every run's requests differed, which kept a tape from replaying. A name that would read a different file back stays absolute.
+
+- `scripts/live_pilot.sh`: the pilot on Claude, with a smoke test, a cap per model and a tape.
+**The first live pilot, on Claude Haiku 5.5.** 32 trials, 220 calls, $0.14 (`docs/LIVE_TESTS.md`). The verifier failed 36 of 50 products, and 12 runs with the right answer ended on a failed verdict, so eight tasks a strategy could not rank the strategies. It found four problems, all fixed:
+- **`claim` is the product.** Replies put the answer in a key of its own, which the schema refuses, and repeated it on the retry. The prompt now says that `claim` is the product and that any other key is refused, and the retry note says where its content goes.
+- **The verifier judged the old product.** After a rework, working memory kept the old product and the new one sat under BRIEF, which a model reads as its brief. The verifier now gets the product under a heading that names it, and working memory holds the reworked product.
+- **The harness asked for more than grading.** "One line ANSWER:" was read as a line of its own, though grading takes the marker anywhere; the notes named quarters by month and never said which months make FY2026 Q1. The harness now asks for "ends with ANSWER: <value>" and states the calendar. The simulated reader's figures, recounted after all the prompt changes: 2,603 tokens a task for Genet against 2,082 for a single agent with a roomy context (1.25×), and 3,697 against 4,103 for the crew with a tight one (0.90×).
+- **Claude counts more tokens.** 1.39 to 1.73 times Genet's estimate from characters; the Claude adapter's size estimate is now 1.75 times it.
+
+**The rerun, with those four fixed.** Single, crew and Genet each got 8 of 8, genet-stated 6 of 8, in 151 calls for $0.10. With a roomy context Genet cost 1.53 times a single agent: a real model's planning call costs about as much as a working call. Two more problems, fixed:
+- **Workers got one word of their note.** The kernel joined the lead's proposals and split them on spaces, so a note written as prose reached its worker as its first word. Proposals are now read one request at a time.
+- **Placeholders copied literally.** The plan prompts showed `subtask:<channel>@<skill>=...`, and the model wrote `<channel>`, an empty channel or `lead`, so in 3 of 8 trials the crew's every proposal was refused. Both prompts now show a real proposal and say to name a part after the file it reads.
+
+**A second rerun, with those fixed.** Single and Genet 8 of 8, the crew 7 of 8, genet-stated 6 of 8, in 190 calls for $0.12. The crew staffed workers in every trial, with notes of 5 to 33 words and channels named after real files. The three Haiku runs cost $0.36 in all. One more fix from it: the verifier read the product's claim and not the evidence given with it, which the kernel's own criteria check counts, so it failed sourced answers as unsourced. It now reads up to 12 items of evidence.
+
+- `tests/test_anthropic_tape.py` and `tests/test_live_findings.py`, and 25 new mutations, for 172, all caught.
+
 ## v0.4.3 — October 2026: calls end, and every token is counted
 
 **Calls cannot loop.** An audit of every loop in the kernel found three that are open-ended, each with a hard stop. Reading a reply ends at the size cap or the exchange's deadline. Walking a workspace ends at 20,000 entries. Waiting to admit a call near the budget re-checks the budget and the clock every second, and calls in flight always finish or time out. Everything else that calls a model runs a fixed number of times: tool rounds are counted, a retry happens at most once, a rework at most once.

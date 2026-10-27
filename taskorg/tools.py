@@ -102,6 +102,18 @@ class Toolbox:
                 continue
         return None
 
+    def _shown(self, path: Path) -> str:
+        """A path as the model sees it: relative to its root when that name reads the same file back.
+        A temp directory or home folder is no business of the model's, and a name that does not change
+        between runs keeps the same request the same."""
+        resolved = path.resolve()
+        for root in self.roots:
+            if resolved.is_relative_to(root) and resolved != root:
+                rel = str(resolved.relative_to(root))
+                if self._resolve(rel) == resolved:
+                    return rel
+        return str(path)
+
     def _walk(self, start: Path | None = None):
         """Files under the roots (or start), in path order, without hidden or tool directories.
 
@@ -224,9 +236,9 @@ class Toolbox:
             return f"[read {raw[:ECHO_CAP]}] not found in the workspace"
         text = self._text(path)
         if text is None:
-            return f"[read {path}] binary or too large"
+            return f"[read {self._shown(path)}] binary or too large"
         more = f"\n[truncated at {READ_CAP} of {len(text)} chars]" if len(text) > READ_CAP else ""
-        return f"[read {path}]\n{text[:READ_CAP]}{more}"
+        return f"[read {self._shown(path)}]\n{text[:READ_CAP]}{more}"
 
     def retrieve(self, query: str) -> str:
         """Lines that carry every term; a term also counts when it is in the file name.
@@ -260,14 +272,14 @@ class Toolbox:
                 low = line.lower()
                 hit = sum(1 for t in terms if t in in_name or t in low)
                 if hit == len(terms):
-                    full.append(f"{path}:{n}: {_snippet(line, pattern)}")
+                    full.append(f"{self._shown(path)}:{n}: {_snippet(line, pattern)}")
                     if len(full) > MATCH_CAP:
                         return f"[retrieve {query}]\n" + "\n".join(full[:MATCH_CAP]) + "\n[more matches not shown]"
                 elif len(terms) > 1 and hit >= need:
                     n_partial += 1
                     item = (hit, -n_partial, "")
                     if len(partial) < MATCH_CAP or item > partial[0]:
-                        item = (hit, -n_partial, f"{path}:{n}: {_snippet(line, pattern)}")
+                        item = (hit, -n_partial, f"{self._shown(path)}:{n}: {_snippet(line, pattern)}")
                         (heapq.heappush if len(partial) < MATCH_CAP else heapq.heapreplace)(partial, item)
         if full:
             return f"[retrieve {query}]\n" + "\n".join(full) + stopped
@@ -283,7 +295,7 @@ class Toolbox:
             return f"[observe {raw[:ECHO_CAP]}] not found in the workspace"
         paths = []
         for path in self._walk(start):
-            paths.append(str(path))
+            paths.append(self._shown(path))
             if len(paths) >= LIST_CAP:
                 paths.append("[more files not shown]")
                 break

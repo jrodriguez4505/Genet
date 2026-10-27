@@ -197,12 +197,12 @@ What the simulated reader shows. These are structural results from a perfect rea
 
 | Per-call context | Single agent | Always-split crew | Genet |
 |---|---|---|---|
-| Roomy, `--context 16000` | 100% · 1,952 tokens/task | 100% · 3,623 | 100% · 2,372 (1.22× single) |
-| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 3,623 | 100% · 3,291 (0.91× crew) |
+| Roomy, `--context 16000` | 100% · 2,082 tokens/task | 100% · 4,103 | 100% · 2,603 (1.25× single) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 4,103 | 100% · 3,697 (0.90× crew) |
 
 When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. Whether real models also read worse with everything in one context, which is the other reason to split, is what the live run measures.
 
-The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. No live results are published yet.
+The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. The first live pilot, on Claude Haiku 5.5, is in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). It found six problems the simulation could not show, all fixed. Rerun with them fixed, single and Genet got 8 of 8 twice, the crew 8 and 7; with a roomy context Genet cost 1.53 and 1.60 times a single agent, because a real model's planning call costs about as much as a working call.
 
 ## Live model (optional)
 
@@ -219,6 +219,24 @@ python -m taskorg.cli run --adapter live --tier normal --context "..."
 The base URL must be `https://`, or `http://` to this machine (a local model server). Plain `http://` to any other host would send the key in clear text, so it is refused unless you set `TASKORG_MODEL_ALLOW_HTTP=1`, for example for a server on your own network. Redirects are never followed, so the key reaches only the host you named.
 
 Every request asks the endpoint to stop the reply at what is left of the per-call cap, in the `max_tokens` field, so a reply that runs on is never billed past it. Set `TASKORG_MODEL_MAX_TOKENS_PARAM=max_completion_tokens` for an API that names the field that way, or `none` to send no cap. When an endpoint reports no token usage, the adapter estimates it from the exact request it sent and the raw reply it got, and marks the call `tokens_estimated`.
+
+### Claude, through the Messages API
+
+```bash
+pip install -e '.[anthropic]'                 # the official SDK; Genet itself needs nothing
+export TASKORG_ANTHROPIC_KEY=...
+export TASKORG_MODEL_NAME=claude-haiku-5-5
+export TASKORG_MODEL_EFFORT=low               # optional: low, medium, high, xhigh or max
+python -m taskorg.cli compare --adapter anthropic --per-family 1 --price-in 0.10 --price-out 0.50 --max-spend 0.50
+```
+
+Same prompts, the same JSON gate and the same token accounting as the live adapter; only the transport differs. The key is read from `TASKORG_ANTHROPIC_KEY` and nowhere else, so a key exported for another tool is never spent by accident, and an endpoint set for the live adapter never receives it. Requests carry no temperature, which current Claude models reject, and the reply cap is what is left of the per-call cap. Thinking tokens are billed as output: they count in each call's completion tokens, and the tape records them on their own. A refused request fails as `LIVE`, so its part goes to the lead. The SDK retries overloads and rate limits itself, and follows no redirect. `bash scripts/live_pilot.sh` runs the pilot with a smoke test first, a cap per model and a tape.
+
+### Spend cap and tapes
+
+`--max-spend` stops a comparison before a trial that could take spending past the cap, judged by the costliest trial so far. Ctrl-C also stops it. Either way the trials already run are saved.
+
+`--record PATH` saves every exchange with the model as it happens: the request, the reply text and its usage, or the error. Never the key, never the base URL. `--replay PATH` answers from that tape instead of a model, with no key and no spend, so the kernel, the gates and the grading can be refined against real replies. A request the tape does not have, because a prompt or brief changed since the recording, fails as `LIVE` and is counted. Tool results name files relative to the workspace, so the same request reads the same on every run, and no temp folder or home directory reaches the model.
 
 ## Security
 
@@ -237,6 +255,8 @@ Genet treats three things as untrusted input: what the model endpoint sends back
 | Reported token counts | whole numbers, not negative | A reply that hides its own spend |
 | Calls in flight | counted against the budget | Parallel sub-agents that each spend past the cap |
 | Reply length, asked of the endpoint | what is left of the per-call cap | A reply that runs on and is billed |
+| Spend per comparison | `--max-spend` | A run that drains the account |
+| Where the Claude key comes from | `TASKORG_ANTHROPIC_KEY` only | A key exported for another tool, spent by accident |
 
 A malformed reply is asked again once, with a note saying what was wrong; models slip on the format now and then, and a retry is cheaper than losing the run or the part. Only a malformed reply is retried, never an authority violation, and the retry is a budgeted call like any other. The room kept for a reply is the largest reply in the run so far, and 200 tokens for a live model before it has replied; the gates count the same room when they decide what fits. A call that fails after it was sent, for example on malformed JSON, stays on the record marked `failed`: it counts toward the budget and toward every cost the comparison reports. Saved runs, working memory and results are written atomically, so a crash mid-save leaves the previous file, never a truncated one. An answered review note is a record and cannot be answered again; a deferred one can.
 
@@ -271,7 +291,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 1,320 checks with no network and no key:
+`pytest -q` runs about 1,400 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -282,11 +302,13 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Review findings.** `tests/test_hardening.py` has one test per finding from a review of concurrency, input handling, persistence, the CLI and decision logic: siblings that kept spending after a failure, parallel overspend, unpaid merges, verdicts read by substring, crew parts dropped silently, grading by first number, hostile request strings, dripped headers, typed run files, and more.
 - **Shared ownership.** `tests/test_ownership.py`: a failed part goes back to the lead and the run goes on; authority violations, budget halts and crashes still stop it; every failure is reviewed; lessons reach the next run, never carry model text, are counted and bounded, and can be turned off; and a review never changes a run's outcome.
 - **Bounds.** `tests/test_bounds.py` runs 400 seeded runs against a hostile stand-in model that floods tools and proposals, sends malformed replies, fails calls, breaks authority rules and reports random, missing or invalid token counts. Every run must end without leaving a thread, stay within `max_calls`, record every call it made exactly once, record tokens as reported or as marked estimates, stay under `max_tokens` plus one call's cap, and report the same totals in the run, `diagnose` and a saved copy. It also checks that a reply cut at the cap ends after one retry and that a model always asking for tools runs out of rounds.
+- **Claude, tapes and spend.** `tests/test_anthropic_tape.py`: no temperature, the reply cap, usage with thinking tokens, refusals and SDK errors as `LIVE`, the key from one variable only, no redirects (with the real SDK against a local endpoint when it is installed), a comparison replayed from its tape with the same results, misses counted, damaged tapes refused, the spend cap, and workspace paths that name no local folder.
+- **Live findings.** `tests/test_live_findings.py`, one test per problem the Haiku 5.5 pilot found: `claim` named as the product, the verifier given the reworked product and only that, the harness asking for what grading accepts and saying which months make each quarter, and a size estimate that does not undercount Claude's tokens, proposals read whole rather than split on spaces, plan prompts that show a real proposal, and a verifier that reads the evidence given with the product.
 - **Live readiness.** `tests/test_readiness.py`, for gaps found in the past live data: room for the reply, one retry for a malformed reply (over HTTP too), the warning for default criteria, and a verifier that checks the goal.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 147 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 147 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 172 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 172 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -314,7 +336,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.4.3 kernel. Invariants and the bench are covered by tests. The comparison harness exists; live results do not yet. Not a cloud platform.
+v0.5.0 kernel. Invariants and the bench are covered by tests. The comparison harness exists, and a live pilot has run on Claude Haiku 5.5, twice; eight tasks a strategy is too few to rank the strategies. Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

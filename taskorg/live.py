@@ -41,13 +41,13 @@ Your skill right now: {skill}. {skill_brief}
 You do not command. You do not change the roster. You do not spawn.
 {tools}
 Return ONLY a JSON object with keys:
-  claim (string),
+  claim (string): your product, all of it. When the brief says how the product must end, claim ends that way.
   evidence (array of strings),
   uncertainty (string),
   channel_id (string),
   context_update (string),
   requests (array of strings)
-No markdown. No extra keys. No authority language.
+No markdown. No authority language. No extra keys: a reply with any other key is refused, so what it would hold goes in claim.
 """
 
 TOOLS_ON = (
@@ -182,6 +182,45 @@ def system_prompt(brief: Brief) -> str:
     return SYSTEM.format(role=role, skill=brief.skill, skill_brief=skill_brief(brief.skill), tools=tools)
 
 
+def user_message(brief: Brief) -> str:
+    """The brief as the model reads it: one JSON object, the same for every endpoint."""
+    return json.dumps({
+        "function": brief.slot_function,
+        "skill": brief.skill,
+        "channel_id": brief.channel_id,
+        "goal": brief.goal,
+        "purpose": brief.purpose,
+        "context": brief.context,
+        "done_when": brief.done_when,
+        "packet": brief.packet,
+        "isolated": brief.isolated,
+        "mode": brief.mode,
+        "tools": list(brief.tools or []),
+        "success_criteria": list(brief.success_criteria or []),
+    })
+
+
+def env_timeout(default: int) -> int:
+    raw = os.environ.get("TASKORG_MODEL_TIMEOUT", "").strip() or str(default)
+    try:
+        timeout = int(raw)
+    except ValueError as e:
+        raise InvariantError("LIVE", f"TASKORG_MODEL_TIMEOUT must be whole seconds, got {raw!r}") from e
+    lo, hi = TIMEOUT_RANGE
+    if not lo <= timeout <= hi:
+        raise InvariantError("LIVE", f"TASKORG_MODEL_TIMEOUT must be {lo} to {hi} seconds, got {timeout}")
+    return timeout
+
+
+def env_models() -> dict[str, str]:
+    """Optional model per skill, from TASKORG_MODEL_NAME_<SKILL>."""
+    return {
+        q: os.environ[f"TASKORG_MODEL_NAME_{q.upper()}"].strip()
+        for q in SKILLS
+        if os.environ.get(f"TASKORG_MODEL_NAME_{q.upper()}", "").strip()
+    }
+
+
 def _extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
@@ -259,6 +298,7 @@ class LiveAdapter(ModelAdapter):
         # Optional model per skill, e.g. a stronger model for reason.
         self.models = dict(models or {})
         self.timeout = timeout
+        self.tape = None  # a tape.Recorder or tape.Player; None talks to the endpoint directly
         self._local = threading.local()
 
     @property
@@ -284,44 +324,18 @@ class LiveAdapter(ModelAdapter):
                 "LIVE",
                 "set TASKORG_MODEL_BASE, TASKORG_MODEL_KEY and TASKORG_MODEL_NAME for the live adapter",
             )
-        raw_timeout = os.environ.get("TASKORG_MODEL_TIMEOUT", "").strip() or "30"
-        try:
-            timeout = int(raw_timeout)
-        except ValueError as e:
-            raise InvariantError("LIVE", f"TASKORG_MODEL_TIMEOUT must be whole seconds, got {raw_timeout!r}") from e
-        lo, hi = TIMEOUT_RANGE
-        if not lo <= timeout <= hi:
-            raise InvariantError("LIVE", f"TASKORG_MODEL_TIMEOUT must be {lo} to {hi} seconds, got {timeout}")
-        models = {
-            q: os.environ[f"TASKORG_MODEL_NAME_{q.upper()}"].strip()
-            for q in SKILLS
-            if os.environ.get(f"TASKORG_MODEL_NAME_{q.upper()}", "").strip()
-        }
+        timeout, models = env_timeout(30), env_models()
         raw_param = os.environ.get("TASKORG_MODEL_MAX_TOKENS_PARAM", "").strip() or MAX_REPLY_PARAM
         return cls(base, key, model, timeout=timeout, models=models,
                    max_reply_param=None if raw_param.lower() == "none" else raw_param)
 
     def _payload(self, brief: Brief) -> dict:
-        user = {
-            "function": brief.slot_function,
-            "skill": brief.skill,
-            "channel_id": brief.channel_id,
-            "goal": brief.goal,
-            "purpose": brief.purpose,
-            "context": brief.context,
-            "done_when": brief.done_when,
-            "packet": brief.packet,
-            "isolated": brief.isolated,
-            "mode": brief.mode,
-            "tools": list(brief.tools or []),
-            "success_criteria": list(brief.success_criteria or []),
-        }
         payload = {
             "model": self.model_for(brief),
             "temperature": 0,
             "messages": [
                 {"role": "system", "content": system_prompt(brief)},
-                {"role": "user", "content": json.dumps(user)},
+                {"role": "user", "content": user_message(brief)},
             ],
         }
         if brief.max_reply_tokens and self.max_reply_param:
@@ -387,9 +401,21 @@ class LiveAdapter(ModelAdapter):
             }
         return content
 
+    def tape_header(self) -> dict:
+        """What a tape records about this adapter, so a replay builds the same requests. Never the key,
+        and never the base URL, which may carry credentials."""
+        return {"adapter": self.name, "model": self.model, "models": dict(self.models),
+                "max_reply_param": self.max_reply_param}
+
+    def _exchange(self, payload: dict) -> str:
+        """One request and its reply: from the endpoint, or through the tape that records or replays it."""
+        if self.tape is None:
+            return self._post(payload)
+        return self.tape.exchange(self, payload)
+
     def act(self, brief: Brief) -> Artifact:
         self.last_usage = {}
-        text = self._post(self._payload(brief))
+        text = self._exchange(self._payload(brief))
         data = _extract_json(text)
         return artifact_from_model(data, brief)
 
@@ -418,6 +444,10 @@ def pick_adapter(name: str) -> ModelAdapter:
         return StubAdapter()
     if name == "live":
         return LiveAdapter.from_env()
+    if name == "anthropic":
+        from .anthropic_live import AnthropicAdapter
+
+        return AnthropicAdapter.from_env()
     if name == "sim":
         from .sim import SimModel
 
