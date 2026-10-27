@@ -119,7 +119,7 @@ M = [
     ("live.py", "headers can drip forever", "            timer.start()\n", ""),
     ("live.py", "error body read crashes", '            except (OSError, http.client.HTTPException, ValueError):\n                detail = ""', '            except ():\n                detail = ""'),
     ("live.py", "usage must be an object", "        usage = usage if isinstance(usage, dict) else {}\n", "        usage = usage or {}\n"),
-    ("live.py", "timeout unchecked", "        if not lo <= timeout <= hi:", "        if False:"),
+    ("live.py", "timeout unchecked", "    if not lo <= timeout <= hi:", "    if False:"),
     ("live.py", "claim coerced to text", "    if not isinstance(claim, str) or not claim.strip():", "    claim = str(claim)\n    if not claim.strip():"),
     # review findings: CLI, policy, bench
     ("cli.py", "out may be a directory", "    if out.is_dir():", "    if False:"),
@@ -181,6 +181,22 @@ M = [
     ("loop.py", "operator fan-out not declared", "        verdicts = self._assess(run, subtasks, declared=True)\n", "        verdicts = self._assess(run, subtasks)\n"),
     ("loop.py", "context limit not passed", "            context_limit=b.max_tokens_per_call if b else None,", "            context_limit=None,"),
     ("sim.py", "sim reads a file per mention", "    return list(dict.fromkeys(s for _, s in sorted(found)))", "    return [s for _, s in sorted(found)]"),
+    # anthropic adapter, tapes, spend cap
+    ("anthropic_live.py", "temperature sent", "            # No temperature: current Claude models reject one.\n", '            "temperature": 0,\n'),
+    ("anthropic_live.py", "key from any variable", 'os.environ.get("TASKORG_ANTHROPIC_KEY", "")', 'os.environ.get("ANTHROPIC_API_KEY", "")'),
+    ("anthropic_live.py", "live endpoint gets the key", 'os.environ.get("TASKORG_ANTHROPIC_BASE", "")', 'os.environ.get("TASKORG_MODEL_BASE", "")'),
+    ("anthropic_live.py", "sdk follows redirects", "follow_redirects=False", "follow_redirects=True"),
+    ("anthropic_live.py", "refusal passes", '        if getattr(msg, "stop_reason", None) == "refusal":', "        if False:"),
+    ("anthropic_live.py", "reply cap unbounded", "min(int(brief.max_reply_tokens or DEFAULT_MAX_REPLY), MAX_REPLY_CEILING)",
+     "int(brief.max_reply_tokens or DEFAULT_MAX_REPLY)"),
+    ("tape.py", "cap in the request key", "    body = {k: v for k, v in payload.items() if k != cap_field}", "    body = payload"),
+    ("tape.py", "tape written over", 'self.path.open("x", encoding="utf-8")', 'self.path.open("w", encoding="utf-8")'),
+    ("tape.py", "any error code replayed", 'error.get("code") in ERROR_CODES', 'isinstance(error.get("code"), str)'),
+    ("tools.py", "absolute paths shown", "                if self._resolve(rel) == resolved:\n                    return rel\n", ""),
+    ("tools.py", "ambiguous relative name", "                if self._resolve(rel) == resolved:", "                if True:"),
+    ("compare.py", "spend cap looks back only", "        if costs and spent + max(costs) > max_spend:", "        if False:"),
+    ("compare.py", "spend cap off", '                        reason = stop_when(results) if stop_when else ""', '                        reason = ""'),
+    ("cli.py", "spend cap without prices", "    if args.max_spend is not None and args.price_in is None:", "    if False:"),
 ]
 
 

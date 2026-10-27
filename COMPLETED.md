@@ -2,6 +2,19 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.5.0 — October 2026: Claude, a spend cap, and tapes
+
+**Claude through the Messages API.** `--adapter anthropic` uses the official SDK, an optional extra (`pip install -e '.[anthropic]'`); Genet itself still needs nothing. The prompts, the JSON gate and the token accounting are the live adapter's. The OpenAI-compatible adapter could not reach Claude: it sends `temperature: 0`, which current Claude models reject with a 400. The key is read from `TASKORG_ANTHROPIC_KEY` only, so a key exported for another tool is never spent and the live adapter's endpoint never receives it. Redirects are not followed. `TASKORG_MODEL_EFFORT` sets how much the model thinks; thinking tokens count as output and are recorded on their own. A refusal fails as `LIVE`, with its tokens counted.
+
+**A spend cap.** `compare --max-spend` stops before a trial that could take spending past the cap, judged by the costliest trial so far. Ctrl-C stops a comparison too. Either way the trials already run are saved, with `stopped_after` in the results.
+
+**Tapes.** `compare --record` saves every exchange as it happens, and `compare --replay` reruns a comparison from the tape with no key and no spend. Rehearsed through the real SDK against a local endpoint with 5% overload faults: 188 exchanges recorded, and the replay reproduced all 32 trials exactly. A request the tape does not have fails as `LIVE` and is counted.
+
+**Tool results name files relative to the workspace.** They showed the absolute path, so a comparison's temp folder reached the model, and every run's requests differed, which kept a tape from replaying. A name that would read a different file back stays absolute.
+
+- `scripts/live_pilot.sh`: the pilot on Claude, with a smoke test, a cap per model and a tape.
+- `tests/test_anthropic_tape.py`, and 14 new mutations, for 161, all caught.
+
 ## v0.4.3 — October 2026: calls end, and every token is counted
 
 **Calls cannot loop.** An audit of every loop in the kernel found three that are open-ended, each with a hard stop. Reading a reply ends at the size cap or the exchange's deadline. Walking a workspace ends at 20,000 entries. Waiting to admit a call near the budget re-checks the budget and the clock every second, and calls in flight always finish or time out. Everything else that calls a model runs a fixed number of times: tool rounds are counted, a retry happens at most once, a rework at most once.

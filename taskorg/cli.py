@@ -76,7 +76,7 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
             p.add_argument(name, default=defaults[flag])
     p.add_argument("--store", default="data")
     p.add_argument("--out", default=None, help="saved run (default data/runs/<id>.json)")
-    p.add_argument("--adapter", default="stub", choices=["stub", "live"])
+    p.add_argument("--adapter", default="stub", choices=["stub", "live", "anthropic"])
     p.add_argument("--read", action="append", default=[], help="file text into working memory; not a new sub-agent")
     p.add_argument("--criteria", action="append", default=[], help="success criterion the product must show")
     p.add_argument("--exists", action="append", default=[], help="file already on disk; its name covers a channel")
@@ -352,8 +352,9 @@ def main(argv: list[str] | None = None) -> int:
     p_bench.set_defaults(func=cmd_bench)
 
     p_c = sub.add_parser("compare", help="single agent vs always-split crew vs genet on the synthetic suite")
-    p_c.add_argument("--adapter", default="stub", choices=["stub", "sim", "live"],
-                     help="stub: plumbing only; sim: deterministic reader, structural cost at $0; live: a real model")
+    p_c.add_argument("--adapter", default="stub", choices=["stub", "sim", "live", "anthropic"],
+                     help="stub: plumbing only; sim: deterministic reader, structural cost at $0; "
+                          "live: an OpenAI-compatible endpoint; anthropic: Claude's Messages API")
     p_c.add_argument("--strategies", default="single,always,genet")
     p_c.add_argument("--families", default="lookup,aggregate,compare,breadth")
     p_c.add_argument("--per-family", type=_whole(1), default=5)
@@ -365,6 +366,10 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens, for cost columns")
     p_c.add_argument("--price-out", type=_finite(0, strict=False), default=None, help="$ per 1M output tokens")
     p_c.add_argument("--corpus", default=None, help="also write the corpus here, to read it")
+    p_c.add_argument("--max-spend", type=_finite(0, strict=True), default=None,
+                     help="$ cap: stop before a trial that could pass it (needs --price-in and --price-out)")
+    p_c.add_argument("--record", default=None, help="save every model exchange to this tape, to replay with no key")
+    p_c.add_argument("--replay", default=None, help="answer from this tape instead of a model: no key, no spend")
     p_c.add_argument("--out", default=None, help="results JSON (default data/compare/compare-<time>.json)")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
@@ -404,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
 def cmd_compare(args: argparse.Namespace) -> int:
     import time
 
-    from .compare import STRATEGIES, comparison_budget, render, run_comparison, save, stderr, summarize
+    from .compare import STRATEGIES, comparison_budget, render, run_comparison, save, spend_cap, stderr, summarize
     from .suite import FAMILIES, build_suite
 
     # Each once: a repeat would run every trial twice, or give two tasks the same id.
@@ -418,33 +423,83 @@ def cmd_compare(args: argparse.Namespace) -> int:
     out = _out_path(args.out, Path(f"data/compare/compare-{time.strftime('%Y%m%d-%H%M%S')}.json"))
     if (args.price_in is None) != (args.price_out is None):
         raise InvariantError("COMPARE", "give both --price-in and --price-out, or neither")
+    if args.max_spend is not None and args.price_in is None:
+        raise InvariantError("COMPARE", "--max-spend needs --price-in and --price-out")
+    if args.record and args.replay:
+        raise InvariantError("COMPARE", "--record or --replay, not both")
     suite = build_suite(seed=args.seed, per_family=args.per_family, families=families)
     trials = len(suite.tasks) * len(strategies) * args.repeat
     config = {
-        "adapter": args.adapter, "strategies": list(strategies), "families": list(families),
+        "adapter": "replay" if args.replay else args.adapter, "strategies": list(strategies), "families": list(families),
         "per_family": args.per_family, "repeat": args.repeat, "seed": args.seed,
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
+    if args.price_in is not None:
+        config |= {"price_in": args.price_in, "price_out": args.price_out}
+    if args.max_spend is not None:
+        config["max_spend"] = args.max_spend
     if args.dry_run:
         print(json.dumps(config | {"tasks": [t.question for t in suite.tasks]}, indent=2))
         return 0
-    pick_adapter(args.adapter)  # fail fast on missing live configuration
+    player = recorder = None
+    if args.replay:
+        from .tape import Player, replay_adapter
+
+        player = Player(Path(args.replay))
+        recorded = player.header.get("compare")
+        recorded = recorded if isinstance(recorded, dict) else {}
+        differ = [k for k in ("strategies", "families", "per_family", "repeat", "seed", "max_calls_per_trial",
+                              "context_tokens", "tool_rounds") if k in recorded and recorded[k] != config[k]]
+        if differ:
+            stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
+        config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}
+
+        def factory():
+            return replay_adapter(player)
+    else:
+        first = pick_adapter(args.adapter)  # fail fast on missing live configuration
+        if args.record:
+            if not hasattr(first, "tape_header"):
+                raise InvariantError("COMPARE", "--record needs a model adapter: live or anthropic")
+            from .tape import Recorder
+
+            config["model"] = first.model
+            recorder = Recorder(Path(args.record), first.tape_header() | {"compare": dict(config)})
+            config["tape"] = str(args.record)
+
+        def factory():
+            adapter = pick_adapter(args.adapter)
+            if recorder:
+                adapter.tape = recorder
+            return adapter
     if args.corpus:
         suite.write_corpus(args.corpus)
-    results = run_comparison(
-        suite,
-        lambda: pick_adapter(args.adapter),
-        strategies=strategies,
-        repeats=args.repeat,
-        budget_factory=lambda: comparison_budget(args.max_calls, args.context),
-        tool_rounds=args.tool_rounds,
-        corpus_dir=Path(args.corpus) if args.corpus else None,
-        progress=stderr,
-    )
+    try:
+        results = run_comparison(
+            suite,
+            factory,
+            strategies=strategies,
+            repeats=args.repeat,
+            budget_factory=lambda: comparison_budget(args.max_calls, args.context),
+            tool_rounds=args.tool_rounds,
+            corpus_dir=Path(args.corpus) if args.corpus else None,
+            progress=stderr,
+            stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
+        )
+    finally:
+        if recorder:
+            recorder.close()
+    if len(results) < trials:
+        config["stopped_after"] = len(results)
     summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
     save(out, config=config, results=results, summary=summary)
     print(render(summary))
+    if player:
+        print(f"replay: {player.served} replies served ({player.repeated} repeated), "
+              f"{player.misses} requests the tape does not have")
+    if recorder:
+        print(f"tape: {recorder.count} exchanges saved to {args.record}")
     print(f"saved {out}")
     return 0
 

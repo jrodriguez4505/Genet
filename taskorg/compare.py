@@ -194,25 +194,57 @@ def run_comparison(
     tool_rounds: int = 3,
     corpus_dir: Path | None = None,
     progress: Callable[[str], None] | None = None,
+    stop_when: Callable[[list[TrialResult]], str] | None = None,
 ) -> list[TrialResult]:
-    """Every task under every strategy, interleaved so drift in the endpoint hits all strategies alike."""
+    """Every task under every strategy, interleaved so drift in the endpoint hits all strategies alike.
+
+    A stop_when that returns a reason ends the comparison before the next trial, and so does Ctrl-C.
+    Either way the trials already run are returned, so what they spent is kept and reported."""
     results = []
     with tempfile.TemporaryDirectory() as tmp:
         root = suite.write_corpus(corpus_dir or Path(tmp) / "corpus")
         total = len(suite.tasks) * len(strategies) * repeats
-        for r in range(repeats):
-            for task in suite.tasks:
-                for strategy in strategies:
-                    res = run_trial(task, strategy, adapter_factory(), root, budget=budget_factory(), tool_rounds=tool_rounds, repeat=r)
-                    results.append(res)
-                    if progress:
-                        mark = "ok " if res.correct else ("~  " if res.answer_right else "x  ")
-                        progress(
-                            f"[{len(results)}/{total}] {mark}{strategy:<6} {task.id:<12} "
-                            f"{res.calls:>2} calls {res.tokens / 1000:>6.1f}k tok {res.latency_s:>6.1f}s "
-                            f"w={res.workers} {res.status}{(' ' + res.code) if res.code else ''}"
-                        )
+        try:
+            for r in range(repeats):
+                for task in suite.tasks:
+                    for strategy in strategies:
+                        reason = stop_when(results) if stop_when else ""
+                        if reason:
+                            if progress:
+                                progress(f"stopped after {len(results)} of {total} trials: {reason}")
+                            return results
+                        res = run_trial(task, strategy, adapter_factory(), root, budget=budget_factory(), tool_rounds=tool_rounds, repeat=r)
+                        results.append(res)
+                        if progress:
+                            mark = "ok " if res.correct else ("~  " if res.answer_right else "x  ")
+                            progress(
+                                f"[{len(results)}/{total}] {mark}{strategy:<6} {task.id:<12} "
+                                f"{res.calls:>2} calls {res.tokens / 1000:>6.1f}k tok {res.latency_s:>6.1f}s "
+                                f"w={res.workers} {res.status}{(' ' + res.code) if res.code else ''}"
+                            )
+        except KeyboardInterrupt:
+            if progress:
+                progress(f"interrupted after {len(results)} of {total} trials; the trial in progress is not counted")
     return results
+
+
+def trial_cost(r: TrialResult, price_in: float, price_out: float) -> float:
+    return (r.prompt_tokens * price_in + r.completion_tokens * price_out) / 1e6
+
+
+def spend_cap(max_spend: float, price_in: float, price_out: float) -> Callable[[list[TrialResult]], str]:
+    """Stops before a trial that could take spending past the cap, judged by the costliest trial so far."""
+
+    def stop(done: list[TrialResult]) -> str:
+        costs = [trial_cost(r, price_in, price_out) for r in done]
+        spent = sum(costs)
+        if spent >= max_spend:
+            return f"spend cap: ${spent:.4f} spent of ${max_spend:.2f}"
+        if costs and spent + max(costs) > max_spend:
+            return f"spend cap: ${spent:.4f} spent, and the next trial could cost ${max(costs):.4f}, past ${max_spend:.2f}"
+        return ""
+
+    return stop
 
 
 # --- report ---
@@ -232,7 +264,7 @@ def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | 
         "tokens_estimated": any(r.tokens_estimated for r in rows),
     }
     if price_in is not None and price_out is not None:
-        cost = sum(r.prompt_tokens * price_in + r.completion_tokens * price_out for r in rows) / 1e6
+        cost = sum(trial_cost(r, price_in, price_out) for r in rows)
         out["cost_total"] = round(cost, 4)
         out["cost_per_correct"] = round(cost / max(1, sum(r.correct for r in rows)), 4)
     return out
