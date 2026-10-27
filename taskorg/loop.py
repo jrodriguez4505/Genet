@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import re
 import threading
 import time
@@ -126,6 +127,12 @@ PLAN_BRIEF = (
 
 def _tool_name(request: str) -> str:
     return parse_request(request)[0]
+
+
+def _reply_estimate(art: Artifact) -> int:
+    """A reply's size when nobody reported it: everything the model wrote, not only its claim."""
+    fields = [art.claim, art.evidence, art.uncertainty, art.channel_id, art.context_update, art.requests]
+    return max(1, len(json.dumps(fields)) // 4)
 
 
 def _reported(value) -> int | None:
@@ -349,6 +356,9 @@ class Engine:
                 # Checked before the call, reply included: an oversized call is never sent, so never paid for.
                 run.halt(f"brief of ~{size} tokens, plus ~{reply} for the reply, exceeds max_tokens_per_call "
                          f"{b.max_tokens_per_call}; not sent")
+            if b:
+                # The reply may run only to the cap: an adapter that can asks the endpoint to stop it there.
+                brief = replace(brief, max_reply_tokens=max(1, b.max_tokens_per_call - size))
             heard = _sibling_heard(run, brief)
             self._inflight[id(run)] = self._inflight.get(id(run), 0) + 1
         try:
@@ -388,7 +398,8 @@ class Engine:
             usage = getattr(self.adapter, "last_usage", None) or {}
             reported_prompt, reported_completion = _reported(usage.get("prompt_tokens")), _reported(usage.get("completion_tokens"))
             call = self._call_record(brief, slot, heard, time.perf_counter() - started, reported_prompt or size,
-                                     reported_completion or 0, bool(reported_prompt or reported_completion))
+                                     reported_completion or 0,
+                                     bool(reported_prompt or reported_completion) and not usage.get("estimated"))
             call["failed"] = e.code if isinstance(e, InvariantError) else type(e).__name__
             with self._lock:
                 run.adapter_name = getattr(self.adapter, "name", "") or run.adapter_name
@@ -398,8 +409,9 @@ class Engine:
         usage = getattr(self.adapter, "last_usage", None) or {}
         reported_prompt, reported_completion = _reported(usage.get("prompt_tokens")), _reported(usage.get("completion_tokens"))
         prompt = reported_prompt or size
-        completion = reported_completion or max(1, len(art.claim) // 4)
-        usage_real = bool(reported_prompt or reported_completion)
+        completion = reported_completion or _reply_estimate(art)
+        # An adapter may fill in its own estimate when the endpoint reports nothing, and says so.
+        usage_real = bool(reported_prompt or reported_completion) and not usage.get("estimated")
         # The kernel names the channel, not the model.
         if brief.slot_function == "lead":
             art.channel_id = "lead-plan" if brief.mode == "plan" else "lead-merge"
