@@ -34,7 +34,7 @@ from .loop import Engine
 from .memory_store import MemoryStore
 from .run import Run
 from .models import GATE_ORDER, MAX_WORKERS, SKILLS, GateRecord
-from .subtasks import parse_subtasks
+from .subtasks import parse_proposals
 from .suite import Suite, Task, extract_answer, grade
 from .tools import Toolbox
 
@@ -50,8 +50,11 @@ DONE_WHEN = "The product ends with 'ANSWER: <value>': a number for amounts, a co
 
 DECOMPOSE_BRIEF = (
     "PLAN. You lead a crew. Break the work into 2 to 4 subtasks and give each its own worker. "
-    "For each, add a request 'subtask:<channel>@<skill>=<what_the_worker_does>' where skill is one of {skills} "
-    "(underscores for spaces). A worker that must search or read the workspace needs skill retrieve. "
+    "For each, add one request in the form subtask:CHANNEL@SKILL=WHAT_THE_WORKER_DOES, for example "
+    "subtask:acme@retrieve=report Acme's FY2026 Q2 revenue from acme.md. CHANNEL is a short name of letters, "
+    "digits and hyphens, one per worker: for a worker that reads one file, that file's name without its "
+    "extension; never lead, which is yours. SKILL is one of {skills}. "
+    "A worker that must search or read the workspace needs skill retrieve. "
     "claim: your plan in one or two sentences."
 )
 
@@ -73,7 +76,7 @@ class AlwaysSplit(Engine):
         run.switch_skill(lead, lead, "reason", "decompose into sub-tasks for the crew")
         plan = self._act(run, self._brief(run, "lead", extra=DECOMPOSE_BRIEF.format(skills="|".join(SKILLS)), mode="plan"))
         run.accept_artifact(plan)
-        return parse_subtasks(" ".join(plan.requests))
+        return parse_proposals(plan.requests)
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """No gates. Only what the kernel cannot run is dropped: bad ids, repeats, past the worker cap."""

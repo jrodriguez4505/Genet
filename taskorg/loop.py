@@ -16,7 +16,7 @@ from .gates import LEAD_COVERS, Assessment, Subtask, assess
 from .memory_store import MemoryStore
 from .run import Run
 from .models import MAX_WORKERS, SKILL_TOOLS, SKILLS, Artifact, Delta, Slot, Status
-from .subtasks import parse_subtasks
+from .subtasks import parse_proposals
 from .review import team_review
 from .tools import RUNNABLE, Toolbox, parse_request
 
@@ -117,9 +117,11 @@ MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
 PLAN_BRIEF = (
     "PLAN. Decide how to staff this task. Default is a single agent: you do the work yourself. "
     "Propose a sub-agent only for a part of the work that is independent of the rest "
-    "and should not share a context with it. For each, add a request "
-    "'subtask:<channel>@<skill>=<named_failure>' where skill is one of {skills} and named_failure "
-    "says what goes wrong if a single agent does it (underscores for spaces). "
+    "and should not share a context with it. For each, add one request in the form "
+    "subtask:CHANNEL@SKILL=NAMED_FAILURE, for example subtask:north-region@retrieve=two_regions_figures_get_mixed. "
+    "CHANNEL is a short name of letters, digits and hyphens, one per part: for a part that reads one file, "
+    "that file's name without its extension. SKILL is one of {skills}. NAMED_FAILURE says what goes wrong if a "
+    "single agent does it. "
     "A sub-agent that must search or read the workspace needs skill retrieve (or observe to list files). "
     "Propose nothing if a single agent is enough. The kernel judges the proposal; you do not change the roster. "
     "claim: your read of the situation in one or two sentences."
@@ -655,7 +657,7 @@ class Engine:
         run.switch_skill(lead, lead, "reason", "read the context; propose sub-tasks only for independent work")
         plan = self._act(run, self._brief(run, "lead", extra=PLAN_BRIEF.format(skills="|".join(SKILLS)), mode="plan"))
         run.accept_artifact(plan)
-        return parse_subtasks(" ".join(plan.requests))
+        return parse_proposals(plan.requests)
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""

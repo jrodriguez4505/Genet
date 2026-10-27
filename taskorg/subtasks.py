@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 from .gates import Subtask
+
+_MARK = re.compile(r"(?:^|(?<=\s))subtask:")
 
 
 def parse_subtasks(text: str) -> list[Subtask]:
@@ -20,6 +24,19 @@ def parse_subtasks(text: str) -> list[Subtask]:
         subtask = parse_subtask(token[len("subtask:") :])
         if subtask:
             found.append(subtask)
+    return found
+
+
+def parse_proposals(requests: list[str]) -> list[Subtask]:
+    """A lead's proposals, one request each. The note keeps its spaces and commas: a model writes
+    prose, and splitting on spaces handed a worker the first word of its note and nothing else.
+    A request that holds several proposals is cut at each subtask: mark."""
+    found: list[Subtask] = []
+    for request in requests:
+        for body in _MARK.split(request.strip())[1:]:
+            subtask = parse_subtask(body.strip())
+            if subtask:
+                found.append(subtask)
     return found
 
 

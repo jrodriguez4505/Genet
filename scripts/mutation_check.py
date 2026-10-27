@@ -209,6 +209,10 @@ M = [
      '    "FY2026 is calendar 2026: Q1 is January to March, Q2 April to June, Q3 July to September, Q4 October to December. "\n', ""),
     ("anthropic_live.py", "claude estimate uncalibrated", "        return math.ceil((max(1, -(-chars // 4)) + 8) * TOKEN_RATIO)",
      "        return max(1, -(-chars // 4)) + 8"),
+    ("loop.py", "proposals split on spaces", "        return parse_proposals(plan.requests)", '        return __import__("taskorg.subtasks").subtasks.parse_subtasks(" ".join(plan.requests))'),
+    ("compare.py", "crew proposals split on spaces", "        return parse_proposals(plan.requests)", '        return __import__("taskorg.subtasks").subtasks.parse_subtasks(" ".join(plan.requests))'),
+    ("subtasks.py", "one proposal per request", "        for body in _MARK.split(request.strip())[1:]:", "        for body in request.strip().split(\"subtask:\")[1:2]:"),
+    ("loop.py", "placeholder plan template", "subtask:CHANNEL@SKILL=NAMED_FAILURE, for example", "'subtask:<channel>@<skill>=<named_failure>', for example"),
 ]
 
 

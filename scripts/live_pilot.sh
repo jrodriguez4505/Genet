@@ -23,12 +23,13 @@ export PYTHONDONTWRITEBYTECODE=1
 # Credentials, endpoints and headers set for other tools never reach these runs.
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFILE ANTHROPIC_CUSTOM_HEADERS TASKORG_ANTHROPIC_BASE
 
-# Estimates scale the Haiku 5.5 pilot of 27 October 2026: 220 calls, 472,498 prompt and 190,428 completion
-# tokens at 2 tasks per family. Other models may think more or less, so each run keeps a cap.
+# Estimates scale the two Haiku 5.5 pilots of 27 October 2026 at 2 tasks per family: 151 calls and 351,672
+# prompt and 123,822 completion tokens with the fixes, 220 calls and 472,498 and 190,428 before them.
+# Other models may think more or less, so each run keeps a cap.
 echo "Genet live pilot on Claude. Prices per million tokens, input / output; cost of the full pilot:"
-echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.15, capped at \$0.50"
-echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$2.40 to \$2.90, capped at \$3.50"
-echo "  3) claude-opus-5-5     \$4 / \$20        about \$4.80 to \$5.70, capped at \$7.00"
+echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.10 to \$0.15, capped at \$0.50"
+echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$1.90 to \$2.90, capped at \$3.50"
+echo "  3) claude-opus-5-5     \$4 / \$20        about \$3.90 to \$5.70, capped at \$7.00"
 read -r -p "Model [1]: " pick
 case "${pick:-1}" in
   1) model=claude-haiku-5-5;  pin=0.10; pout=0.50; cap=0.50 ;;
@@ -79,7 +80,7 @@ if not r["correct"]:
 EOF
 
 echo
-echo "The pilot is $((per * 16)) trials, about $((per * 110)) calls. It stops itself before it could pass \$$cap."
+echo "The pilot is $((per * 16)) trials, about $((per * 75)) to $((per * 110)) calls. It stops itself before it could pass \$$cap."
 read -r -p "Run the pilot now on $model? [y/N]: " go
 case "$go" in
   y|Y|yes|Yes|YES) ;;
