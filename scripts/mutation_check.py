@@ -212,6 +212,8 @@ M = [
     ("loop.py", "proposals split on spaces", "        return parse_proposals(plan.requests)", '        return __import__("taskorg.subtasks").subtasks.parse_subtasks(" ".join(plan.requests))'),
     ("compare.py", "crew proposals split on spaces", "        return parse_proposals(plan.requests)", '        return __import__("taskorg.subtasks").subtasks.parse_subtasks(" ".join(plan.requests))'),
     ("subtasks.py", "one proposal per request", "        for body in _MARK.split(request.strip())[1:]:", "        for body in request.strip().split(\"subtask:\")[1:2]:"),
+    ("loop.py", "verifier reads the claim only", "    if not shown:\n        return product.claim\n", "    if True:\n        return product.claim\n"),
+    ("loop.py", "review evidence unbounded", "for e in product.evidence[:REVIEW_EVIDENCE] if e.strip()]", "for e in product.evidence if e.strip()]"),
     ("loop.py", "placeholder plan template", "subtask:CHANNEL@SKILL=NAMED_FAILURE, for example", "'subtask:<channel>@<skill>=<named_failure>', for example"),
 ]
 

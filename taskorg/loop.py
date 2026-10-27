@@ -75,6 +75,21 @@ def verdict(claim: str) -> str:
     return m.group(1).upper() if m else ""
 
 
+# How much of a product's evidence the verifier reads: enough to judge its sources, bounded however long the reply.
+REVIEW_EVIDENCE = 12
+REVIEW_EVIDENCE_CHARS = 400
+
+
+def _for_review(product: Artifact) -> str:
+    """The product as the verifier reads it: the claim and the evidence given with it, which the kernel's own
+    criteria check counts too. Shown the claim alone, a verifier failed sourced answers as unsourced."""
+    shown = [e[:REVIEW_EVIDENCE_CHARS] for e in product.evidence[:REVIEW_EVIDENCE] if e.strip()]
+    if not shown:
+        return product.claim
+    more = f"\n[{len(product.evidence) - REVIEW_EVIDENCE} more not shown]" if len(product.evidence) > REVIEW_EVIDENCE else ""
+    return product.claim + "\nEVIDENCE GIVEN WITH IT\n" + "\n".join(f"- {e}" for e in shown) + more
+
+
 def _verifier_accepts(check: Artifact, run: Run, product: Artifact | None = None) -> bool:
     if verdict(check.claim) != "PASS":
         scored = score_criteria(product, run.state.success_criteria)
@@ -619,7 +634,7 @@ class Engine:
     def _verify(self, run: Run, product: Artifact, *, adapt: bool) -> tuple[Artifact, bool]:
         """Check the product. On a failed check, change the method once if the tier and budget allow."""
         lead = run.state.lead_id
-        check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
+        check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
         verified = _verifier_accepts(check, run, product)
         run.accept_artifact(check)
         if not verified:
@@ -641,7 +656,7 @@ class Engine:
             run.accept_artifact(product)
             # The reworked product replaces the last one everywhere the verifier looks.
             self.store.remember_working(run.id, "product", product.claim)
-            check = self._act(run, self._brief(run, "verifier", extra=product.claim, mode="verify"))
+            check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)
             if not verified:

@@ -12,6 +12,9 @@
 From the rerun with those fixed: the lead wrote proposals as prose, and the kernel split them on spaces,
 so each worker got the first word of its note; and it copied the <channel> placeholder of the plan
 prompt literally, or left the channel empty.
+
+From the second rerun: the verifier read the product's claim but not the evidence given with it, and
+failed sourced answers as unsourced.
 """
 
 import math
@@ -142,3 +145,33 @@ def test_the_plan_prompts_show_a_real_proposal_not_placeholders():
     for brief in (PLAN_BRIEF, DECOMPOSE_BRIEF):
         assert "<" not in brief and "for example subtask:" in brief
         assert "that file's name without its extension" in brief
+
+
+# --- from the second rerun: the verifier reads the evidence too ---
+
+
+def _verify_packet(tmp_path: Path, evidence: list[str]) -> str:
+    m = new_run("evidence-1", "What was Orbrook's FY2026 Q1 revenue?", "answer from the notes", "ends with ANSWER:")
+    m.state.success_criteria = ["ANSWER:"]
+    product = Artifact(claim="Revenue was 36.9. ANSWER: 36.9", evidence=evidence, uncertainty="", channel_id="c",
+                       context_update="", requests=[])
+    adapter = Replies(_art("plan"), product, _art("PASS: sourced and ends with ANSWER: 36.9"))
+    Engine(MemoryStore(tmp_path), adapter=adapter, budget=comparison_budget()).run_task(m, context="c", operator_question="?")
+    return next(b.packet for b in adapter.briefs if b.slot_function == "verifier")
+
+
+def test_the_verifier_reads_the_evidence_given_with_the_product(tmp_path: Path):
+    packet = _verify_packet(tmp_path, ['orbrook.md:3: "Revenue for the January-March quarter reached $36.9 million."'])
+    product = packet.split("PRODUCT UNDER REVIEW", 1)[1].split("VERIFIER RULE", 1)[0]
+    assert "ANSWER: 36.9" in product and "EVIDENCE GIVEN WITH IT\n- orbrook.md:3:" in product
+
+
+def test_a_product_with_no_evidence_shows_none(tmp_path: Path):
+    assert "EVIDENCE GIVEN WITH IT" not in _verify_packet(tmp_path, [])
+
+
+def test_the_evidence_the_verifier_reads_is_bounded(tmp_path: Path):
+    packet = _verify_packet(tmp_path, [f"line {i} " + "x" * 1000 for i in range(20)])
+    shown = [ln for ln in packet.splitlines() if ln.startswith("- line ")]
+    assert len(shown) == 12 and max(len(ln) for ln in shown) <= 2 + 400
+    assert "[8 more not shown]" in packet

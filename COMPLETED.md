@@ -23,9 +23,9 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 - **Workers got one word of their note.** The kernel joined the lead's proposals and split them on spaces, so a note written as prose reached its worker as its first word. Proposals are now read one request at a time.
 - **Placeholders copied literally.** The plan prompts showed `subtask:<channel>@<skill>=...`, and the model wrote `<channel>`, an empty channel or `lead`, so in 3 of 8 trials the crew's every proposal was refused. Both prompts now show a real proposal and say to name a part after the file it reads.
 
-**A second rerun, with those fixed.** Single and Genet 8 of 8, the crew 7 of 8, genet-stated 6 of 8, in 190 calls for $0.12. The crew staffed workers in every trial, with notes of 5 to 33 words and channels named after real files. The three Haiku runs cost $0.36 in all.
+**A second rerun, with those fixed.** Single and Genet 8 of 8, the crew 7 of 8, genet-stated 6 of 8, in 190 calls for $0.12. The crew staffed workers in every trial, with notes of 5 to 33 words and channels named after real files. The three Haiku runs cost $0.36 in all. One more fix from it: the verifier read the product's claim and not the evidence given with it, which the kernel's own criteria check counts, so it failed sourced answers as unsourced. It now reads up to 12 items of evidence.
 
-- `tests/test_anthropic_tape.py` and `tests/test_live_findings.py`, and 23 new mutations, for 170, all caught.
+- `tests/test_anthropic_tape.py` and `tests/test_live_findings.py`, and 25 new mutations, for 172, all caught.
 
 ## v0.4.3 — October 2026: calls end, and every token is counted
 

@@ -63,7 +63,7 @@ The same 32 trials on Haiku 5.5, with proposals read whole and plan prompts that
 - **Genet stayed single at 1.60 times the single agent's tokens**, and the crew cost 2.37 times. Every task still fit one context.
 - **The answer key, once.** One worker added an `ANSWER` key; the retry recovered it.
 
-Open: give the verifier the evidence the lead gave with its product, so a sourced answer is not failed as unsourced.
+What changed because of it (v0.5.0): the verifier reads the evidence given with the product, as the kernel's own criteria check already did, up to 12 items of 400 characters. Its effect needs another live run.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
