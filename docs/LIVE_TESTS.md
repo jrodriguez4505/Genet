@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude and its rerun with fixes (27 October 2026), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). Run files and tapes stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude and two reruns with fixes (27 October 2026), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). Run files and tapes stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -44,6 +44,26 @@ The same 32 trials on Haiku 5.5, with the four fixes above.
 - **Workers got one word of their note.** The kernel joined the lead's proposals and split them on spaces, so `subtask:orbrook@retrieve=Open orbrook.md, find the Q1 revenue` reached the worker as "Open". The workers still answered right, from their channel name and the goal.
 
 What changed because of it (v0.5.0): proposals are read one request at a time, keeping their spaces; both plan prompts show a real proposal instead of placeholders and say to name a part's channel after the file it reads. Tests are in `tests/test_live_findings.py`. These change the planning prompts, so their effect needs another live run.
+
+## 27 October 2026: second rerun, with the planning fixes
+
+The same 32 trials on Haiku 5.5, with proposals read whole and plan prompts that show a real proposal.
+
+| Strategy | Correct | Answer right | Calls | Tokens | Cost |
+|---|---|---|---|---|---|
+| single | 8 of 8 | 8 of 8 | 24 | 73,454 | $0.015 |
+| always | 7 of 8 | 7 of 8 | 72 | 174,295 | $0.040 |
+| genet | 8 of 8 | 8 of 8 | 38 | 117,159 | $0.024 |
+| genet-stated | 6 of 8 | 8 of 8 | 56 | 179,476 | $0.039 |
+
+- **Spend.** 190 calls and 544,384 tokens (387,545 prompt, 156,839 completion, of which 60,455 were thinking): $0.12. The three Haiku runs and their smoke tests came to $0.36 in all.
+- **The planning fixes held.** The crew staffed workers in all 8 trials, against 5 before. Workers got notes of 5 to 33 words (median 22), not one word. Every proposed channel was a real name, most of them the file the part reads; none was a placeholder.
+- **The crew's one miss was the crew's own.** Its lead also staffed a checker with skill `verify` and no tools. The checker said it could not confirm the figure, and the lead trusted that over the worker that had quoted the file, so the product said "not confirmed". Genet's gates refuse a verify part for this reason: checking is the verifier's job, not a worker's.
+- **The verifier.** 37 verdicts, 29 PASS. Of the 8 FAILs, 4 were right: the crew's unconfirmed product, twice, and the Halvorsen Freight substitution, twice, one of which the rework then fixed. 3 failed a right product because it showed no sources: the verifier gets the product's text and not the evidence the lead gave with it.
+- **Genet stayed single at 1.60 times the single agent's tokens**, and the crew cost 2.37 times. Every task still fit one context.
+- **The answer key, once.** One worker added an `ANSWER` key; the retry recovered it.
+
+Open: give the verifier the evidence the lead gave with its product, so a sourced answer is not failed as unsourced.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
