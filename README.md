@@ -202,7 +202,7 @@ What the simulated reader shows. These are structural results from a perfect rea
 
 When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. Whether real models also read worse with everything in one context, which is the other reason to split, is what the live run measures.
 
-The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. The first live pilot, on Claude Haiku 5.5, is in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). It found six problems the simulation could not show, all fixed. Rerun with them fixed, single and Genet got 8 of 8 twice, the crew 8 and 7; with a roomy context Genet cost 1.53 and 1.60 times a single agent, because a real model's planning call costs about as much as a working call.
+The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. The first live pilot, on Claude Haiku 5.5, is in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). It found seven problems the simulation could not show, all fixed. Rerun with them fixed, single and Genet got 8 of 8 twice, the crew 8 and 7; with a roomy context Genet cost 1.53 and 1.60 times a single agent, because a real model's planning call costs about as much as a working call.
 
 ## Live model (optional)
 
