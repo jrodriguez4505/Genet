@@ -48,6 +48,7 @@ class AnthropicAdapter(LiveAdapter):
     """Claude's Messages API. Fills artifacts only."""
 
     name = "anthropic"
+    token_ratio = TOKEN_RATIO
 
     def __init__(self, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None,
                  effort: str | None = None, base_url: str = BASE_URL, client=None):
@@ -92,7 +93,7 @@ class AnthropicAdapter(LiveAdapter):
     def estimate_tokens(self, brief: Brief) -> int:
         payload = self._payload(brief)
         chars = len(payload["system"]) + sum(len(m["content"]) for m in payload["messages"])
-        return math.ceil((max(1, -(-chars // 4)) + 8) * TOKEN_RATIO)
+        return math.ceil((max(1, -(-chars // 4)) + 8) * self.token_ratio)
 
     def _post(self, payload: dict) -> str:
         try:

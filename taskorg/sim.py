@@ -18,15 +18,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .adapters import TOOL_RESULTS, Brief, ModelAdapter
+from .checks import SOURCES_HEAD
 from .models import Artifact
-from .suite import CHURN, COMPANIES, QUARTER_WORDS, REVENUE, slug
+from .suite import ALL_COMPANIES, CHURN, QUARTER_WORDS, REVENUE, slug
 
 _PHRASE_Q = {w.lower(): q for q, words in QUARTER_WORDS.items() for w in words}
 _Q_ALT = "|".join(sorted((re.escape(w) for ws in QUARTER_WORDS.values() for w in ws), key=len, reverse=True))
-_SLUGS = sorted((slug(n) for n in COMPANIES), key=len, reverse=True)
-_NAME = {slug(n): n for n in COMPANIES}
+# Every name either suite uses: the extra ones never appear in the default corpus, so nothing there changes.
+_SLUGS = sorted((slug(n) for n in ALL_COMPANIES), key=len, reverse=True)
+_NAME = {slug(n): n for n in ALL_COMPANIES}
 _REPORT = re.compile(r"(?<![a-z0-9-])([a-z0-9-]+) (revenue|churn) (Q[1-4]) = (\d+(?:\.\d+)?)")
 _READ = re.compile(r"\[read ([^\]\n]+)\]\n")
+_FIGURE = r"\s*(?:[:=]\s*)?\$?(\d+(?:\.\d+)?)"
 
 
 def _pattern(template: str) -> re.Pattern:
@@ -73,7 +76,7 @@ class Question:
 def parse_question(text: str) -> Question:
     names = []
     taken: list[tuple[int, int]] = []
-    for name in sorted(COMPANIES, key=len, reverse=True):
+    for name in sorted(ALL_COMPANIES, key=len, reverse=True):
         for m in re.finditer(re.escape(name) + r"(?![A-Za-z])", text):
             if not any(a < m.end() and m.start() < b for a, b in taken):
                 taken.append((m.start(), m.end()))
@@ -106,6 +109,36 @@ def _read_results(packet: str) -> dict[str, dict]:
     return out
 
 
+def stated(text: str, q: "Question") -> dict[str, float]:
+    """slug -> the figure a product states for it: "orbrook revenue Q2 = 40.0" as the sim writes it, or
+    "Orbrook 40.0" as a model does. Longest name first, so a look-alike's figure stays its own."""
+    out = {s: float(v) for s, metric, quarter, v in _REPORT.findall(text) if metric == q.metric and quarter == q.quarter}
+    taken: list[tuple[int, int]] = []
+    for name in sorted(ALL_COMPANIES, key=len, reverse=True):
+        for m in re.finditer(re.escape(name) + r"(?![A-Za-z])" + _FIGURE, text):
+            if not any(a < m.end() and m.start() < b for a, b in taken):
+                taken.append((m.start(), m.end()))
+                out.setdefault(slug(name), float(m.group(1)))
+    return out
+
+
+def contradicted(q: "Question", packet: str) -> str:
+    """With sources in a verifier's brief: the first figure in the product that its company's own file
+    contradicts, or "". A perfect checker of what it is shown, and blind to what it is not."""
+    if SOURCES_HEAD not in packet:
+        return ""
+    product, sources = packet.split(SOURCES_HEAD, 1)
+    figures = stated(product.split("\nBRIEF\n", 1)[-1], q)
+    parts = _READ.split(sources)
+    for i in range(1, len(parts) - 1, 2):
+        name = parts[i].strip()
+        found = facts(parts[i + 1]).get((q.metric, q.quarter))
+        s = Path(name).stem
+        if s in figures and found is not None and abs(figures[s] - found) > 0.05:
+            return f"{_NAME.get(s, s)} {figures[s]:.1f} is not what {name} says ({found:.1f})"
+    return ""
+
+
 class SimModel(ModelAdapter):
     """Plans like each strategy's prompt asks, reads through tools, answers from what reached it."""
 
@@ -116,7 +149,10 @@ class SimModel(ModelAdapter):
         packet = brief.packet
         if brief.slot_function == "verifier":
             product = _section(packet, "\nBRIEF\n", "VERIFIER RULE")
-            return self._art("PASS" if "ANSWER:" in product else "FAIL: no ANSWER line")
+            if "ANSWER:" not in product:
+                return self._art("FAIL: no ANSWER line")
+            wrong = contradicted(q, packet)
+            return self._art(f"FAIL: {wrong}" if wrong else "PASS")
         if brief.slot_function == "lead" and brief.mode == "plan":
             return self._art("plan", requests=self._plan(q, crew="You lead a crew" in packet))
         known = self._known(packet, q)
@@ -153,8 +189,12 @@ class SimModel(ModelAdapter):
 
     def _work(self, brief: Brief, q: Question, targets: list[str], known: dict[str, float], *, report_only: bool) -> Artifact:
         missing = [s for s in targets if s not in known]
-        if missing and "read" in (brief.tools or []) and TOOL_RESULTS not in brief.packet:
-            return self._art("Reading first.", requests=[f"read:{s}.md" for s in missing])
+        # Ask again for what has not reached it yet (a round runs at most MAX_TOOL_REQUESTS reads), but
+        # not for a file a read already reported missing. The kernel bounds the rounds.
+        absent = set(re.findall(r"\[read ([^\]\n]+)\.md\] not found", brief.packet))
+        wanted = [s for s in missing if s not in absent]
+        if wanted and "read" in (brief.tools or []):
+            return self._art("Reading first.", requests=[f"read:{s}.md" for s in wanted])
         lines = [f"{s} {q.metric} {q.quarter} = {known[s]:.1f}" for s in targets if s in known]
         if report_only:
             return self._art("; ".join(lines) or "no figures found")

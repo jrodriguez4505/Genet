@@ -103,9 +103,12 @@ class MemoryStore:
         with self._lock:
             return self._facts(path)
 
-    def scoped_brief(self, run_id: str, extra: str = "", channel_id: str | None = None) -> str:
-        """INV-6 / INV-12: guidelines + this run, minus sibling channel packets."""
+    def scoped_brief(self, run_id: str, extra: str = "", channel_id: str | None = None,
+                     keep: tuple[str, ...] | None = None) -> str:
+        """INV-6 / INV-12: guidelines + this run, minus sibling channel packets. keep: only these facts."""
         facts = dict(self.working_facts(run_id))
+        if keep is not None:
+            facts = {k: v for k, v in facts.items() if k in keep}
         if channel_id is not None:
             facts = {
                 k: v

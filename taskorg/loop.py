@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import functools
 import json
+import math
 import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from .adapters import TOOL_RESULTS, Brief, OperatorQuestion, ModelAdapter, StubAdapter
+from . import checks
 from .budget import Budget
 from .cues import fire_auto_cues
 from .errors import InvariantError
@@ -224,6 +227,9 @@ class Engine:
         isolation_required: bool = False,
         fit_fraction: float = 0.5,
         lessons: bool = True,
+        verify_view: str = "shared",
+        verify_sources: str = "layered",
+        verify_sample: int = checks.SAMPLE,
     ):
         self.store = store
         self.adapter = adapter or StubAdapter()
@@ -239,6 +245,14 @@ class Engine:
         self.fit_fraction = fit_fraction
         # After a failed run, write its lessons to the shared guidelines every agent reads.
         self.lessons = lessons
+        # What the verifier reads the product against (checks.py): its view, and the sources the kernel opens.
+        if verify_view not in checks.VIEWS:
+            raise ValueError(f"verify_view must be one of {checks.VIEWS}, got {verify_view!r}")
+        if verify_sources not in checks.SOURCES:
+            raise ValueError(f"verify_sources must be one of {checks.SOURCES}, got {verify_sources!r}")
+        self.verify_view = verify_view
+        self.verify_sources = verify_sources
+        self.verify_sample = max(0, int(verify_sample))
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
         # Calls started but not yet recorded, per run. Admission counts them, so parallel
@@ -316,18 +330,29 @@ class Engine:
         """context overrides the live context. Workers get the context as it stood at the
         split, so a sibling's update never reaches their brief."""
         slot = slot or next(s for s in run.state.slots if s.function == function)
+        keep = None
+        view = ""
         if function == "verifier":
             crit = "; ".join(run.state.success_criteria)
+            view = self.verify_view
+            independent = view == "independent"
             # The product under review, named as such: a model reads a section called BRIEF as its brief.
-            extra = (
-                f"PRODUCT UNDER REVIEW (the lead's current product, the same as WORKING product)\n{extra}\n" if extra else ""
-            ) + (
+            head = "PRODUCT UNDER REVIEW (the lead's current product)" if independent else (
+                "PRODUCT UNDER REVIEW (the lead's current product, the same as WORKING product)")
+            extra = (f"{head}\n{extra}\n" if extra else "") + (
                 "VERIFIER RULE: claim MUST start with PASS or FAIL. "
                 "PASS only if the product itself meets every success criterion. "
                 "Your own evidence does not count toward a criterion. "
                 f"Criteria: {crit}. Do not use the context as the claim."
             )
-        packet = self.store.scoped_brief(run.id, extra, channel_id=slot.channel_id)
+            if independent:
+                # Not the author's notes: the context as the operator gave it, and none of working memory's
+                # product or sub-agent reports. The product reaches it once, under PRODUCT UNDER REVIEW.
+                keep = checks.INDEPENDENT_FACTS
+                if context is None:
+                    given = self.store.working_facts(run.id).get("context")
+                    context = given if isinstance(given, str) and given else run.state.context
+        packet = self.store.scoped_brief(run.id, extra, channel_id=slot.channel_id, keep=keep)
         return Brief(
             slot_function=slot.function,
             skill=slot.skill,
@@ -341,6 +366,7 @@ class Engine:
             tools=list(slot.tools),
             success_criteria=list(run.state.success_criteria),
             mode=mode,
+            view=view,
         )
 
     def _call(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
@@ -405,6 +431,7 @@ class Engine:
             "heard_channels": heard,
             "adapter": getattr(self.adapter, "name", ""),
             "tokens_estimated": not usage_real,
+            **({"view": brief.view} if brief.view else {}),
         }
 
     def _call_and_record(self, run: Run, brief: Brief, slot: Slot | None, size: int, heard: list[str]) -> Artifact:
@@ -456,19 +483,25 @@ class Engine:
             run.assert_within_budget()
         return art
 
-    def _act(self, run: Run, brief: Brief, slot: Slot | None = None, *, reserve: int | None = None) -> Artifact:
+    def _act(self, run: Run, brief: Brief, slot: Slot | None = None, *, reserve: int | None = None,
+             toolbox: Toolbox | None = None) -> Artifact:
         """A call plus tool rounds. Allowed tools run, results come back in the next brief.
 
         reserve: calls that must be left afterwards (the verifier's), so tool rounds stop in time.
+        toolbox: a sub-agent's own, open only at its share of the workspace.
         """
+        toolbox = toolbox or self.toolbox
         rounds = self.max_tool_rounds
         if reserve is not None and run.budget:
             rounds = max(0, min(rounds, self._calls_left(run) - 1 - reserve))
         art = self._call(run, brief, slot)
+        have: set = set()  # files this call holds in full, so no round copies one twice
         for _ in range(rounds):
             wanted = list(dict.fromkeys(r for r in art.requests if _tool_name(r) in RUNNABLE))
             if not wanted:
                 return art
+            # Reads first, so a search in the same round can leave out what a read already returned.
+            wanted.sort(key=lambda r: _tool_name(r) != "read")
             results = []
             if len(wanted) > MAX_TOOL_REQUESTS:
                 results.append(f"[{len(wanted) - MAX_TOOL_REQUESTS} more tool requests not run: at most {MAX_TOOL_REQUESTS} per round]")
@@ -476,7 +509,7 @@ class Engine:
             for req in wanted:
                 with self._lock:
                     run.assert_running()
-                out = self.toolbox.run(req)
+                out = toolbox.run(req, have)
                 results.append(out)
                 with self._lock:
                     run._record("tool", {
@@ -484,6 +517,8 @@ class Engine:
                         "channel": brief.channel_id,
                         "request": str(req)[:200],
                         "chars": len(out),
+                        # The files it showed, so a check later knows what the run saw and what it never did.
+                        **checks.files_in_result(out),
                     })
             brief = replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join(results))
             art = self._call(run, brief, slot)
@@ -503,8 +538,16 @@ class Engine:
         """Calls the merge may spend: one, plus tool rounds when it may have to read for a left-over part."""
         return 1 + (self.max_tool_rounds if (self.toolbox.roots or self.toolbox.files) else 0)
 
+    def _model_tokens(self, n: int) -> int:
+        """n tokens at four characters a token, in the model's own count: the room per call is measured from
+        what the model reports, so what the kernel measures in characters must count the same way."""
+        ratio = getattr(self.adapter, "token_ratio", 1.0)
+        return n if ratio == 1.0 else math.ceil(n * ratio)
+
     def _material(self, subtask: Subtask) -> dict[str, int] | None:
-        return self.toolbox.material(subtask.channel_id, subtask.named_failure)
+        """The sub-task's files, in the model's tokens."""
+        found = self.toolbox.material(subtask.channel_id, subtask.named_failure)
+        return {path: self._model_tokens(tokens) for path, tokens in found.items()} if found else found
 
     def _overhead(self, run: Run) -> int | None:
         """What one call costs before any material: the lead's latest brief, plus its reply or the room
@@ -566,14 +609,20 @@ class Engine:
 
         def one(worker: Slot) -> Artifact:
             note = (notes or {}).get(worker.channel_id or "", "")
+            # The files the gates measured for this part. The sub-agent's tools open only these, so it
+            # cannot take on its siblings' material and overrun the call the split was sized for.
+            files = self.toolbox.material(worker.channel_id or "", note) or {}
+            own = sorted(self.toolbox._shown(Path(p)) for p in files)
             brief = self._brief(
                 run, "worker",
                 extra=f"channel={worker.channel_id} only. Do not see sibling channels."
+                + (f" Your files: {', '.join(own)}; your tools open only these. Report what they hold for the goal;"
+                   " the other parts are other sub-agents', and the lead combines them." if own else "")
                 + (f" Lead's note for this sub-agent: {note}" if note else ""),
                 slot=worker, context=split_context, mode="work",
             )
             try:
-                return self._act(run, brief, slot=worker)
+                return self._act(run, brief, slot=worker, toolbox=self.toolbox.scoped(files) if files else None)
             except InvariantError as e:
                 if e.code in PART_FAILURES and run.status == Status.ACTIVE:
                     # The part is not lost: it goes back to the lead, and the siblings carry on.
@@ -616,7 +665,10 @@ class Engine:
         """Parts the lead covers in the merge: refused for capacity or a malformed proposal, or whose
         sub-agent failed. Gives the lead a skill that can read, and returns the brief text naming them."""
         refused = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
-        if not refused and not failed:
+        # Proposals past the cap were never judged, so they have no verdict; their parts are the lead's too.
+        past = next((e.detail for e in reversed(run.log) if e.event == "gate_overflow"), None)
+        unjudged = past["proposed"] - past["considered"] if past else 0
+        if not refused and not failed and not unjudged:
             return ""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent finished")
@@ -625,16 +677,55 @@ class Engine:
             text += f" These parts got no sub-agent and are yours to cover: {', '.join(refused)}."
         if failed:
             text += f" These parts' sub-agents failed, so they are yours to cover: {', '.join(failed)}."
+        if unjudged:
+            text += f" {unjudged} more proposed part(s) came past the cap of {MAX_PROPOSALS} and are yours to cover too."
         return text
 
     def _calls_left(self, run: Run) -> int:
         b = run.budget
         return (b.max_calls - len(run.calls)) if b else 1 << 30
 
+    def _verifier_brief(self, run: Run, product: Artifact) -> Brief:
+        """The verifier's brief: the product, in the engine's view, with the sources the kernel opened.
+
+        Sources go in as many as fit the per-call limit, in the order checks.pick ranks them, and the
+        brief says how many did not. What was opened, and why, goes on the record."""
+        extra = _for_review(product)
+        if self.verify_sources == "none":
+            return self._brief(run, "verifier", extra=extra, mode="verify")
+        names = self.toolbox.shown_files()
+        picks = checks.pick(run, product, names, self.verify_sources, sample=self.verify_sample)
+        flagged = checks.misquoted(self.toolbox, product, names)
+        if flagged:
+            extra += "\nKERNEL CHECK: these evidence quotes are not in the files they cite:\n" + "\n".join(f"- {f}" for f in flagged)
+        blocks = [checks.source_block(self.toolbox, name, why) for name, why in picks]
+        b = run.budget
+        limit = b.max_tokens_per_call - self._reply_room(run) if b else None
+        def with_sources(kept: list[str]) -> str:
+            more = len(blocks) - len(kept)
+            note = f"\n[{more} more source(s) not shown: over the per-call limit]" if more else ""
+            return extra + f"\n{checks.SOURCES_HEAD}\n" + "\n\n".join(kept) + note + f"\n{checks.SOURCE_RULE}"
+
+        shown: list[str] = []
+        for block in blocks:
+            body = with_sources(shown + [block])
+            if limit is not None and self.adapter.estimate_tokens(self._brief(run, "verifier", extra=body, mode="verify")) > limit:
+                break
+            shown.append(block)
+        if shown:
+            extra = with_sources(shown)
+        with self._lock:
+            run._record("verify_sources", {
+                "view": self.verify_view, "sources": self.verify_sources,
+                "picked": [{"file": name, "why": why} for name, why in picks],
+                "shown": len(shown), "misquoted": len(flagged),
+            })
+        return self._brief(run, "verifier", extra=extra, mode="verify")
+
     def _verify(self, run: Run, product: Artifact, *, adapt: bool) -> tuple[Artifact, bool]:
         """Check the product. On a failed check, change the method once if the tier and budget allow."""
         lead = run.state.lead_id
-        check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
+        check = self._act(run, self._verifier_brief(run, product))
         verified = _verifier_accepts(check, run, product)
         run.accept_artifact(check)
         if not verified:
@@ -656,7 +747,7 @@ class Engine:
             run.accept_artifact(product)
             # The reworked product replaces the last one everywhere the verifier looks.
             self.store.remember_working(run.id, "product", product.claim)
-            check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
+            check = self._act(run, self._verifier_brief(run, product))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)
             if not verified:
@@ -670,9 +761,23 @@ class Engine:
         """The lead reads the context and proposes sub-tasks. Strategies override this."""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, "reason", "read the context; propose sub-tasks only for independent work")
-        plan = self._act(run, self._brief(run, "lead", extra=PLAN_BRIEF.format(skills="|".join(SKILLS)), mode="plan"))
+        base = PLAN_BRIEF.format(skills="|".join(SKILLS))
+        extra = base + self._size_note(run, base)
+        plan = self._act(run, self._brief(run, "lead", extra=extra, mode="plan"))
         run.accept_artifact(plan)
         return parse_proposals(plan.requests)
+
+    def _size_note(self, run: Run, plan: str) -> str:
+        """What the gates will measure, told to the lead before it plans: what one call holds and how big the
+        workspace files are. Not told, a lead on a tight cap proposed nothing and the work overflowed."""
+        b = run.budget
+        sizes = [self._model_tokens(n) for n in self.toolbox.file_sizes()] if b and b.max_tokens_per_call else []
+        if not sizes:
+            return ""
+        brief = self.adapter.estimate_tokens(self._brief(run, "lead", extra=plan, mode="plan"))
+        return (f" SIZE. One call holds at most {b.max_tokens_per_call:,} tokens in all: its brief, the files it reads "
+                f"and its reply. A brief like this one takes about {brief:,}, and a reply can take as much again. "
+                f"The workspace has {len(sizes)} file(s) of about {min(sizes):,} to {max(sizes):,} tokens each.")
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""

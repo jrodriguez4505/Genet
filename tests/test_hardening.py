@@ -710,7 +710,7 @@ def test_tools_stop_when_the_runs_time_is_up(tmp_path: Path):
     class Slow(Toolbox):
         ran = 0
 
-        def run(self, request):
+        def run(self, request, have=None):
             Slow.ran += 1
             time.sleep(0.15)
             return "[slow] ok"

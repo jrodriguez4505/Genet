@@ -1,7 +1,8 @@
 #!/bin/bash
 # The live pilot on Claude, with a spend cap and a tape.
 #
-#   bash scripts/live_pilot.sh
+#   bash scripts/live_pilot.sh                  # the pilot, a 16,000-token cap per call
+#   bash scripts/live_pilot.sh --context 4000    # a tight cap: material that does not fit one call
 #
 # Asks for a model and for the key without showing it, runs a one-task smoke test, and runs the pilot
 # only if you answer y. Each run stops itself before it could pass its cap. Every exchange is saved
@@ -13,6 +14,13 @@
 # The key lives only in this process and the Python it starts: not in shell history, not on any
 # command line, not in a log, a tape or a results file.
 set -u
+context=16000
+if [ "${1:-}" = "--context" ]; then
+  context="${2:-}"
+  case "$context" in
+    ''|*[!0-9]*) echo "--context needs a whole number of tokens"; exit 1 ;;
+  esac
+fi
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
 if ! "$PY" -c "import anthropic" 2>/dev/null; then
@@ -56,11 +64,11 @@ fi
 export TASKORG_ANTHROPIC_KEY="$key" TASKORG_MODEL_NAME="$model" TASKORG_MODEL_EFFORT=low
 unset key
 echo "Key received (${#TASKORG_ANTHROPIC_KEY} characters, not shown)."
-echo ">>> Model: $model, effort low, $((per * 16)) trials, capped at \$$cap. Ctrl-C now if that is not what you meant."
+echo ">>> Model: $model, effort low, $((per * 16)) trials, $context tokens a call, capped at \$$cap. Ctrl-C now if that is not what you meant."
 
-tag="${model#claude-}-$(date +%Y%m%d-%H%M%S)"
+tag="${model#claude-}-c$context-$(date +%Y%m%d-%H%M%S)"
 mkdir -p data/compare data/tapes
-price=(--adapter anthropic --price-in "$pin" --price-out "$pout")
+price=(--adapter anthropic --price-in "$pin" --price-out "$pout" --context "$context")
 
 echo
 echo "== Smoke test: one lookup task, single agent, about 3 calls (capped at \$0.10)"

@@ -2,6 +2,73 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.7.0 — October 2026: a verifier that can check
+
+**Why.** In the 28 October rerun, the verifier passed a single agent's wrong total, 1152.1 for 1142.6. It had no sources, and its brief carried the author's own note that look-alike files were excluded. The verifier is the one member whose work is to disagree with the author, and it could neither check nor come to the product fresh. This is part 2 of the team design (`docs/TEAM_DESIGN.md`): members differ by what they see and what they may open, not by what they know.
+
+**Built:**
+- **What the verifier sees** (`--verify-view shared|independent`). The independent view gives the verifier:
+  - the context as the operator gave it;
+  - the goal and the criteria;
+  - the product with its evidence.
+
+  It does not get the lead's context updates, the working product, or sub-agents' reports.
+- **Sources the kernel opens** (`--verify-sources none|layered|full`). The kernel picks files from the run's record and puts them in the verifier's brief, as many as fit the per-call limit. The author doesn't choose them, and neither does the verifier.
+  - `layered` opens these, in order:
+    1. a file the goal names that no call in the run read or searched;
+    2. files the product's uncertainty names;
+    3. two drawn at random from what the goal names or the product cites.
+  - Each pick and its reason go on the record.
+  - The random draw is seeded by the goal and the product, so the same product opens the same files and a tape replays.
+- **The record keeps what the tools showed.** Each tool event names the file a read showed, or the files a search returned lines from.
+- **A quote check in code, for nothing.** An evidence quote that is not in the file it cites is named to the verifier, which still gives the verdict.
+- **`verify-bench`.** It reviews products with one planted error (a look-alike's figure, or the FY2025 one) and right ones, each with its author's record, under five setups, and reports catches, false fails and tokens. On the simulated reader:
+  - `full` catches every planted error, `layered` every look-alike one, and `today` none;
+  - nothing right is failed.
+- **`scripts/verify_runs.sh`** runs the bench on Haiku 5.5: 120 reviews, about $0.20, capped at $0.40, taped.
+
+**Layered by default.** After the live run below, `--verify-sources layered` became the default. A run with no workspace opens nothing, so its verifier's request is unchanged. `--verify-sources none` sends the request as it was before: with it, the 28 October tapes replay on the new code with no missing requests and the same results. The simulated reader's counts now include the verifier's files: Genet is 1.20 times a single agent with a roomy context (was 1.28) and 0.92 times the crew with a tight one (was 0.90).
+
+**On Haiku 5.5** (29 October, 120 reviews, $0.21; `docs/LIVE_TESTS.md`):
+- `today` caught 2 of 12 planted errors, only where the product's own quote showed the wrong year;
+- `full` caught 12 of 12 in both views;
+- `layered` caught every look-alike error, and 9 of 12 in all for the right reason, in both views;
+- no setup failed a right product;
+- leaving out the author's notes made no measurable difference.
+
+The bench now also counts FAILs that name the planted company, since one FAIL was for another company's figure. The run scripts' progress filter is line-buffered, so the `[n/N]` lines show as they happen.
+
+**The quote check, fixed on real products.** Before the default changed, the check ran over all 885 products on the Claude tapes. It flagged 88, nearly all falsely:
+- an evidence line citing two files, with every quote matched against the first;
+- a file named inside the quoted text;
+- quotes of the tool's own words, a search query or a member's report;
+- a dash the reply carried as the text `\u2013`.
+
+Each quote is now checked against the files its line cites outside the quote. It flags 6, each a quote those files do not hold.
+
+**Decided, not built yet.** The README's "workers that spawn workers" refusal is lifted for nesting, which keeps the gates, a depth limit and a reserved budget (`docs/TEAM_DESIGN.md`, part 3).
+
+- `tests/test_verify_checks.py` (29 tests), and 20 new mutations, for 206, all caught.
+
+## v0.6.0 — October 2026: testing the concept, and what it shows
+
+**Back to the concept.** Genet's question is whether a second agent does new work, and its claim is the best baseline's accuracy at close to single-agent cost. The comparison had never marked work as already done, so the first gate never ran in it, and its questions were too small for a single agent to struggle at a real context size; size had become the only "should we" reason. Three suite options now test the concept, each off by default (the default suite's fingerprint is tested): `--entities`, `--distractors` and `--filed`. `scripts/concept_runs.sh` runs both arms on Claude.
+
+**What the live runs show** (Haiku 5.5; `docs/LIVE_TESTS.md`). A single agent got every answer at 5, 10 and 20 companies a question, about 84,000 tokens a task at the largest, so splitting for quality is not shown on this model and these tasks. The always-split crew lost accuracy as the work grew (8 of 8, 5 of 8, 5 of 7), and cost less past about 10 companies but about the same per right answer. Genet stayed one agent wherever the work fit; with half of each question's companies already filed, it was the cheapest strategy. Haiku's crew lead left filed work out by itself, so the first gate had nothing to refuse.
+
+**Fixed, from three runs at a tight cap (4,000 tokens a call):**
+- **One copy of each file per call.** Haiku read each file and searched it too, so a call carried 2.4 times its files' text (up to 3.8). Reads run first in a round, and nothing read in full is returned again.
+- **Files measured in the model's tokens.** The gates counted four characters a token; Claude counts about 1.5 times that. Adapters carry a `token_ratio`.
+- **A sub-agent's tools open only its part.** Given the whole goal, each sub-agent read every company's file and overran the call its part was sized for. Its toolbox is now scoped to the files the gates measured, and its brief names them.
+- **The lead plans knowing the limit,** from a SIZE note in the plan brief, and **replies are asked to be brief** (at most 5 pieces of evidence, one-sentence uncertainty).
+
+**Fixed, from the concept experiments:** proposals past the cap of 16 are the lead's to cover, told by count, where they had been dropped; the simulated reader asks again for reads a round did not run; and the context's example of a file name is a company with no look-alike, after it primed readers to map Halvorsen Freight Labs to `halvorsen-freight.md`.
+
+**Open.** Judging fit before the work starts is unreliable on a real model: the lead misjudges it, and searches pull in look-alike files the gates do not count. A re-plan on a measured overflow would answer from what happened.
+
+- Sim figures, recounted: Genet 2,643 tokens a task against 2,068 for a single agent with a roomy context (1.28×), and 3,862 against 4,288 for the crew with a tight one (0.90×).
+- `tests/test_concept_suite.py`, more in `tests/test_live_findings.py`, and 14 new mutations, for 186, all caught.
+
 ## v0.5.0 — October 2026: Claude, a spend cap, and tapes
 
 **Claude through the Messages API.** `--adapter anthropic` uses the official SDK, an optional extra (`pip install -e '.[anthropic]'`); Genet itself still needs nothing. The prompts, the JSON gate and the token accounting are the live adapter's. The OpenAI-compatible adapter could not reach Claude: it sends `temperature: 0`, which current Claude models reject with a 400. The key is read from `TASKORG_ANTHROPIC_KEY` only, so a key exported for another tool is never spent and the live adapter's endpoint never receives it. Redirects are not followed. `TASKORG_MODEL_EFFORT` sets how much the model thinks; thinking tokens count as output and are recorded on their own. A refusal fails as `LIVE`, with its tokens counted.
