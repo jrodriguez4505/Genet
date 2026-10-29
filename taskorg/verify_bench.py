@@ -22,7 +22,8 @@ Setups, as (view, sources) in checks.py:
   independent-layered  independent  layered
 
 Comparing shared with independent shows what leaving out the author's notes buys; full with layered,
-what the cheaper pick misses. Measures: wrong products caught, right products failed, tokens a review.
+what the cheaper pick misses. Measures: wrong products caught, and caught naming the planted company;
+right products failed; tokens a review.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import atomic
+from . import atomic, checks
 from .adapters import ModelAdapter
 from .budget import Budget
 from .compare import DONE_WHEN, PURPOSE, task_context, trial_cost
@@ -82,6 +83,7 @@ class ReviewResult:
     verdict: str             # PASS | FAIL | ERROR
     right: bool              # PASS on a right product, FAIL on a wrong one
     error_shown: bool | None  # a wrong product: was the company's own file among the sources shown
+    named: bool | None       # a wrong product failed: did the reply name the planted company
     sources_shown: int
     code: str
     calls: int
@@ -220,12 +222,18 @@ def review_trial(
     if built.error is not None:
         files = [p["file"] for p in (picked[-1]["picked"] if picked else [])][:shown]
         error_shown = built.error["own"] in files
+    named = None
+    if built.error is not None and verdict == "FAIL":
+        # A FAIL for the right reason names the planted company, beyond repeating the product's own list.
+        corpus = sorted(f.name for f in corpus_dir.glob("*.md"))
+        named = built.error["own"] in checks.named_in(said.replace(built.product.claim, ""), corpus)
     prompt = sum(c.get("prompt_tokens") or 0 for c in run.calls)
     completion = sum(c.get("completion_tokens") or 0 for c in run.calls)
     wrong = built.error is not None
     return ReviewResult(
         task_id=task.id, kind=built.kind, variant=variant, setup=setup, repeat=repeat, verdict=verdict,
-        right=(verdict == "FAIL") if wrong else (verdict == "PASS"), error_shown=error_shown, sources_shown=shown,
+        right=(verdict == "FAIL") if wrong else (verdict == "PASS"), error_shown=error_shown, named=named,
+        sources_shown=shown,
         code=code, calls=len(run.calls), tokens=prompt + completion, prompt_tokens=prompt, completion_tokens=completion,
         tokens_estimated=any(c.get("tokens_estimated") for c in run.calls), latency_s=round(latency, 3),
         reason=said[:240],
@@ -286,6 +294,8 @@ def summarize(results: list[ReviewResult], *, price_in: float | None = None, pri
         block = {
             "n": len(rows),
             "caught": _rate(sum(r.verdict == "FAIL" for r in wrong), len(wrong)),
+            # Caught for the right reason: the FAIL names the company whose figure was planted.
+            "named": _rate(sum(bool(r.named) for r in wrong), len(wrong)),
             "false_fail": _rate(sum(r.verdict == "FAIL" for r in right), len(right)),
             "errors": sum(r.verdict == "ERROR" for r in rows),
             "by_kind": {k: _rate(sum(r.verdict == "FAIL" for r in wrong if r.kind == k), sum(r.kind == k for r in wrong))
@@ -310,12 +320,12 @@ def render(summary: dict) -> str:
     blocks = summary["setups"]
     has_cost = any("cost_total" in v for v in blocks.values())
     lines = ["## Verify bench", "",
-             "| setup | wrong caught | look-alike | wrong-year | right failed | error file shown | sources | tokens/review |"
-             + (" cost |" if has_cost else ""),
-             "|---|---|---|---|---|---|---|---|" + ("---|" if has_cost else "")]
+             "| setup | wrong caught | naming the error | look-alike | wrong-year | right failed | error file shown "
+             "| sources | tokens/review |" + (" cost |" if has_cost else ""),
+             "|---|---|---|---|---|---|---|---|---|" + ("---|" if has_cost else "")]
     for setup, v in blocks.items():
         kinds = v["by_kind"]
-        row = (f"| {setup} | {_pct(v['caught'])} | {_pct(kinds.get('look-alike'))} | {_pct(kinds.get('wrong-year'))} | "
+        row = (f"| {setup} | {_pct(v['caught'])} | {_pct(v.get('named'))} | {_pct(kinds.get('look-alike'))} | {_pct(kinds.get('wrong-year'))} | "
                f"{_pct(v['false_fail'])} | {_pct(v['error_shown'])} | {v['sources_mean']} | {v['tokens_mean']:,} |")
         if has_cost:
             row += f" ${v.get('cost_total', 0):.4f} |"

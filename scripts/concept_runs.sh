@@ -89,7 +89,7 @@ run() {  # name cap args...
   echo "== $name"
   "$PY" -m taskorg.cli compare "${common[@]}" "$@" --max-spend "$cap" \
     --record "data/tapes/concept-$name-$stamp.jsonl" --out "data/compare/concept-$name-$stamp.json" 2>&1 \
-    | tee "data/compare/concept-$name-$stamp.log" | grep -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep -v "^| strategy\|^|---"
+    | tee "data/compare/concept-$name-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
 }
 if [ "$plan" = all ]; then
   run arm1-6-filed3 0.20 --entities 6 --filed 3

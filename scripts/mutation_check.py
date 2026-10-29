@@ -246,6 +246,9 @@ M = [
     ("loop.py", "tool files not recorded", "                        **checks.files_in_result(out),\n", ""),
     ("sim.py", "sim checker blind", "            wrong = contradicted(q, packet)", '            wrong = ""'),
     ("cli.py", "run ignores the verifier settings", "                  verify_view=args.verify_view, verify_sources=args.verify_sources)", "                  )"),
+    ("verify_bench.py", "a FAIL names the error by echoing the product",
+     '        named = built.error["own"] in checks.named_in(said.replace(built.product.claim, ""), corpus)',
+     '        named = built.error["own"] in checks.named_in(said, corpus)'),
     ("verify_bench.py", "error gives the arithmetic away", "    total = round(sum(figures.values()), 1)", "    total = round(sum(suite.companies[n].revenue[q] for n in names), 1)"),
 ]
 

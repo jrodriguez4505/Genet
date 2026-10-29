@@ -70,6 +70,6 @@ echo
 echo "== verify bench"
 "$PY" -m taskorg.cli verify-bench --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.40 \
   --record "data/tapes/verify-$stamp.jsonl" --out "data/compare/verify-$stamp.json" 2>&1 \
-  | tee "data/compare/verify-$stamp.log" | grep -E "^\[|^\| |stopped|interrupted|^tape|^saved|^Reviews" | grep -v "^| setup\|^|---"
+  | tee "data/compare/verify-$stamp.log" | grep --line-buffered -E "^\[|^\| |stopped|interrupted|^tape|^saved|^Reviews" | grep --line-buffered -v "^| setup\|^|---"
 echo
 echo "Done. Results: data/compare/verify-$stamp.json   Tape: data/tapes/verify-$stamp.jsonl"

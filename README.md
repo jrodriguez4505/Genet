@@ -196,7 +196,7 @@ The arithmetic always adds up, so it never gives an error away. Each product is 
 - `shared-full` and `shared-layered`;
 - `independent-full` and `independent-layered`.
 
-The report shows wrong products caught (by kind), right products failed, how often the company's own file was among the sources, and tokens a review. `scripts/verify_runs.sh` runs it on Claude Haiku 5.5, capped and taped. On the simulated reader, a perfect checker of what it is shown, `full` catches every planted error, `layered` every look-alike one, and `today` none.
+The report shows wrong products caught (by kind), how many of those FAILs name the planted company, right products failed, how often the company's own file was among the sources, and tokens a review. `scripts/verify_runs.sh` runs it on Claude Haiku 5.5, capped and taped. On the simulated reader, a perfect checker of what it is shown, `full` catches every planted error, `layered` every look-alike one, and `today` none. On Haiku 5.5, `today` caught 2 of 12, `full` 12 of 12 in either view, and `layered` 9 of 12 for the right reason in either view. No setup failed a right product.
 
 ```bash
 python -m taskorg.cli verify-bench                          # simulated reader, 120 reviews, $0
@@ -226,9 +226,10 @@ Every live run so far is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_T
 - **One agent was enough, and was the most accurate.** On the default questions, with every fix, single, crew and Genet each got every answer on Haiku 5.5, and Sonnet 5.5 did too at eleven times the cost. Asked about 5, 10 and 20 companies at once, about 84,000 tokens a task at the largest, a single agent still got every answer. On this model and these tasks there was no loss for a split to recover, so splitting for quality is not shown.
 - **Headcount cost accuracy.** The always-split crew went from 8 of 8 to 5 of 8 and 5 of 7 as the questions grew, losing answers in hand-offs and merges. It cost 1.8 to 2.5 times a single agent on small questions; past about 10 companies it cost less, but about the same per right answer.
 - **Genet stayed one agent wherever the work fit,** at 1.2 to 1.6 times a single agent's tokens: its planning call, which on a real model costs about as much as a working call. With half of each question's companies already filed, it was the cheapest strategy of all. Haiku's crew lead left filed work out of its plan by itself, so Genet's first gate had nothing to refuse.
+- **A verifier catches what it is shown.** Without sources, Haiku's verifier passed 10 of 12 planted errors, catching only the two whose own evidence quoted the wrong year. Given every file, it caught all 12 and failed none of 12 right products, at about six times a review's tokens. The layered pick caught every look-alike error at 1.6 times. Leaving out the author's notes made no measurable difference.
 - **Judging fit before the work is unreliable.** At a tight cap, the lead told the limit still judged work too big for one call to fit, and the gates' estimate from file sizes ran short, because searches pull in look-alike files.
 
-On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 14 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Twelve are fixed. The fix for the verifier, sources and an independent view, is built and waits for its live run. Judging fit before the work starts is open.
+On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 14 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Twelve are fixed. The fix for the verifier is built and measured, and is off by default: with every source, it caught all 12 planted errors on Haiku 5.5. Judging fit before the work starts is open.
 
 ## Live model (optional)
 
@@ -361,7 +362,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 199 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 199 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 200 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 200 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 

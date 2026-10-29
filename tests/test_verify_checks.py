@@ -279,6 +279,33 @@ def test_bench_on_the_sim_is_a_ceiling_for_each_setup():
     for setup in ("shared-layered", "independent-layered"):
         assert s[setup]["by_kind"]["look-alike"] == 1.0 and s[setup]["sources_mean"] < 4
     assert all(v["false_fail"] == 0.0 and v["errors"] == 0 for v in s.values())
+    assert all(v["named"] == v["caught"] for v in s.values())  # the sim's FAIL names the figure it found
+
+
+class Says(ModelAdapter):
+    name = "says"
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def act(self, brief: Brief) -> Artifact:
+        return Artifact(claim=self.text, evidence=[], uncertainty="u", channel_id="c", context_update="", requests=[])
+
+
+def test_a_fail_names_the_error_only_outside_its_echo_of_the_product(tmp_path):
+    """A verifier can fail a wrong product for another reason; repeating the product's list is not naming."""
+    task, _, built = next(i for i in vb.products(_suite(1)) if i[2].kind == "look-alike")
+    company = built.error["company"]
+    other = next(n for n in task.entities if company not in n and n not in company)
+    says = {
+        f"FAIL: {company} {built.error['stated']:.1f} is a look-alike's figure.": True,
+        f"FAIL. {built.product.claim} The figures are not all shown from the notes.": False,
+        f"FAIL: {other} is not supported by an opened file.": False,
+        "PASS": None,
+    }
+    for text, named in says.items():
+        res, _, _ = _review(tmp_path, "today", adapter=Says(text))
+        assert res.named is named, text
 
 
 def test_the_bench_stops_at_a_spend_cap():

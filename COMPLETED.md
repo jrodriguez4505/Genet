@@ -29,9 +29,18 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 
 **Unchanged by default.** With neither flag, the verifier's brief is byte for byte what it was. The 28 October tapes replay on the new code with no missing requests and the same results.
 
+**On Haiku 5.5** (29 October, 120 reviews, $0.21; `docs/LIVE_TESTS.md`):
+- `today` caught 2 of 12 planted errors, only where the product's own quote showed the wrong year;
+- `full` caught 12 of 12 in both views;
+- `layered` caught every look-alike error, and 9 of 12 in all for the right reason, in both views;
+- no setup failed a right product;
+- leaving out the author's notes made no measurable difference.
+
+The bench now also counts FAILs that name the planted company, since one FAIL was for another company's figure. The run scripts' progress filter is line-buffered, so the `[n/N]` lines show as they happen.
+
 **Decided, not built yet.** The README's "workers that spawn workers" refusal is lifted for nesting, which keeps the gates, a depth limit and a reserved budget (`docs/TEAM_DESIGN.md`, part 3).
 
-- `tests/test_verify_checks.py` (27 tests), and 13 new mutations, for 199, all caught.
+- `tests/test_verify_checks.py` (28 tests), and 14 new mutations, for 200, all caught.
 
 ## v0.6.0 — October 2026: testing the concept, and what it shows
 
