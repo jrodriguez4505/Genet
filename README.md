@@ -186,7 +186,20 @@ The claim under test: genet matches the better baseline's accuracy at close to s
 
 Three options test the concept itself, each off by default so the default suite never changes: `--entities N` asks aggregate and breadth questions over N companies, from a pool of 38 with 12 look-alike pairs; `--distractors N` adds N wrong-year figures to each company's notes, phrased like the real ones; and `--filed N` gives N of each question's companies already filed and checked, in the task's context, and marks them covered, so a sub-agent for one of them would repeat finished work. `scripts/concept_runs.sh` runs both arms on Claude with one key entry, a cap and a tape per run.
 
+`verify-bench` measures the verifier on its own. Real runs give too few wrong products to count catches, so it builds them:
+- four products for each aggregate question, the way a lead's product reads;
+- one right, one right with other evidence, one with a company's figure taken from its look-alike's file, and one with the FY2025 figure;
+- each with the record its author would have left.
+
+The arithmetic always adds up, so it never gives an error away. Each product is reviewed under five setups:
+- `today`;
+- `shared-full` and `shared-layered`;
+- `independent-full` and `independent-layered`.
+
+The report shows wrong products caught (by kind), right products failed, how often the company's own file was among the sources, and tokens a review. `scripts/verify_runs.sh` runs it on Claude Haiku 5.5, capped and taped. On the simulated reader, a perfect checker of what it is shown, `full` catches every planted error, `layered` every look-alike one, and `today` none.
+
 ```bash
+python -m taskorg.cli verify-bench                          # simulated reader, 120 reviews, $0
 python -m taskorg.cli compare --dry-run                     # the plan and call ceiling; calls no model
 python -m taskorg.cli compare --adapter sim                 # deterministic reader: structural cost at $0
 python -m taskorg.cli compare --adapter live --per-family 2 # pilot: 24 trials
@@ -215,7 +228,7 @@ Every live run so far is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_T
 - **Genet stayed one agent wherever the work fit,** at 1.2 to 1.6 times a single agent's tokens: its planning call, which on a real model costs about as much as a working call. With half of each question's companies already filed, it was the cheapest strategy of all. Haiku's crew lead left filed work out of its plan by itself, so Genet's first gate had nothing to refuse.
 - **Judging fit before the work is unreliable.** At a tight cap, the lead told the limit still judged work too big for one call to fit, and the gates' estimate from file sizes ran short, because searches pull in look-alike files.
 
-On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 13 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, and a harness example that primed a look-alike mix-up. Twelve are fixed; judging fit before the work starts is open.
+On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 14 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Twelve are fixed. The fix for the verifier, sources and an independent view, is built and waits for its live run. Judging fit before the work starts is open.
 
 ## Live model (optional)
 
@@ -289,6 +302,28 @@ Name the criteria with `--criteria`. The defaults, "default task" and "purpose",
 
 The verifier always gets its call. When a split is judged, the gates reserve the merge, including the tool rounds it needs to cover a part no sub-agent took, and the verify call. A single agent's work and a rework stop their tool rounds in time to leave that call.
 
+### What the verifier checks against
+
+By default the verifier sees three things:
+- the product;
+- up to 12 of its evidence lines;
+- the shared context, which carries every member's notes.
+
+It has no tools. On 28 October that let a wrong total through. The verifier could not open a source, and it read the author's own note that look-alike files were excluded. Two settings change that. Run commands, `compare` and `verify-bench` all take them:
+
+| Flag | Values | What it does |
+|---|---|---|
+| `--verify-view` | `shared` (default), `independent` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. |
+| `--verify-sources` | `none` (default), `layered`, `full` | The kernel opens workspace files and puts them in the verifier's brief. See below. |
+
+What each mode opens:
+- **`full`:** every file the goal names, the product cites or its uncertainty names, or the run read.
+- **`layered`:** first, any file the goal names that no call in the run read or searched. The product has something for that subject, so it came from somewhere else. Then the files the product's uncertainty names. Then two at random from what the goal names or the product cites.
+
+The kernel picks the files from the run's record and the product's text. The author does not pick them, and neither does the verifier. Files go in up to the per-call limit, and the brief says how many did not fit. The record holds every pick and why, so the same product opens the same files and a tape replays.
+
+With sources on, the kernel also checks, in code, that every evidence quote is in the file it cites, and tells the verifier which are not. The verdict stays the verifier's, and the criteria checks above still apply. Both flags are off by default, so a run that sets neither sends the requests it always did.
+
 ## Diagnose
 
 `diagnose` reports health, the budget used and remaining, and every gate verdict and tool call. It shows what became of each part under `team`, and the run's review when anything failed. It also reports isolation: whether any sub-agent's brief carried another sub-agent's result. That is checked at call time over the whole brief, and the verdict survives save and load.
@@ -304,7 +339,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 1,440 checks with no network and no key:
+`pytest -q` runs about 1,480 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -319,10 +354,14 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Concept suite.** `tests/test_concept_suite.py`: the default suite's fingerprint, the new options, and a perfect reader that gets every scaled task right under every strategy.
 - **Live findings.** `tests/test_live_findings.py`, one test per problem the live runs found: `claim` named as the product, the verifier given the reworked product and only that, the harness asking for what grading accepts and saying which months make each quarter, and a size estimate that does not undercount Claude's tokens, proposals read whole rather than split on spaces, plan prompts that show a real proposal, and a verifier that reads the evidence given with the product.
 - **Live readiness.** `tests/test_readiness.py`, for gaps found in the past live data: room for the reply, one retry for a malformed reply (over HTTP too), the warning for default criteria, and a verifier that checks the goal.
+- **Independent verifier.** `tests/test_verify_checks.py`, covering three areas:
+  - what the verifier sees: the default brief is as it was, and the independent view leaves out the author's notes;
+  - which files the kernel opens and why: the longest name first, and the same picks for the same product, trimmed to the per-call limit;
+  - the quote check, the record of what the tools showed, and the verify bench: arithmetic that never gives an error away, and the simulated reader as each setup's ceiling.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 186 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 186 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 199 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 199 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -350,7 +389,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.6.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
+v0.7.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

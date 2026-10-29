@@ -202,6 +202,15 @@ class Toolbox:
             return None
         return data.decode("utf-8", errors="replace")
 
+    def shown_files(self) -> list[str]:
+        """Every readable workspace file, by the name the model sees, in path order."""
+        return [self._shown(p) for p in self._walk() if self._text(p) is not None]
+
+    def text_of(self, raw: str) -> str | None:
+        """A workspace file's whole text, for the kernel's own checks. It never goes into a brief."""
+        path = self._resolve(raw)
+        return self._text(path) if path is not None and path.is_file() else None
+
     def file_sizes(self) -> list[int]:
         """Estimated tokens of each workspace file, four characters a token, as much as one read returns."""
         sizes = []

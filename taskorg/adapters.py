@@ -25,6 +25,8 @@ class Brief:
     # The most the reply may run to: what is left of the per-call cap after the brief. The kernel sets
     # it before each call; an adapter that can, asks the endpoint to stop the reply there.
     max_reply_tokens: int | None = None
+    # A verifier's view (checks.VIEWS), for the record. It never reaches the model.
+    view: str = ""
 
 
 class ModelAdapter:

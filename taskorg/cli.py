@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 
 from .budget import Budget
+from .checks import SOURCES, VIEWS
 from .errors import InvariantError
 from .factory import new_run
 from .gates import Subtask, World
@@ -16,6 +17,7 @@ from .persist import load_run, save_run
 from .reads import attach_reads
 from .subtasks import parse_subtasks
 from .tools import Toolbox
+from .verify_bench import SETUPS as VERIFY_SETUPS
 
 
 DEFAULT_GUIDELINES = """# Genet guidelines (v1)
@@ -88,6 +90,10 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--split-policy", default="measured", choices=["measured", "stated"],
                    help="measured: fan out only for declared isolation or material that does not fit one context; "
                         "stated: the lead's named reasons are enough")
+    p.add_argument("--verify-view", default="shared", choices=list(VIEWS),
+                   help="what the verifier sees: shared (every note), independent (not the author's notes)")
+    p.add_argument("--verify-sources", default="none", choices=list(SOURCES),
+                   help="workspace files the kernel opens for the verifier: none, layered or full")
     _add_budget_args(p)
 
 
@@ -125,7 +131,8 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
             raise InvariantError("READ", f"workspace is not a directory: {root}")
     toolbox = Toolbox(roots=args.workspace, files=args.read)
     return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
-                  split_policy=args.split_policy, isolation_required=args.isolate, lessons=not args.no_lessons)
+                  split_policy=args.split_policy, isolation_required=args.isolate, lessons=not args.no_lessons,
+                  verify_view=args.verify_view, verify_sources=args.verify_sources)
 
 
 def _out_path(raw: str | None, default: Path) -> Path:
@@ -376,8 +383,34 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--record", default=None, help="save every model exchange to this tape, to replay with no key")
     p_c.add_argument("--replay", default=None, help="answer from this tape instead of a model: no key, no spend")
     p_c.add_argument("--out", default=None, help="results JSON (default data/compare/compare-<time>.json)")
+    p_c.add_argument("--verify-view", default="shared", choices=list(VIEWS),
+                     help="what the verifier sees: shared (every note), independent (not the author's notes)")
+    p_c.add_argument("--verify-sources", default="none", choices=list(SOURCES),
+                     help="sources the kernel opens for the verifier: none, layered or full")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
+
+    p_v = sub.add_parser("verify-bench", help="does the verifier catch a wrong product? products with planted errors")
+    p_v.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
+                     help="sim: a perfect checker of what it is shown, at $0; live or anthropic: a real model")
+    p_v.add_argument("--setups", default=",".join(VERIFY_SETUPS), help=f"from {', '.join(VERIFY_SETUPS)}")
+    p_v.add_argument("--questions", type=_whole(1), default=6, help="aggregate questions; four products each, two wrong")
+    p_v.add_argument("--entities", type=_whole(2), default=20, help="companies per question")
+    p_v.add_argument("--distractors", type=_whole(0), default=6, help="extra wrong-year figures per company")
+    p_v.add_argument("--repeat", type=_whole(1), default=1)
+    p_v.add_argument("--seed", type=int, default=7)
+    p_v.add_argument("--max-calls", type=_whole(1), default=4, help="per-review call cap")
+    p_v.add_argument("--context", type=_whole(1), default=200_000, help="per-call token cap")
+    p_v.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens")
+    p_v.add_argument("--price-out", type=_finite(0, strict=False), default=None, help="$ per 1M output tokens")
+    p_v.add_argument("--max-spend", type=_finite(0, strict=True), default=None,
+                     help="$ cap: stop before a review that could pass it (needs --price-in and --price-out)")
+    p_v.add_argument("--record", default=None, help="save every model exchange to this tape")
+    p_v.add_argument("--replay", default=None, help="answer from this tape: no key, no spend")
+    p_v.add_argument("--corpus", default=None, help="also write the corpus here, to read it")
+    p_v.add_argument("--out", default=None, help="results JSON (default data/compare/verify-<time>.json)")
+    p_v.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
+    p_v.set_defaults(func=cmd_verify_bench)
 
     p_d = sub.add_parser("diagnose", help="performance and interaction at every level")
     p_d.add_argument("path")
@@ -409,6 +442,44 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as e:  # a path that is missing, a directory, or not writable
         print(json.dumps({"ok": False, "halt": True, "code": "IO", "error": f"{type(e).__name__}: {e}"}, indent=2))
         return 1
+
+
+def _model_source(args: argparse.Namespace, config: dict, header_key: str, code: str, keys: tuple[str, ...]):
+    """The adapter each trial gets: a tape's replies (--replay), or a model, whose exchanges --record saves.
+    Returns (factory, player, recorder). A replayed tape whose recorded settings differ is noted."""
+    from .compare import stderr
+
+    player = recorder = None
+    if args.replay:
+        from .tape import Player, replay_adapter
+
+        player = Player(Path(args.replay))
+        recorded = player.header.get(header_key)
+        recorded = recorded if isinstance(recorded, dict) else {}
+        differ = [k for k in keys if k in recorded and recorded[k] != config.get(k)]
+        if differ:
+            stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
+        config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}
+
+        def factory():
+            return replay_adapter(player)
+    else:
+        first = pick_adapter(args.adapter)  # fail fast on missing live configuration
+        if args.record:
+            if not hasattr(first, "tape_header"):
+                raise InvariantError(code, "--record needs a model adapter: live or anthropic")
+            from .tape import Recorder
+
+            config["model"] = first.model
+            recorder = Recorder(Path(args.record), first.tape_header() | {header_key: dict(config)})
+            config["tape"] = str(args.record)
+
+        def factory():
+            adapter = pick_adapter(args.adapter)
+            if recorder:
+                adapter.tape = recorder
+            return adapter
+    return factory, player, recorder
 
 
 def cmd_compare(args: argparse.Namespace) -> int:
@@ -443,6 +514,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         "per_family": args.per_family, "repeat": args.repeat, "seed": args.seed,
         "entities": args.entities, "distractors": args.distractors, "filed": args.filed,
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
+        "verify_view": args.verify_view, "verify_sources": args.verify_sources,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
     if args.price_in is not None:
@@ -452,38 +524,11 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if args.dry_run:
         print(json.dumps(config | {"tasks": [t.question for t in suite.tasks]}, indent=2))
         return 0
-    player = recorder = None
-    if args.replay:
-        from .tape import Player, replay_adapter
-
-        player = Player(Path(args.replay))
-        recorded = player.header.get("compare")
-        recorded = recorded if isinstance(recorded, dict) else {}
-        differ = [k for k in ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors",
-                              "filed", "max_calls_per_trial", "context_tokens", "tool_rounds")
-                  if k in recorded and recorded[k] != config[k]]
-        if differ:
-            stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
-        config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}
-
-        def factory():
-            return replay_adapter(player)
-    else:
-        first = pick_adapter(args.adapter)  # fail fast on missing live configuration
-        if args.record:
-            if not hasattr(first, "tape_header"):
-                raise InvariantError("COMPARE", "--record needs a model adapter: live or anthropic")
-            from .tape import Recorder
-
-            config["model"] = first.model
-            recorder = Recorder(Path(args.record), first.tape_header() | {"compare": dict(config)})
-            config["tape"] = str(args.record)
-
-        def factory():
-            adapter = pick_adapter(args.adapter)
-            if recorder:
-                adapter.tape = recorder
-            return adapter
+    factory, player, recorder = _model_source(
+        args, config, "compare", "COMPARE",
+        ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors", "filed",
+         "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources"),
+    )
     if args.corpus:
         suite.write_corpus(args.corpus)
     try:
@@ -497,11 +542,80 @@ def cmd_compare(args: argparse.Namespace) -> int:
             corpus_dir=Path(args.corpus) if args.corpus else None,
             progress=stderr,
             stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
+            verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources},
         )
     finally:
         if recorder:
             recorder.close()
     if len(results) < trials:
+        config["stopped_after"] = len(results)
+    summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
+    save(out, config=config, results=results, summary=summary)
+    print(render(summary))
+    if player:
+        print(f"replay: {player.served} replies served ({player.repeated} repeated), "
+              f"{player.misses} requests the tape does not have")
+    if recorder:
+        print(f"tape: {recorder.count} exchanges saved to {args.record}")
+    print(f"saved {out}")
+    return 0
+
+
+def cmd_verify_bench(args: argparse.Namespace) -> int:
+    import time
+
+    from .compare import comparison_budget, spend_cap, stderr
+    from .suite import build_suite
+    from .verify_bench import products, render, run_bench, save, summarize
+
+    setups = tuple(dict.fromkeys(s.strip() for s in args.setups.split(",") if s.strip()))
+    bad = set(setups) - set(VERIFY_SETUPS)
+    if not setups or bad:
+        raise InvariantError("VERIFY_BENCH", f"name setups from {list(VERIFY_SETUPS)}" + (f"; unknown: {sorted(bad)}" if bad else ""))
+    if (args.price_in is None) != (args.price_out is None):
+        raise InvariantError("VERIFY_BENCH", "give both --price-in and --price-out, or neither")
+    if args.max_spend is not None and args.price_in is None:
+        raise InvariantError("VERIFY_BENCH", "--max-spend needs --price-in and --price-out")
+    if args.record and args.replay:
+        raise InvariantError("VERIFY_BENCH", "--record or --replay, not both")
+    try:
+        suite = build_suite(seed=args.seed, per_family=args.questions, families=("aggregate",),
+                            entities=args.entities, distractors=args.distractors)
+    except ValueError as e:
+        raise InvariantError("VERIFY_BENCH", str(e)) from None
+    items = products(suite)
+    reviews = len(items) * len(setups) * args.repeat
+    out = _out_path(args.out, Path(f"data/compare/verify-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    config = {
+        "adapter": "replay" if args.replay else args.adapter, "setups": list(setups), "questions": args.questions,
+        "entities": args.entities, "distractors": args.distractors, "repeat": args.repeat, "seed": args.seed,
+        "max_calls_per_review": args.max_calls, "context_tokens": args.context,
+        "products": len(items), "wrong_products": sum(b.error is not None for _, _, b in items), "reviews": reviews,
+    }
+    if args.price_in is not None:
+        config |= {"price_in": args.price_in, "price_out": args.price_out}
+    if args.max_spend is not None:
+        config["max_spend"] = args.max_spend
+    if args.dry_run:
+        print(json.dumps(config, indent=2))
+        return 0
+    factory, player, recorder = _model_source(
+        args, config, "verify_bench", "VERIFY_BENCH",
+        ("setups", "questions", "entities", "distractors", "repeat", "seed", "max_calls_per_review", "context_tokens"),
+    )
+    if args.corpus:
+        suite.write_corpus(args.corpus)
+    try:
+        results = run_bench(
+            suite, factory, setups=setups, repeats=args.repeat,
+            budget_factory=lambda: comparison_budget(args.max_calls, args.context),
+            corpus_dir=Path(args.corpus) if args.corpus else None, progress=stderr,
+            stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
+        )
+    finally:
+        if recorder:
+            recorder.close()
+    if len(results) < reviews:
         config["stopped_after"] = len(results)
     summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
     save(out, config=config, results=results, summary=summary)

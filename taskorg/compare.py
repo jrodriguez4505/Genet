@@ -159,7 +159,10 @@ def run_trial(
     tool_rounds: int = 3,
     repeat: int = 0,
     store_root: Path | None = None,
+    verify: dict | None = None,
 ) -> TrialResult:
+    """One task under one strategy. verify: the verifier's view and sources (Engine's verify_view and
+    verify_sources), the same for every strategy."""
     with tempfile.TemporaryDirectory() as tmp:
         store = MemoryStore(store_root or Path(tmp))
         run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=PURPOSE, done_when=DONE_WHEN)
@@ -169,7 +172,7 @@ def run_trial(
             run.world = World(existing_channels=[slug(n) for n in task.filed])
         engine = STRATEGIES[strategy](
             store, adapter=adapter, budget=budget,
-            toolbox=Toolbox(roots=[corpus_dir]), max_tool_rounds=tool_rounds,
+            toolbox=Toolbox(roots=[corpus_dir]), max_tool_rounds=tool_rounds, **(verify or {}),
         )
         code = ""
         started = time.perf_counter()
@@ -215,6 +218,7 @@ def run_comparison(
     corpus_dir: Path | None = None,
     progress: Callable[[str], None] | None = None,
     stop_when: Callable[[list[TrialResult]], str] | None = None,
+    verify: dict | None = None,
 ) -> list[TrialResult]:
     """Every task under every strategy, interleaved so drift in the endpoint hits all strategies alike.
 
@@ -233,7 +237,8 @@ def run_comparison(
                             if progress:
                                 progress(f"stopped after {len(results)} of {total} trials: {reason}")
                             return results
-                        res = run_trial(task, strategy, adapter_factory(), root, budget=budget_factory(), tool_rounds=tool_rounds, repeat=r)
+                        res = run_trial(task, strategy, adapter_factory(), root, budget=budget_factory(), tool_rounds=tool_rounds,
+                                        repeat=r, verify=verify)
                         results.append(res)
                         if progress:
                             mark = "ok " if res.correct else ("~  " if res.answer_right else "x  ")

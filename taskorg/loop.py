@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .adapters import TOOL_RESULTS, Brief, OperatorQuestion, ModelAdapter, StubAdapter
+from . import checks
 from .budget import Budget
 from .cues import fire_auto_cues
 from .errors import InvariantError
@@ -226,6 +227,9 @@ class Engine:
         isolation_required: bool = False,
         fit_fraction: float = 0.5,
         lessons: bool = True,
+        verify_view: str = "shared",
+        verify_sources: str = "none",
+        verify_sample: int = checks.SAMPLE,
     ):
         self.store = store
         self.adapter = adapter or StubAdapter()
@@ -241,6 +245,14 @@ class Engine:
         self.fit_fraction = fit_fraction
         # After a failed run, write its lessons to the shared guidelines every agent reads.
         self.lessons = lessons
+        # What the verifier reads the product against (checks.py): its view, and the sources the kernel opens.
+        if verify_view not in checks.VIEWS:
+            raise ValueError(f"verify_view must be one of {checks.VIEWS}, got {verify_view!r}")
+        if verify_sources not in checks.SOURCES:
+            raise ValueError(f"verify_sources must be one of {checks.SOURCES}, got {verify_sources!r}")
+        self.verify_view = verify_view
+        self.verify_sources = verify_sources
+        self.verify_sample = max(0, int(verify_sample))
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
         # Calls started but not yet recorded, per run. Admission counts them, so parallel
@@ -318,18 +330,29 @@ class Engine:
         """context overrides the live context. Workers get the context as it stood at the
         split, so a sibling's update never reaches their brief."""
         slot = slot or next(s for s in run.state.slots if s.function == function)
+        keep = None
+        view = ""
         if function == "verifier":
             crit = "; ".join(run.state.success_criteria)
+            view = self.verify_view
+            independent = view == "independent"
             # The product under review, named as such: a model reads a section called BRIEF as its brief.
-            extra = (
-                f"PRODUCT UNDER REVIEW (the lead's current product, the same as WORKING product)\n{extra}\n" if extra else ""
-            ) + (
+            head = "PRODUCT UNDER REVIEW (the lead's current product)" if independent else (
+                "PRODUCT UNDER REVIEW (the lead's current product, the same as WORKING product)")
+            extra = (f"{head}\n{extra}\n" if extra else "") + (
                 "VERIFIER RULE: claim MUST start with PASS or FAIL. "
                 "PASS only if the product itself meets every success criterion. "
                 "Your own evidence does not count toward a criterion. "
                 f"Criteria: {crit}. Do not use the context as the claim."
             )
-        packet = self.store.scoped_brief(run.id, extra, channel_id=slot.channel_id)
+            if independent:
+                # Not the author's notes: the context as the operator gave it, and none of working memory's
+                # product or sub-agent reports. The product reaches it once, under PRODUCT UNDER REVIEW.
+                keep = checks.INDEPENDENT_FACTS
+                if context is None:
+                    given = self.store.working_facts(run.id).get("context")
+                    context = given if isinstance(given, str) and given else run.state.context
+        packet = self.store.scoped_brief(run.id, extra, channel_id=slot.channel_id, keep=keep)
         return Brief(
             slot_function=slot.function,
             skill=slot.skill,
@@ -343,6 +366,7 @@ class Engine:
             tools=list(slot.tools),
             success_criteria=list(run.state.success_criteria),
             mode=mode,
+            view=view,
         )
 
     def _call(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
@@ -407,6 +431,7 @@ class Engine:
             "heard_channels": heard,
             "adapter": getattr(self.adapter, "name", ""),
             "tokens_estimated": not usage_real,
+            **({"view": brief.view} if brief.view else {}),
         }
 
     def _call_and_record(self, run: Run, brief: Brief, slot: Slot | None, size: int, heard: list[str]) -> Artifact:
@@ -492,6 +517,8 @@ class Engine:
                         "channel": brief.channel_id,
                         "request": str(req)[:200],
                         "chars": len(out),
+                        # The files it showed, so a check later knows what the run saw and what it never did.
+                        **checks.files_in_result(out),
                     })
             brief = replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join(results))
             art = self._call(run, brief, slot)
@@ -658,10 +685,47 @@ class Engine:
         b = run.budget
         return (b.max_calls - len(run.calls)) if b else 1 << 30
 
+    def _verifier_brief(self, run: Run, product: Artifact) -> Brief:
+        """The verifier's brief: the product, in the engine's view, with the sources the kernel opened.
+
+        Sources go in as many as fit the per-call limit, in the order checks.pick ranks them, and the
+        brief says how many did not. What was opened, and why, goes on the record."""
+        extra = _for_review(product)
+        if self.verify_sources == "none":
+            return self._brief(run, "verifier", extra=extra, mode="verify")
+        names = self.toolbox.shown_files()
+        picks = checks.pick(run, product, names, self.verify_sources, sample=self.verify_sample)
+        flagged = checks.misquoted(self.toolbox, product, names)
+        if flagged:
+            extra += "\nKERNEL CHECK: these evidence quotes are not in the files they cite:\n" + "\n".join(f"- {f}" for f in flagged)
+        blocks = [checks.source_block(self.toolbox, name, why) for name, why in picks]
+        b = run.budget
+        limit = b.max_tokens_per_call - self._reply_room(run) if b else None
+        def with_sources(kept: list[str]) -> str:
+            more = len(blocks) - len(kept)
+            note = f"\n[{more} more source(s) not shown: over the per-call limit]" if more else ""
+            return extra + f"\n{checks.SOURCES_HEAD}\n" + "\n\n".join(kept) + note + f"\n{checks.SOURCE_RULE}"
+
+        shown: list[str] = []
+        for block in blocks:
+            body = with_sources(shown + [block])
+            if limit is not None and self.adapter.estimate_tokens(self._brief(run, "verifier", extra=body, mode="verify")) > limit:
+                break
+            shown.append(block)
+        if shown:
+            extra = with_sources(shown)
+        with self._lock:
+            run._record("verify_sources", {
+                "view": self.verify_view, "sources": self.verify_sources,
+                "picked": [{"file": name, "why": why} for name, why in picks],
+                "shown": len(shown), "misquoted": len(flagged),
+            })
+        return self._brief(run, "verifier", extra=extra, mode="verify")
+
     def _verify(self, run: Run, product: Artifact, *, adapt: bool) -> tuple[Artifact, bool]:
         """Check the product. On a failed check, change the method once if the tier and budget allow."""
         lead = run.state.lead_id
-        check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
+        check = self._act(run, self._verifier_brief(run, product))
         verified = _verifier_accepts(check, run, product)
         run.accept_artifact(check)
         if not verified:
@@ -683,7 +747,7 @@ class Engine:
             run.accept_artifact(product)
             # The reworked product replaces the last one everywhere the verifier looks.
             self.store.remember_working(run.id, "product", product.claim)
-            check = self._act(run, self._brief(run, "verifier", extra=_for_review(product), mode="verify"))
+            check = self._act(run, self._verifier_brief(run, product))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)
             if not verified:
