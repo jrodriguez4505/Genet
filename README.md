@@ -6,7 +6,7 @@ One organism. Many stems.
 
 **The question is not how many agents you can run. It is whether a second one is doing new work.**
 
-Genet is a small multi-agent runtime. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
+Genet is a small multi-agent runtime. Agent counts have become a headline number, with products advertising hundreds of sub-agents on one task, but a count says what was spent, not what was gained. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/patterns-dark.svg">
@@ -18,6 +18,24 @@ Genet is a small multi-agent runtime. Most stacks treat headcount as capacity; G
 The team is small, and every agent can switch skills, with specialists added only when a sub-task needs one. The lead owns the roster. The goal stays fixed while the method changes. Work fans out to sub-agents only when the task has independent parts, then merges back.
 
 Quality of process over quantity of agents: possibly more efficient, and possibly more effective. That stays a claim until measured. `taskorg compare` exists to measure it (see [Proving it](#proving-it)).
+
+## The team
+
+Genet is built for a small, cohesive team:
+
+- The lead knows what each member can do.
+- Members differ where it matters: in what they see, what they may open, and which model fills them. They do not differ by a persona in the prompt.
+- Everyone works from the same goal, purpose and done-when.
+- Responsibility is shared. Decisions and the outcome are the lead's.
+
+Every agent is the same model and could hold any skill. So a member is a position, not a kind of agent, and authority belongs to the position. Each member the team adds must do work the others could not.
+
+Built so far: an independent verifier, shown sources the kernel picks (see [Verification](#verification)). Designed, not built:
+- a lead that knows its members, from a record the kernel keeps;
+- teams that nest under the same gates;
+- a lead that can be replaced from the record.
+
+The design is in [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), and [ARCHITECTURE.md](ARCHITECTURE.md) maps the code.
 
 ## What it refuses
 
@@ -345,7 +363,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 1,480 checks with no network and no key:
+`pytest -q` runs about 1,490 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -397,7 +415,7 @@ This Genet is software, not the playwright.
 
 v0.7.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
 
-The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
+The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. [ARCHITECTURE.md](ARCHITECTURE.md) maps the modules and lists the open design questions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 
 ## Use, partnerships, commercial
 

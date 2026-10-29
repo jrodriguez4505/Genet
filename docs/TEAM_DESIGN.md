@@ -1,8 +1,10 @@
 # Team structure: design
 
-Status: proposal, 28 October 2026. Part 2, the independent verifier, is built (v0.7.0); the rest is not.
+Status: proposal, 28 October 2026. Part 2, the independent verifier, is built (v0.7.0); the rest is not. Part 7 was added on 29 October.
 
 ## What it must serve
+
+Genet started from agent counts used as a headline number. Products advertise hundreds of sub-agents on one task: [Kimi's Agent Swarm](https://www.kimi.com/help/agent/agent-swarm) runs up to 300. A count says what was spent, not what was gained.
 
 Genet's question is whether a second agent does new work. Its claim is the best baseline's accuracy at close to single-agent cost. This design keeps both. It adds a picture of the team that the kernel should serve:
 
@@ -41,7 +43,17 @@ Two copies of one model differ only in view, access and model. That gives four r
 
 Today's should-we gate measures two of these: material that does not fit is focus, and declared isolation is access. Independence and cost are new. Time saved by running in parallel is real too, but it is not one of Genet's measures and stays out of the gates.
 
-## Six parts
+### What every position shares
+
+Positions differ. What they share is what lets each member do more than it could alone:
+
+- the goal, its purpose and done-when;
+- the shared context, with every member's notes, except where a view leaves them out;
+- the guidelines and the lessons from past runs, which every brief carries;
+- the run's record, which the kernel writes, and from which come the lead's account, the review and the verifier's sources;
+- the kernel's rules, the same for every position.
+
+## Seven parts
 
 ### 1. Views are written rules
 
@@ -132,6 +144,24 @@ Any agent can fill any position, so authority cannot belong to an agent. It belo
 
 A skill can already have its own model. The test: a cheap model reads, and a stronger one leads or verifies. It needs a Sonnet run, so it waits for the operator's go-ahead on spend.
 
+### 7. The lead knows its members (proposed 29 October)
+
+Today the lead's plan brief names the skills and nothing more. It does not say what each skill can open, what a call costs, or how each has done before. Every agent is the same model, so knowing the members means knowing the positions: what a skill, its access and its model have done.
+
+- **A card for each position the lead can staff,** written by the kernel. It gives the skill, its tools, its model, and the measured cost of one of its calls.
+- **A record for each position from past runs,** kept in the store beside the lessons. It counts:
+  - parts done;
+  - parts verified;
+  - parts that failed, and how (`SCHEMA`, `LIVE`);
+  - parts the lead had to cover.
+
+  It is built from the record, never from model text. It is kept by position (skill and model), not by agent, because agents are copies.
+- **In the plan brief, bounded.** The cards go in a table of fixed size. They show counts, not scores, and a position's record shows only after three runs, so one bad run does not steer the lead.
+- **The gates do not read it.** It informs what the lead proposes, and the gates still decide with the same three checks.
+- Comparison trials each use a fresh store, as they do for lessons, and a flag turns the cards off.
+
+The test runs the same tasks with and without the cards. The sim shows only what the cards cost in tokens, because its reader ignores them. Haiku then shows whether they change the plan. Does a lead with the cards propose fewer parts that are refused or that fail, at the same accuracy and comparable tokens?
+
 ## What does not change
 
 - A single agent is the default.
@@ -149,19 +179,23 @@ This design makes a second claim testable: a team that beats its best member.
 
 If neither holds, Genet's claim stays as it stands, and its value stays governance and cost.
 
+A third result would not be new work by a member, but it would make the lead better at staffing: if a lead given its members' records proposes fewer parts that are refused or that fail, at the same accuracy, the records pay for their tokens.
+
 Each could fail in a specific way:
 
 - The independent verifier catches no more than today's, or fails right answers.
 - The layered check misses too much to matter.
 - Nesting's extra hand-offs lose more than the fresh context gains.
 - A handover drops something the old lead knew.
+- The cards cost tokens in every plan call and change no plan.
 
 ## Order
 
 1. The independent verifier: built in v0.7.0, with the full and layered checks and the verify bench, and run on Haiku 5.5 on 29 October (`docs/LIVE_TESTS.md`). Sources decided the catch: `full` caught 12 of 12, `layered` 9 of 12 for the right reason, `today` 2. The independent view made no measurable difference at this size.
-2. Nesting: sim at large sizes. Live only if the sim shows a case.
-3. Succession, together with re-planning on a measured overflow.
-4. Members that differ by model: on the operator's go-ahead.
+2. The lead knows its members: sim for cost, then Haiku. It comes before nesting because nesting multiplies the leads that plan.
+3. Nesting: sim at large sizes. Live only if the sim shows a case.
+4. Succession, together with re-planning on a measured overflow.
+5. Members that differ by model: on the operator's go-ahead.
 
 ## Decisions
 
@@ -184,12 +218,15 @@ A survey on 28 October 2026 covered about 40 searches across papers, framework d
 | Succession | A lead that saves its plan and starts fresh subagents, in [Anthropic's research system](https://www.anthropic.com/engineering/multi-agent-research-system). Progress files that let a fresh session continue, in [long-running harnesses](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents). A task ledger with replanning, in [Magentic-One](https://arxiv.org/html/2411.04468v1). | Partly done. Handing the lead of a live team to a successor, from a kernel-written record, was not found. |
 | Authority in code | Plans moved into code ([Claude Code workflows](https://code.claude.com/docs/en/workflows)). Hooks that can block task creation. Policy layers that approve or block actions ([arXiv 2606.04306](https://arxiv.org/abs/2606.04306)). Budget-constrained team selection done offline ([BAMAS](https://arxiv.org/abs/2511.21572)). | Partly done. Ordered admission gates for each proposed agent (covered already, then a measured reason, then affordable), with the model only proposing, were not found. |
 | Independent verifier | Verification prompts that leave out the original answer score better ([Chain-of-Verification, factored](https://arxiv.org/abs/2309.11495)). Reviewers given only a diff, from a clean context ([Cognition, April 2026](https://cognition.com/blog/multi-agents-working)). Models catch errors framed as someone else's that they miss as their own ([arXiv 2507.02778](https://arxiv.org/abs/2507.02778)). | Done as practice, with limits. Models agree about 60% of the time when both are wrong ([arXiv 2506.07962](https://arxiv.org/abs/2506.07962)). Verification gains shrink as solver and verifier grow alike, and cross-family checking works best ([arXiv 2512.02304](https://arxiv.org/abs/2512.02304)). No measurement was found that withholding the author's reasoning lowers error correlation between agents of one model. The verify bench measures that: on Haiku 5.5, over 24 products whose author note does not argue for the error, it made no difference. |
+| The lead knows its members (searched 29 October) | Executors described by capability, cost and tools, from which an orchestrator picks ([EASy](https://arxiv.org/abs/2608.04588)). Agents chosen by a reputation built from rated performance ([DRF](https://arxiv.org/abs/2509.05764)). Trust kept for each skill rather than one score for each agent ([arXiv 2606.14200](https://arxiv.org/abs/2606.14200)). Perfect delegation would beat measured delegation by 15 to 31 points ([arXiv 2605.19099](https://arxiv.org/abs/2605.19099)). | Mostly done. Profiles and track records exist. Here the kernel keeps them from the run record, by position rather than by agent, and they inform proposals that still pass the gates. |
 | "Does a second agent do new work?" | Add complexity only when it shows better results ([Building effective agents](https://www.anthropic.com/research/building-effective-agents)). At equal token budgets, single agents match or beat multi-agent systems on multi-hop reasoning, unless one agent's context is degraded ([Tran and Kiela](https://arxiv.org/abs/2604.02460)). | Partly done. That question as the rule checked for each agent at runtime, with the claim "the best baseline's accuracy at close to single-agent cost", was not found. Existing work reaches cheaper teams by searching designs offline. |
 
 **What looks new:**
 - the ordered admission gates in code, as the runtime test for each agent a lead proposes;
 - the same gates at every level once teams nest;
 - handing a live team's lead to a successor from a record the kernel writes.
+
+Part 7 is not on that list: profiles and track records already exist.
 
 **Closest analogy overall:** holacracy, which has roles, nested circles and authority held by a written constitution. It governs people, not models.
 
