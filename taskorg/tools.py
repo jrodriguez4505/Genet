@@ -71,14 +71,23 @@ def _snippet(line: str, pattern: re.Pattern, width: int = 300) -> str:
 
 
 class Toolbox:
-    def __init__(self, roots: list[str | Path] | None = None, files: list[str | Path] | None = None):
+    def __init__(self, roots: list[str | Path] | None = None, files: list[str | Path] | None = None,
+                 only: set[Path] | None = None):
         self.roots = [Path(r).resolve() for r in roots or []]
         self.files = {Path(f).resolve() for f in files or []}
+        # A sub-agent's toolbox: the same workspace, with only these files open to it.
+        self.only = {Path(f).resolve() for f in only} if only is not None else None
+
+    def scoped(self, paths) -> "Toolbox":
+        """The same workspace, open only at these files: a sub-agent's share and nothing of its siblings'."""
+        return Toolbox(roots=self.roots, files=self.files, only=set(paths))
 
     # --- sandbox ---
 
     def _allowed(self, path: Path) -> bool:
         """An attached file, or a path inside a root with no hidden part below that root."""
+        if self.only is not None and path not in self.only:
+            return False
         if path in self.files:
             return True
         return any(
@@ -140,7 +149,7 @@ class Toolbox:
                     return
                 yield path
         if not start:
-            yield from sorted(self.files)
+            yield from sorted(f for f in self.files if self.only is None or f in self.only)
 
     @staticmethod
     def _list(top: Path) -> list[Path]:
@@ -193,6 +202,15 @@ class Toolbox:
             return None
         return data.decode("utf-8", errors="replace")
 
+    def file_sizes(self) -> list[int]:
+        """Estimated tokens of each workspace file, four characters a token, as much as one read returns."""
+        sizes = []
+        for path in self._walk():
+            text = self._text(path)
+            if text is not None:
+                sizes.append(min(len(text), READ_CAP) // 4)
+        return sizes
+
     def material(self, channel: str, note: str = "") -> dict[str, int] | None:
         """The workspace files a sub-task covers, with estimated tokens each, or None if unknown.
 
@@ -215,32 +233,38 @@ class Toolbox:
 
     # --- tools ---
 
-    def run(self, request: str) -> str:
+    def run(self, request: str, have: set[Path] | None = None) -> str:
+        """have: the files this call already holds in full. A read adds to it, and neither a read nor a
+        search returns that text again, so a call carries one copy of each file however it asks."""
         name, arg = parse_request(request)
         if not self.roots and not self.files:
             return f"[{name}] no workspace attached"
         try:
             if name == "read":
-                return self.read(arg)
+                return self.read(arg, have)
             if name == "retrieve":
-                return self.retrieve(arg)
+                return self.retrieve(arg, have)
             if name == "observe":
                 return self.observe(arg)
         except _PATH_ERRORS as e:  # a request is model output; it never crashes the kernel
             return f"[{name}] could not run: {type(e).__name__}"
         return f"[{name[:ECHO_CAP]}] not a runnable tool; put the result in the artifact"
 
-    def read(self, raw: str) -> str:
+    def read(self, raw: str, have: set[Path] | None = None) -> str:
         path = self._resolve(raw)
         if path is None or not path.is_file():
             return f"[read {raw[:ECHO_CAP]}] not found in the workspace"
+        if have is not None and path in have:
+            return f"[read {self._shown(path)}] already in full above"
         text = self._text(path)
         if text is None:
             return f"[read {self._shown(path)}] binary or too large"
         more = f"\n[truncated at {READ_CAP} of {len(text)} chars]" if len(text) > READ_CAP else ""
+        if have is not None and not more:  # only a whole file makes its lines redundant
+            have.add(path)
         return f"[read {self._shown(path)}]\n{text[:READ_CAP]}{more}"
 
-    def retrieve(self, query: str) -> str:
+    def retrieve(self, query: str, have: set[Path] | None = None) -> str:
         """Lines that carry every term; a term also counts when it is in the file name.
 
         When no line carries every term, the closest lines (at least half the
@@ -256,8 +280,11 @@ class Toolbox:
         # The best MATCH_CAP partial matches only: most terms first, then earliest. Memory stays flat.
         partial: list[tuple[int, int, str]] = []
         n_partial = 0
-        scanned, stopped = 0, ""
+        scanned, stopped, held = 0, "", 0
         for path in self._walk():
+            if have and path.resolve() in have:
+                held += 1  # its lines are in the copy above
+                continue
             text = self._text(path)
             if text is None:
                 continue
@@ -281,6 +308,8 @@ class Toolbox:
                     if len(partial) < MATCH_CAP or item > partial[0]:
                         item = (hit, -n_partial, f"{self._shown(path)}:{n}: {_snippet(line, pattern)}")
                         (heapq.heappush if len(partial) < MATCH_CAP else heapq.heapreplace)(partial, item)
+        if held:
+            stopped += f"\n[{held} file(s) read in full above not searched again]"
         if full:
             return f"[retrieve {query}]\n" + "\n".join(full) + stopped
         if partial:

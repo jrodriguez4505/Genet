@@ -358,6 +358,11 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--strategies", default="single,always,genet")
     p_c.add_argument("--families", default="lookup,aggregate,compare,breadth")
     p_c.add_argument("--per-family", type=_whole(1), default=5)
+    p_c.add_argument("--entities", type=_whole(2), default=None,
+                     help="companies per aggregate and breadth question, from a larger pool (default 3 and 5)")
+    p_c.add_argument("--distractors", type=_whole(0), default=0, help="extra wrong-year figures per company")
+    p_c.add_argument("--filed", type=_whole(0), default=0,
+                     help="companies per aggregate and breadth question already filed, checked, in filed.md")
     p_c.add_argument("--repeat", type=_whole(1), default=1)
     p_c.add_argument("--seed", type=int, default=7)
     p_c.add_argument("--max-calls", type=_whole(1), default=40, help="per-trial call cap, same for every strategy")
@@ -427,11 +432,16 @@ def cmd_compare(args: argparse.Namespace) -> int:
         raise InvariantError("COMPARE", "--max-spend needs --price-in and --price-out")
     if args.record and args.replay:
         raise InvariantError("COMPARE", "--record or --replay, not both")
-    suite = build_suite(seed=args.seed, per_family=args.per_family, families=families)
+    try:
+        suite = build_suite(seed=args.seed, per_family=args.per_family, families=families,
+                            entities=args.entities, distractors=args.distractors, filed=args.filed)
+    except ValueError as e:
+        raise InvariantError("COMPARE", str(e)) from None
     trials = len(suite.tasks) * len(strategies) * args.repeat
     config = {
         "adapter": "replay" if args.replay else args.adapter, "strategies": list(strategies), "families": list(families),
         "per_family": args.per_family, "repeat": args.repeat, "seed": args.seed,
+        "entities": args.entities, "distractors": args.distractors, "filed": args.filed,
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
@@ -449,8 +459,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
         player = Player(Path(args.replay))
         recorded = player.header.get("compare")
         recorded = recorded if isinstance(recorded, dict) else {}
-        differ = [k for k in ("strategies", "families", "per_family", "repeat", "seed", "max_calls_per_trial",
-                              "context_tokens", "tool_rounds") if k in recorded and recorded[k] != config[k]]
+        differ = [k for k in ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors",
+                              "filed", "max_calls_per_trial", "context_tokens", "tool_rounds")
+                  if k in recorded and recorded[k] != config[k]]
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
         config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}

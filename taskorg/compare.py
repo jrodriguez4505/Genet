@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import functools
 import json
+import re
 import statistics
 import sys
 import tempfile
@@ -29,18 +30,20 @@ from .adapters import ModelAdapter
 from .budget import Budget
 from .errors import InvariantError
 from .factory import new_run
-from .gates import Assessment, Subtask, _could_we
+from .gates import Assessment, Subtask, World, _could_we
 from .loop import Engine
 from .memory_store import MemoryStore
 from .run import Run
 from .models import GATE_ORDER, MAX_WORKERS, SKILLS, GateRecord
 from .subtasks import parse_proposals
-from .suite import Suite, Task, extract_answer, grade
+from .suite import Suite, Task, extract_answer, grade, slug
 from .tools import Toolbox
 
 CONTEXT = (
-    "The workspace holds FY2026 operating notes, one markdown file per company, named after it "
-    "(for example halvorsen-freight.md for Halvorsen Freight). "
+    # The example is a company with no look-alike: one with a sister primed readers to map
+    # Halvorsen Freight Labs to halvorsen-freight.md.
+    "The workspace holds FY2026 operating notes, one markdown file per company, named after its full name "
+    "(for example orbrook.md for Orbrook). "
     "Figures are written in prose and the notes contain prior-year figures and look-alike company names. "
     "FY2026 is calendar 2026: Q1 is January to March, Q2 April to June, Q3 July to September, Q4 October to December. "
     "Use the files; do not guess."
@@ -57,6 +60,16 @@ DECOMPOSE_BRIEF = (
     "A worker that must search or read the workspace needs skill retrieve. "
     "claim: your plan in one or two sentences."
 )
+
+
+def task_context(task: Task) -> str:
+    """The shared context, plus the figures already filed for this question. They are in the context, so
+    every agent has them, and a sub-agent for one of them would repeat finished work."""
+    if not task.filed:
+        return CONTEXT
+    q = re.search(r"FY2026 (Q[1-4])", task.question).group(1)
+    done = "; ".join(f"{slug(n)} revenue {q} = {v:.1f} ({n}, $ millions)" for n, v in task.filed.items())
+    return CONTEXT + f" Already filed and checked for this question: {done}. Their notes need no second reading."
 
 
 class SingleAgent(Engine):
@@ -151,6 +164,9 @@ def run_trial(
         store = MemoryStore(store_root or Path(tmp))
         run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=PURPOSE, done_when=DONE_WHEN)
         run.state.success_criteria = ["ANSWER:"]
+        if task.filed:
+            # Parts already done: the run's world covers them, as --exists does for a live run.
+            run.world = World(existing_channels=[slug(n) for n in task.filed])
         engine = STRATEGIES[strategy](
             store, adapter=adapter, budget=budget,
             toolbox=Toolbox(roots=[corpus_dir]), max_tool_rounds=tool_rounds,
@@ -158,7 +174,7 @@ def run_trial(
         code = ""
         started = time.perf_counter()
         try:
-            engine.run_task(run, context=CONTEXT, operator_question="Could a single agent have done this?")
+            engine.run_task(run, context=task_context(task), operator_question="Could a single agent have done this?")
         except InvariantError as e:
             code = e.code
         except Exception:

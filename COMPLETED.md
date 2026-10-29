@@ -2,6 +2,25 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.6.0 — October 2026: testing the concept, and what it shows
+
+**Back to the concept.** Genet's question is whether a second agent does new work, and its claim is the best baseline's accuracy at close to single-agent cost. The comparison had never marked work as already done, so the first gate never ran in it, and its questions were too small for a single agent to struggle at a real context size; size had become the only "should we" reason. Three suite options now test the concept, each off by default (the default suite's fingerprint is tested): `--entities`, `--distractors` and `--filed`. `scripts/concept_runs.sh` runs both arms on Claude.
+
+**What the live runs show** (Haiku 5.5; `docs/LIVE_TESTS.md`). A single agent got every answer at 5, 10 and 20 companies a question, about 84,000 tokens a task at the largest, so splitting for quality is not shown on this model and these tasks. The always-split crew lost accuracy as the work grew (8 of 8, 5 of 8, 5 of 7), and cost less past about 10 companies but about the same per right answer. Genet stayed one agent wherever the work fit; with half of each question's companies already filed, it was the cheapest strategy. Haiku's crew lead left filed work out by itself, so the first gate had nothing to refuse.
+
+**Fixed, from three runs at a tight cap (4,000 tokens a call):**
+- **One copy of each file per call.** Haiku read each file and searched it too, so a call carried 2.4 times its files' text (up to 3.8). Reads run first in a round, and nothing read in full is returned again.
+- **Files measured in the model's tokens.** The gates counted four characters a token; Claude counts about 1.5 times that. Adapters carry a `token_ratio`.
+- **A sub-agent's tools open only its part.** Given the whole goal, each sub-agent read every company's file and overran the call its part was sized for. Its toolbox is now scoped to the files the gates measured, and its brief names them.
+- **The lead plans knowing the limit,** from a SIZE note in the plan brief, and **replies are asked to be brief** (at most 5 pieces of evidence, one-sentence uncertainty).
+
+**Fixed, from the concept experiments:** proposals past the cap of 16 are the lead's to cover, told by count, where they had been dropped; the simulated reader asks again for reads a round did not run; and the context's example of a file name is a company with no look-alike, after it primed readers to map Halvorsen Freight Labs to `halvorsen-freight.md`.
+
+**Open.** Judging fit before the work starts is unreliable on a real model: the lead misjudges it, and searches pull in look-alike files the gates do not count. A re-plan on a measured overflow would answer from what happened.
+
+- Sim figures, recounted: Genet 2,643 tokens a task against 2,068 for a single agent with a roomy context (1.28×), and 3,862 against 4,288 for the crew with a tight one (0.90×).
+- `tests/test_concept_suite.py`, more in `tests/test_live_findings.py`, and 14 new mutations, for 186, all caught.
+
 ## v0.5.0 — October 2026: Claude, a spend cap, and tapes
 
 **Claude through the Messages API.** `--adapter anthropic` uses the official SDK, an optional extra (`pip install -e '.[anthropic]'`); Genet itself still needs nothing. The prompts, the JSON gate and the token accounting are the live adapter's. The OpenAI-compatible adapter could not reach Claude: it sends `temperature: 0`, which current Claude models reject with a 400. The key is read from `TASKORG_ANTHROPIC_KEY` only, so a key exported for another tool is never spent and the live adapter's endpoint never receives it. Redirects are not followed. `TASKORG_MODEL_EFFORT` sets how much the model thinks; thinking tokens count as output and are recorded on their own. A refusal fails as `LIVE`, with its tokens counted.

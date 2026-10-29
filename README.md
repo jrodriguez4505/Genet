@@ -184,6 +184,8 @@ A product is graded on its last `ANSWER:` marker, in capitals; an "answer:" in p
 
 The claim under test: genet matches the better baseline's accuracy at close to single-agent cost. The report shows accuracy, tokens, calls, latency, split rate and aborts, overall and per family, plus cost when you give prices.
 
+Three options test the concept itself, each off by default so the default suite never changes: `--entities N` asks aggregate and breadth questions over N companies, from a pool of 38 with 12 look-alike pairs; `--distractors N` adds N wrong-year figures to each company's notes, phrased like the real ones; and `--filed N` gives N of each question's companies already filed and checked, in the task's context, and marks them covered, so a sub-agent for one of them would repeat finished work. `scripts/concept_runs.sh` runs both arms on Claude with one key entry, a cap and a tape per run.
+
 ```bash
 python -m taskorg.cli compare --dry-run                     # the plan and call ceiling; calls no model
 python -m taskorg.cli compare --adapter sim                 # deterministic reader: structural cost at $0
@@ -191,18 +193,29 @@ python -m taskorg.cli compare --adapter live --per-family 2 # pilot: 24 trials
 python -m taskorg.cli compare --adapter live --price-in 2 --price-out 10   # full: 60 trials, with cost
 ```
 
-The `sim` adapter is a deterministic reader, not a language model. It solves every task under every strategy, which shows the harness gives each strategy the facts it needs. Its token counts show what each strategy costs by structure alone. With a perfect reader, splitting never pays: a single agent is cheapest in every family. Splitting can only earn its cost if a real model reads worse with everything in one context. The live run is what measures that.
+The `sim` adapter is a deterministic reader, not a language model. It solves every task under every strategy, which shows the harness gives each strategy the facts it needs. Its token counts show what each strategy costs by structure alone. With a perfect reader, splitting rarely pays: a single agent is cheapest in every family of the default suite. Splitting can only earn its accuracy if a real model reads worse with everything in one context; the concept experiments measured that on Claude Haiku 5.5, below.
 
 What the simulated reader shows. These are structural results from a perfect reader, not model results:
 
 | Per-call context | Single agent | Always-split crew | Genet |
 |---|---|---|---|
-| Roomy, `--context 16000` | 100% · 2,082 tokens/task | 100% · 4,103 | 100% · 2,603 (1.25× single) |
-| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 4,103 | 100% · 3,697 (0.90× crew) |
+| Roomy, `--context 16000` | 100% · 2,068 tokens/task | 100% · 4,288 | 100% · 2,643 (1.28× single) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 4,288 | 100% · 3,862 (0.90× crew) |
 
-When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. Whether real models also read worse with everything in one context, which is the other reason to split, is what the live run measures.
+When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. At 20 companies a question, the simulated single agent costs 1.5 times the crew: it re-sends everything it has read every round.
 
-The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON. The first live pilot, on Claude Haiku 5.5, is in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). It found seven problems the simulation could not show, all fixed. Rerun with them fixed, single and Genet got 8 of 8 twice, the crew 8 and 7; with a roomy context Genet cost 1.53 and 1.60 times a single agent, because a real model's planning call costs about as much as a working call. On 16 trials with every fix, Haiku 5.5 (twice) and Sonnet 5.5 each got 16 of 16; Sonnet cost eleven times as much. At this cap every task fits one call, so these runs cannot show the case Genet is built for.
+The stub adapter drives the harness end to end but cannot answer, so its accuracy is 0 by design. Results are saved to `data/compare/` as JSON.
+
+### What the live runs show
+
+Every live run so far is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md) with tapes that replay it at no cost.
+
+- **One agent was enough, and was the most accurate.** On the default questions, with every fix, single, crew and Genet each got every answer on Haiku 5.5, and Sonnet 5.5 did too at eleven times the cost. Asked about 5, 10 and 20 companies at once, about 84,000 tokens a task at the largest, a single agent still got every answer. On this model and these tasks there was no loss for a split to recover, so splitting for quality is not shown.
+- **Headcount cost accuracy.** The always-split crew went from 8 of 8 to 5 of 8 and 5 of 7 as the questions grew, losing answers in hand-offs and merges. It cost 1.8 to 2.5 times a single agent on small questions; past about 10 companies it cost less, but about the same per right answer.
+- **Genet stayed one agent wherever the work fit,** at 1.2 to 1.6 times a single agent's tokens: its planning call, which on a real model costs about as much as a working call. With half of each question's companies already filed, it was the cheapest strategy of all. Haiku's crew lead left filed work out of its plan by itself, so Genet's first gate had nothing to refuse.
+- **Judging fit before the work is unreliable.** At a tight cap, the lead told the limit still judged work too big for one call to fit, and the gates' estimate from file sizes ran short, because searches pull in look-alike files.
+
+On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 13 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, and a harness example that primed a look-alike mix-up. Twelve are fixed; judging fit before the work starts is open.
 
 ## Live model (optional)
 
@@ -291,7 +304,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 1,400 checks with no network and no key:
+`pytest -q` runs about 1,440 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -303,12 +316,13 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Shared ownership.** `tests/test_ownership.py`: a failed part goes back to the lead and the run goes on; authority violations, budget halts and crashes still stop it; every failure is reviewed; lessons reach the next run, never carry model text, are counted and bounded, and can be turned off; and a review never changes a run's outcome.
 - **Bounds.** `tests/test_bounds.py` runs 400 seeded runs against a hostile stand-in model that floods tools and proposals, sends malformed replies, fails calls, breaks authority rules and reports random, missing or invalid token counts. Every run must end without leaving a thread, stay within `max_calls`, record every call it made exactly once, record tokens as reported or as marked estimates, stay under `max_tokens` plus one call's cap, and report the same totals in the run, `diagnose` and a saved copy. It also checks that a reply cut at the cap ends after one retry and that a model always asking for tools runs out of rounds.
 - **Claude, tapes and spend.** `tests/test_anthropic_tape.py`: no temperature, the reply cap, usage with thinking tokens, refusals and SDK errors as `LIVE`, the key from one variable only, no redirects (with the real SDK against a local endpoint when it is installed), a comparison replayed from its tape with the same results, misses counted, damaged tapes refused, the spend cap, and workspace paths that name no local folder.
-- **Live findings.** `tests/test_live_findings.py`, one test per problem the Haiku 5.5 pilot found: `claim` named as the product, the verifier given the reworked product and only that, the harness asking for what grading accepts and saying which months make each quarter, and a size estimate that does not undercount Claude's tokens, proposals read whole rather than split on spaces, plan prompts that show a real proposal, and a verifier that reads the evidence given with the product.
+- **Concept suite.** `tests/test_concept_suite.py`: the default suite's fingerprint, the new options, and a perfect reader that gets every scaled task right under every strategy.
+- **Live findings.** `tests/test_live_findings.py`, one test per problem the live runs found: `claim` named as the product, the verifier given the reworked product and only that, the harness asking for what grading accepts and saying which months make each quarter, and a size estimate that does not undercount Claude's tokens, proposals read whole rather than split on spaces, plan prompts that show a real proposal, and a verifier that reads the evidence given with the product.
 - **Live readiness.** `tests/test_readiness.py`, for gaps found in the past live data: room for the reply, one retry for a malformed reply (over HTTP too), the warning for default criteria, and a verifier that checks the goal.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 172 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 172 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 186 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 186 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -336,7 +350,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.5.0 kernel. Invariants and the bench are covered by tests. The comparison harness exists, and a live pilot has run on Claude Haiku 5.5, twice; eight tasks a strategy is too few to rank the strategies. Not a cloud platform.
+v0.6.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

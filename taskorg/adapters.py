@@ -34,6 +34,9 @@ class ModelAdapter:
     # Tokens a reply is assumed to need before this adapter has replied in a run. The kernel then uses
     # the largest reply it has seen. 0 for the stand-ins, whose replies are short and known.
     min_reply_tokens = 0
+    # The model's tokens per four characters. The kernel scales what it measures in characters, such as a
+    # sub-task's files, by this, so the gates and the size check count alike.
+    token_ratio = 1.0
 
     def act(self, brief: Brief) -> Artifact:
         raise NotImplementedError

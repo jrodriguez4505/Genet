@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import functools
 import json
+import math
 import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from .adapters import TOOL_RESULTS, Brief, OperatorQuestion, ModelAdapter, StubAdapter
 from .budget import Budget
@@ -456,19 +458,25 @@ class Engine:
             run.assert_within_budget()
         return art
 
-    def _act(self, run: Run, brief: Brief, slot: Slot | None = None, *, reserve: int | None = None) -> Artifact:
+    def _act(self, run: Run, brief: Brief, slot: Slot | None = None, *, reserve: int | None = None,
+             toolbox: Toolbox | None = None) -> Artifact:
         """A call plus tool rounds. Allowed tools run, results come back in the next brief.
 
         reserve: calls that must be left afterwards (the verifier's), so tool rounds stop in time.
+        toolbox: a sub-agent's own, open only at its share of the workspace.
         """
+        toolbox = toolbox or self.toolbox
         rounds = self.max_tool_rounds
         if reserve is not None and run.budget:
             rounds = max(0, min(rounds, self._calls_left(run) - 1 - reserve))
         art = self._call(run, brief, slot)
+        have: set = set()  # files this call holds in full, so no round copies one twice
         for _ in range(rounds):
             wanted = list(dict.fromkeys(r for r in art.requests if _tool_name(r) in RUNNABLE))
             if not wanted:
                 return art
+            # Reads first, so a search in the same round can leave out what a read already returned.
+            wanted.sort(key=lambda r: _tool_name(r) != "read")
             results = []
             if len(wanted) > MAX_TOOL_REQUESTS:
                 results.append(f"[{len(wanted) - MAX_TOOL_REQUESTS} more tool requests not run: at most {MAX_TOOL_REQUESTS} per round]")
@@ -476,7 +484,7 @@ class Engine:
             for req in wanted:
                 with self._lock:
                     run.assert_running()
-                out = self.toolbox.run(req)
+                out = toolbox.run(req, have)
                 results.append(out)
                 with self._lock:
                     run._record("tool", {
@@ -503,8 +511,16 @@ class Engine:
         """Calls the merge may spend: one, plus tool rounds when it may have to read for a left-over part."""
         return 1 + (self.max_tool_rounds if (self.toolbox.roots or self.toolbox.files) else 0)
 
+    def _model_tokens(self, n: int) -> int:
+        """n tokens at four characters a token, in the model's own count: the room per call is measured from
+        what the model reports, so what the kernel measures in characters must count the same way."""
+        ratio = getattr(self.adapter, "token_ratio", 1.0)
+        return n if ratio == 1.0 else math.ceil(n * ratio)
+
     def _material(self, subtask: Subtask) -> dict[str, int] | None:
-        return self.toolbox.material(subtask.channel_id, subtask.named_failure)
+        """The sub-task's files, in the model's tokens."""
+        found = self.toolbox.material(subtask.channel_id, subtask.named_failure)
+        return {path: self._model_tokens(tokens) for path, tokens in found.items()} if found else found
 
     def _overhead(self, run: Run) -> int | None:
         """What one call costs before any material: the lead's latest brief, plus its reply or the room
@@ -566,14 +582,20 @@ class Engine:
 
         def one(worker: Slot) -> Artifact:
             note = (notes or {}).get(worker.channel_id or "", "")
+            # The files the gates measured for this part. The sub-agent's tools open only these, so it
+            # cannot take on its siblings' material and overrun the call the split was sized for.
+            files = self.toolbox.material(worker.channel_id or "", note) or {}
+            own = sorted(self.toolbox._shown(Path(p)) for p in files)
             brief = self._brief(
                 run, "worker",
                 extra=f"channel={worker.channel_id} only. Do not see sibling channels."
+                + (f" Your files: {', '.join(own)}; your tools open only these. Report what they hold for the goal;"
+                   " the other parts are other sub-agents', and the lead combines them." if own else "")
                 + (f" Lead's note for this sub-agent: {note}" if note else ""),
                 slot=worker, context=split_context, mode="work",
             )
             try:
-                return self._act(run, brief, slot=worker)
+                return self._act(run, brief, slot=worker, toolbox=self.toolbox.scoped(files) if files else None)
             except InvariantError as e:
                 if e.code in PART_FAILURES and run.status == Status.ACTIVE:
                     # The part is not lost: it goes back to the lead, and the siblings carry on.
@@ -616,7 +638,10 @@ class Engine:
         """Parts the lead covers in the merge: refused for capacity or a malformed proposal, or whose
         sub-agent failed. Gives the lead a skill that can read, and returns the brief text naming them."""
         refused = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
-        if not refused and not failed:
+        # Proposals past the cap were never judged, so they have no verdict; their parts are the lead's too.
+        past = next((e.detail for e in reversed(run.log) if e.event == "gate_overflow"), None)
+        unjudged = past["proposed"] - past["considered"] if past else 0
+        if not refused and not failed and not unjudged:
             return ""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent finished")
@@ -625,6 +650,8 @@ class Engine:
             text += f" These parts got no sub-agent and are yours to cover: {', '.join(refused)}."
         if failed:
             text += f" These parts' sub-agents failed, so they are yours to cover: {', '.join(failed)}."
+        if unjudged:
+            text += f" {unjudged} more proposed part(s) came past the cap of {MAX_PROPOSALS} and are yours to cover too."
         return text
 
     def _calls_left(self, run: Run) -> int:
@@ -670,9 +697,23 @@ class Engine:
         """The lead reads the context and proposes sub-tasks. Strategies override this."""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, "reason", "read the context; propose sub-tasks only for independent work")
-        plan = self._act(run, self._brief(run, "lead", extra=PLAN_BRIEF.format(skills="|".join(SKILLS)), mode="plan"))
+        base = PLAN_BRIEF.format(skills="|".join(SKILLS))
+        extra = base + self._size_note(run, base)
+        plan = self._act(run, self._brief(run, "lead", extra=extra, mode="plan"))
         run.accept_artifact(plan)
         return parse_proposals(plan.requests)
+
+    def _size_note(self, run: Run, plan: str) -> str:
+        """What the gates will measure, told to the lead before it plans: what one call holds and how big the
+        workspace files are. Not told, a lead on a tight cap proposed nothing and the work overflowed."""
+        b = run.budget
+        sizes = [self._model_tokens(n) for n in self.toolbox.file_sizes()] if b and b.max_tokens_per_call else []
+        if not sizes:
+            return ""
+        brief = self.adapter.estimate_tokens(self._brief(run, "lead", extra=plan, mode="plan"))
+        return (f" SIZE. One call holds at most {b.max_tokens_per_call:,} tokens in all: its brief, the files it reads "
+                f"and its reply. A brief like this one takes about {brief:,}, and a reply can take as much again. "
+                f"The workspace has {len(sizes)} file(s) of about {min(sizes):,} to {max(sizes):,} tokens each.")
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""

@@ -19,12 +19,13 @@ from pathlib import Path
 
 from .adapters import TOOL_RESULTS, Brief, ModelAdapter
 from .models import Artifact
-from .suite import CHURN, COMPANIES, QUARTER_WORDS, REVENUE, slug
+from .suite import ALL_COMPANIES, CHURN, QUARTER_WORDS, REVENUE, slug
 
 _PHRASE_Q = {w.lower(): q for q, words in QUARTER_WORDS.items() for w in words}
 _Q_ALT = "|".join(sorted((re.escape(w) for ws in QUARTER_WORDS.values() for w in ws), key=len, reverse=True))
-_SLUGS = sorted((slug(n) for n in COMPANIES), key=len, reverse=True)
-_NAME = {slug(n): n for n in COMPANIES}
+# Every name either suite uses: the extra ones never appear in the default corpus, so nothing there changes.
+_SLUGS = sorted((slug(n) for n in ALL_COMPANIES), key=len, reverse=True)
+_NAME = {slug(n): n for n in ALL_COMPANIES}
 _REPORT = re.compile(r"(?<![a-z0-9-])([a-z0-9-]+) (revenue|churn) (Q[1-4]) = (\d+(?:\.\d+)?)")
 _READ = re.compile(r"\[read ([^\]\n]+)\]\n")
 
@@ -73,7 +74,7 @@ class Question:
 def parse_question(text: str) -> Question:
     names = []
     taken: list[tuple[int, int]] = []
-    for name in sorted(COMPANIES, key=len, reverse=True):
+    for name in sorted(ALL_COMPANIES, key=len, reverse=True):
         for m in re.finditer(re.escape(name) + r"(?![A-Za-z])", text):
             if not any(a < m.end() and m.start() < b for a, b in taken):
                 taken.append((m.start(), m.end()))
@@ -153,8 +154,12 @@ class SimModel(ModelAdapter):
 
     def _work(self, brief: Brief, q: Question, targets: list[str], known: dict[str, float], *, report_only: bool) -> Artifact:
         missing = [s for s in targets if s not in known]
-        if missing and "read" in (brief.tools or []) and TOOL_RESULTS not in brief.packet:
-            return self._art("Reading first.", requests=[f"read:{s}.md" for s in missing])
+        # Ask again for what has not reached it yet (a round runs at most MAX_TOOL_REQUESTS reads), but
+        # not for a file a read already reported missing. The kernel bounds the rounds.
+        absent = set(re.findall(r"\[read ([^\]\n]+)\.md\] not found", brief.packet))
+        wanted = [s for s in missing if s not in absent]
+        if wanted and "read" in (brief.tools or []):
+            return self._art("Reading first.", requests=[f"read:{s}.md" for s in wanted])
         lines = [f"{s} {q.metric} {q.quarter} = {known[s]:.1f}" for s in targets if s in known]
         if report_only:
             return self._art("; ".join(lines) or "no figures found")
