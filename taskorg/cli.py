@@ -92,8 +92,9 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
                         "stated: the lead's named reasons are enough")
     p.add_argument("--verify-view", default="shared", choices=list(VIEWS),
                    help="what the verifier sees: shared (every note), independent (not the author's notes)")
-    p.add_argument("--verify-sources", default="none", choices=list(SOURCES),
-                   help="workspace files the kernel opens for the verifier: none, layered or full")
+    p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
+                   help="workspace files the kernel opens for the verifier: layered (default), full, or none "
+                        "(the brief before v0.7.0, which older tapes replay)")
     _add_budget_args(p)
 
 
@@ -385,8 +386,9 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--out", default=None, help="results JSON (default data/compare/compare-<time>.json)")
     p_c.add_argument("--verify-view", default="shared", choices=list(VIEWS),
                      help="what the verifier sees: shared (every note), independent (not the author's notes)")
-    p_c.add_argument("--verify-sources", default="none", choices=list(SOURCES),
-                     help="sources the kernel opens for the verifier: none, layered or full")
+    p_c.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
+                     help="sources the kernel opens for the verifier: layered (default), full, or none "
+                          "(the brief before v0.7.0, which older tapes replay)")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
 

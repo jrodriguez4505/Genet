@@ -228,7 +228,7 @@ class Engine:
         fit_fraction: float = 0.5,
         lessons: bool = True,
         verify_view: str = "shared",
-        verify_sources: str = "none",
+        verify_sources: str = "layered",
         verify_sample: int = checks.SAMPLE,
     ):
         self.store = store

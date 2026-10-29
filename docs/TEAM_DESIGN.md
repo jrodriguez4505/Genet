@@ -68,7 +68,7 @@ Built as `--verify-view independent` and `--verify-sources layered|full`. It is 
 
   `full` opens every file the goal names, the product cites or its uncertainty names, or the run read. Tying the mode to the budget tier is not built: the operator chooses it with the flag.
 - **View, as proposed.** The verifier gets the context as the operator gave it, the goal, the purpose, done-when, the criteria, and the product with its evidence. It does not get the lead's `context_update` trail, the working product, or sub-agents' reports.
-- **Unchanged.** PASS still needs every criterion and no world misses, and a failed check still allows one rework. With neither flag, the brief is byte for byte what it was.
+- **Unchanged.** PASS still needs every criterion and no world misses, and a failed check still allows one rework. With `--verify-sources none`, the brief is byte for byte what it was. `layered` is the default since its live run.
 
 The test is `verify-bench`. It reviews products the harness builds for 20-company aggregate questions, each with the record its author would have left:
 - right ones;

@@ -212,8 +212,10 @@ What the simulated reader shows. These are structural results from a perfect rea
 
 | Per-call context | Single agent | Always-split crew | Genet |
 |---|---|---|---|
-| Roomy, `--context 16000` | 100% · 2,068 tokens/task | 100% · 4,288 | 100% · 2,643 (1.28× single) |
-| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 4,288 | 100% · 3,862 (0.90× crew) |
+| Roomy, `--context 16000` | 100% · 2,880 tokens/task | 100% · 5,100 | 100% · 3,455 (1.20× single) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 5,020 | 100% · 4,594 (0.92× crew) |
+
+The counts include the files the verifier is given, the default since v0.7.0. With `--verify-sources none` they are as before: 2,068, 4,288 and 2,643 (1.28×) roomy, and 4,288 and 3,862 (0.90×) tight.
 
 When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. At 20 companies a question, the simulated single agent costs 1.5 times the crew: it re-sends everything it has read every round.
 
@@ -229,7 +231,7 @@ Every live run so far is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_T
 - **A verifier catches what it is shown.** Without sources, Haiku's verifier passed 10 of 12 planted errors, catching only the two whose own evidence quoted the wrong year. Given every file, it caught all 12 and failed none of 12 right products, at about six times a review's tokens. The layered pick caught every look-alike error at 1.6 times. Leaving out the author's notes made no measurable difference.
 - **Judging fit before the work is unreliable.** At a tight cap, the lead told the limit still judged work too big for one call to fit, and the gates' estimate from file sizes ran short, because searches pull in look-alike files.
 
-On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 14 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Twelve are fixed. The fix for the verifier is built and measured, and is off by default: with every source, it caught all 12 planted errors on Haiku 5.5. Judging fit before the work starts is open.
+On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 14 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Thirteen are fixed: the verifier now gets the riskiest sources by default, and on Haiku 5.5 it caught every planted error whose file it was shown. Judging fit before the work starts is open.
 
 ## Live model (optional)
 
@@ -263,7 +265,7 @@ Same prompts, the same JSON gate and the same token accounting as the live adapt
 
 `--max-spend` stops a comparison before a trial that could take spending past the cap, judged by the costliest trial so far. Ctrl-C also stops it. Either way the trials already run are saved.
 
-`--record PATH` saves every exchange with the model as it happens: the request, the reply text and its usage, or the error. Never the key, never the base URL. `--replay PATH` answers from that tape instead of a model, with no key and no spend, so the kernel, the gates and the grading can be refined against real replies. A request the tape does not have, because a prompt or brief changed since the recording, fails as `LIVE` and is counted. Tool results name files relative to the workspace, so the same request reads the same on every run, and no temp folder or home directory reaches the model.
+`--record PATH` saves every exchange with the model as it happens: the request, the reply text and its usage, or the error. Never the key, never the base URL. `--replay PATH` answers from that tape instead of a model, with no key and no spend, so the kernel, the gates and the grading can be refined against real replies. A request the tape does not have, because a prompt or brief changed since the recording, fails as `LIVE` and is counted. A tape recorded before v0.7.0 replays with `--verify-sources none`, the verifier's brief at the time. Tool results name files relative to the workspace, so the same request reads the same on every run, and no temp folder or home directory reaches the model.
 
 ## Security
 
@@ -305,17 +307,18 @@ The verifier always gets its call. When a split is judged, the gates reserve the
 
 ### What the verifier checks against
 
-By default the verifier sees three things:
+The verifier sees:
 - the product;
 - up to 12 of its evidence lines;
-- the shared context, which carries every member's notes.
+- the shared context, which carries every member's notes;
+- the workspace files the kernel opens for it, by default the riskiest few.
 
-It has no tools. On 28 October that let a wrong total through. The verifier could not open a source, and it read the author's own note that look-alike files were excluded. Two settings change that. Run commands, `compare` and `verify-bench` all take them:
+It has no tools of its own. On 28 October, before the kernel opened files for it, that let a wrong total through: the verifier could not open a source, and it read the author's own note that look-alike files were excluded. Two settings decide what it sees. Run commands, `compare` and `verify-bench` all take them:
 
 | Flag | Values | What it does |
 |---|---|---|
 | `--verify-view` | `shared` (default), `independent` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. |
-| `--verify-sources` | `none` (default), `layered`, `full` | The kernel opens workspace files and puts them in the verifier's brief. See below. |
+| `--verify-sources` | `layered` (default), `full`, `none` | The kernel opens workspace files and puts them in the verifier's brief. See below. `none` opens nothing. |
 
 What each mode opens:
 - **`full`:** every file the goal names, the product cites or its uncertainty names, or the run read.
@@ -323,7 +326,9 @@ What each mode opens:
 
 The kernel picks the files from the run's record and the product's text. The author does not pick them, and neither does the verifier. Files go in up to the per-call limit, and the brief says how many did not fit. The record holds every pick and why, so the same product opens the same files and a tape replays.
 
-With sources on, the kernel also checks, in code, that every evidence quote is in the file it cites, and tells the verifier which are not. The verdict stays the verifier's, and the criteria checks above still apply. Both flags are off by default, so a run that sets neither sends the requests it always did.
+With sources on, the kernel also checks, in code, that every evidence quote is in a file its evidence line cites, and tells the verifier which are not. A file named inside the quote does not count as cited. Quotes of the tool's own words, of a search query, or of a member's report are not checked. Over all 885 products on the Claude tapes, it flags 6, and each is a quote the cited files do not hold. The verdict stays the verifier's, and the criteria checks above still apply.
+
+`layered` became the default after its live run (29 October, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). It caught every look-alike error at about 3% more tokens on a 20-company task, where `full` caught every planted error at about a quarter more. A run with no workspace has nothing to open, so its verifier's request is unchanged. `--verify-sources none` sends the verifier's request as it was before v0.7.0, which tapes recorded before then need to replay.
 
 ## Diagnose
 
@@ -362,7 +367,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 200 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 200 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 206 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 206 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 

@@ -27,7 +27,7 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
   - nothing right is failed.
 - **`scripts/verify_runs.sh`** runs the bench on Haiku 5.5: 120 reviews, about $0.20, capped at $0.40, taped.
 
-**Unchanged by default.** With neither flag, the verifier's brief is byte for byte what it was. The 28 October tapes replay on the new code with no missing requests and the same results.
+**Layered by default.** After the live run below, `--verify-sources layered` became the default. A run with no workspace opens nothing, so its verifier's request is unchanged. `--verify-sources none` sends the request as it was before: with it, the 28 October tapes replay on the new code with no missing requests and the same results. The simulated reader's counts now include the verifier's files: Genet is 1.20 times a single agent with a roomy context (was 1.28) and 0.92 times the crew with a tight one (was 0.90).
 
 **On Haiku 5.5** (29 October, 120 reviews, $0.21; `docs/LIVE_TESTS.md`):
 - `today` caught 2 of 12 planted errors, only where the product's own quote showed the wrong year;
@@ -38,9 +38,17 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 
 The bench now also counts FAILs that name the planted company, since one FAIL was for another company's figure. The run scripts' progress filter is line-buffered, so the `[n/N]` lines show as they happen.
 
+**The quote check, fixed on real products.** Before the default changed, the check ran over all 885 products on the Claude tapes. It flagged 88, nearly all falsely:
+- an evidence line citing two files, with every quote matched against the first;
+- a file named inside the quoted text;
+- quotes of the tool's own words, a search query or a member's report;
+- a dash the reply carried as the text `\u2013`.
+
+Each quote is now checked against the files its line cites outside the quote. It flags 6, each a quote those files do not hold.
+
 **Decided, not built yet.** The README's "workers that spawn workers" refusal is lifted for nesting, which keeps the gates, a depth limit and a reserved budget (`docs/TEAM_DESIGN.md`, part 3).
 
-- `tests/test_verify_checks.py` (28 tests), and 14 new mutations, for 200, all caught.
+- `tests/test_verify_checks.py` (29 tests), and 20 new mutations, for 206, all caught.
 
 ## v0.6.0 — October 2026: testing the concept, and what it shows
 

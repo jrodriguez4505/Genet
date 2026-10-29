@@ -155,6 +155,30 @@ def test_misquoted_flags_a_quote_the_cited_file_does_not_hold(tmp_path):
     assert checks.misquoted(tb, bad, names) == ['orbrook.md: orbrook.md:3: "The company booked $44.0 million in revenue during Q2."']
 
 
+def test_misquoted_checks_each_quote_against_its_own_file(tmp_path):
+    """Seen on Haiku: one evidence line citing two files, and a quote of the context that names a file."""
+    (tmp_path / "orbrook.md").write_text("Revenue for Q2 reached $40.0 million.\n")
+    (tmp_path / "vantaro.md").write_text("Q2 revenue came in at $89.2M.\n")
+    tb = Toolbox(roots=[tmp_path])
+    names = tb.shown_files()
+    two = 'orbrook.md "Revenue for Q2 reached $40.0 million." ; vantaro.md:1 "Q2 revenue came in at $89.2M."'
+    context = 'Context: "one markdown file per company, named after its full name (for example orbrook.md)"'
+    after = '"Q2 revenue came in at $89.2M." (vantaro.md)'
+    both = 'vantaro.md and orbrook.md lines ("Q2 revenue came in at $89.2M."; "Revenue for Q2 reached $40.0 million.")'
+    assert checks.misquoted(tb, _product(evidence=[two, context, after, both]), names) == []
+    not_files = ['read orbrook.md: "not found in the workspace"',
+                 'retrieve "Orbrook FY2026 Q2 revenue" matched orbrook.md:1',
+                 'orbrook.md (via channel): "Orbrook revenue Q2 (FY2026) = 40.0 ($ millions)"']
+    assert checks.misquoted(tb, _product(evidence=not_files), names) == []
+    (tmp_path / "tessaline.md").write_text("Revenue for the April\u2013June quarter reached $52.8 million.\n")
+    escaped = 'tessaline.md: "Revenue for the April\\u2013June quarter reached $52.8 million."'  # the dash as text
+    assert checks.misquoted(tb, _product(evidence=[escaped]), tb.shown_files()) == []
+    wrong = two.replace("89.2", "98.2")
+    assert checks.misquoted(tb, _product(evidence=[wrong]), names) == [f"vantaro.md: {wrong}"]
+    late = after.replace("89.2", "98.2")
+    assert checks.misquoted(tb, _product(evidence=[late]), names) == [f"vantaro.md: {late}"]
+
+
 # --- what the verifier sees ---
 
 
@@ -162,7 +186,7 @@ def _verifier(adapter):
     return [b for b in adapter.briefs if b.slot_function == "verifier"][-1]
 
 
-def test_the_default_verifier_brief_is_as_it_was(tmp_path):
+def test_the_verifier_brief_without_sources_is_as_it_was(tmp_path):
     res, adapter, built = _review(tmp_path, "today")
     b = _verifier(adapter)
     assert b.view == "shared"
@@ -348,11 +372,14 @@ def test_compare_carries_the_verifier_setting_and_the_sim_still_answers_everythi
     assert all(r["correct"] for r in data["results"])
 
 
-def test_compare_defaults_leave_the_verifier_as_it_was(tmp_path):
+def test_compare_defaults_to_the_layered_check_and_none_is_the_old_verifier(tmp_path):
     suite = build_suite(seed=7, per_family=1)
     plain = run_comparison(suite, SimModel, strategies=("single", "genet"))
-    same = run_comparison(suite, SimModel, strategies=("single", "genet"), verify={"verify_view": "shared", "verify_sources": "none"})
-    assert [(r.correct, r.tokens, r.calls) for r in plain] == [(r.correct, r.tokens, r.calls) for r in same]
+    layered = run_comparison(suite, SimModel, strategies=("single", "genet"), verify={"verify_view": "shared", "verify_sources": "layered"})
+    old = run_comparison(suite, SimModel, strategies=("single", "genet"), verify={"verify_view": "shared", "verify_sources": "none"})
+    assert [(r.correct, r.tokens, r.calls) for r in plain] == [(r.correct, r.tokens, r.calls) for r in layered]
+    assert [(r.correct, r.calls) for r in plain] == [(r.correct, r.calls) for r in old]
+    assert sum(r.tokens for r in plain) > sum(r.tokens for r in old)  # the sources the verifier reads
 
 
 def test_run_commands_take_the_verifier_settings(tmp_path, capsys):
@@ -368,4 +395,9 @@ def test_run_commands_take_the_verifier_settings(tmp_path, capsys):
     capsys.readouterr()
     out2 = tmp_path / "plain.json"
     main([a if a != str(out) else str(out2) for a in argv[:-4]])
-    assert not any(e["event"] == "verify_sources" for e in json.loads(out2.read_text())["log"])
+    plain = [e["detail"] for e in json.loads(out2.read_text())["log"] if e["event"] == "verify_sources"]
+    assert plain and plain[0]["view"] == "shared" and plain[0]["sources"] == "layered"  # the default
+    capsys.readouterr()
+    out3 = tmp_path / "old.json"
+    main([a if a != str(out) else str(out3) for a in argv[:-4]] + ["--verify-sources", "none"])
+    assert not any(e["event"] == "verify_sources" for e in json.loads(out3.read_text())["log"])

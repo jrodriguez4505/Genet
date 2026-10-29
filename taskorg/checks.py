@@ -57,6 +57,10 @@ _READ_HEAD = re.compile(r"\[read ([^\]\n]+)\](?:\n| already in full above)")
 _MATCH_LINE = re.compile(r"^([^\[\n:][^\n:]*):\d+: ", re.MULTILINE)
 _QUOTED = re.compile(r"[\"“]([^\"”]+)[\"”]")
 _ELLIPSIS = re.compile(r"\.{3}|…")
+# Quotes of something other than a file, seen on Haiku: the tool's own words, a search query, a member's report.
+TOOL_WORDS = ("not found in the workspace", "more matches not shown", "no matches")
+_QUERY_BEFORE = re.compile(r"\b(?:retrieve|retrieval|query|search(?:ed)?|for)\W*$", re.IGNORECASE)
+_REPORT = re.compile(r"\bchannel\b|\bsub-agent\b", re.IGNORECASE)
 
 
 def files_in_result(out: str) -> dict[str, list[str]]:
@@ -104,15 +108,22 @@ def named_in(text: str, names: Iterable[str]) -> list[str]:
     return sorted(first, key=lambda n: (first[n], n))
 
 
-def cited_in(text: str, names: Iterable[str]) -> list[str]:
-    """Files the text names by file name, such as orbrook.md, in order of mention."""
+def _mentions(text: str, names: Iterable[str]) -> list[tuple[int, int, str]]:
+    """Every place the text names a file by file name: (start, end, file), in order."""
     low = (text or "").lower()
-    first: dict[str, int] = {}
+    found = set()
     for name in dict.fromkeys(names):
         for form in dict.fromkeys((name.lower(), Path(name).name.lower())):
-            m = re.search(r"(?<![\w.-])" + re.escape(form) + r"(?![\w-])", low)
-            if m:
-                first[name] = min(first.get(name, m.start()), m.start())
+            rx = re.compile(r"(?<![\w.-])" + re.escape(form) + r"(?![\w-])")
+            found.update((m.start(), m.end(), name) for m in rx.finditer(low))
+    return sorted(found)
+
+
+def cited_in(text: str, names: Iterable[str]) -> list[str]:
+    """Files the text names by file name, such as orbrook.md, in order of mention."""
+    first: dict[str, int] = {}
+    for start, _, name in _mentions(text, names):
+        first.setdefault(name, start)
     return sorted(first, key=lambda n: (first[n], n))
 
 
@@ -150,8 +161,12 @@ def pick(run, product: Artifact, names: list[str], mode: str, *, sample: int = S
     return list(picks.items())[:MAX_SOURCES]
 
 
+_ESCAPED = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+
 def _norm(text: str) -> str:
-    return " ".join(text.lower().split())
+    # A reply can carry a dash as the text \u2013, escaped twice; read it as the dash.
+    return " ".join(_ESCAPED.sub(lambda m: chr(int(m.group(1), 16)), text).lower().split())
 
 
 def misquoted(toolbox, product: Artifact, names: list[str]) -> list[str]:
@@ -159,17 +174,24 @@ def misquoted(toolbox, product: Artifact, names: list[str]) -> list[str]:
     flagged too, so the verifier is told and judges; the kernel does not fail the product on this alone."""
     out = []
     for item in product.evidence:
-        files = cited_in(item, names)
-        quotes = _QUOTED.findall(item)
-        if not files or not quotes:
-            continue
-        text = toolbox.text_of(files[0])
-        if text is None:
-            continue
-        body = _norm(text)
-        pieces = [p.strip(" .,;:") for q in quotes for p in _ELLIPSIS.split(q)]
-        if any(len(p) >= MIN_QUOTE and _norm(p) not in body for p in pieces):
-            out.append(f"{files[0]}: {item[:160]}")
+        quotes = list(_QUOTED.finditer(item))
+        outside = _QUOTED.sub(" ", item)
+        if _REPORT.search(outside):
+            continue  # its quotes may be a member's words, not a file's
+        # A file named inside a quote is quoted text, not a citation.
+        cites = [(end, name) for start, end, name in _mentions(item, names)
+                 if not any(q.start() <= start < q.end() for q in quotes)]
+        bodies = {name: _norm(text) for _, name in cites if (text := toolbox.text_of(name)) is not None}
+        for q in quotes:
+            if any(w in _norm(q.group(1)) for w in TOOL_WORDS) or _QUERY_BEFORE.search(item[:q.start()]):
+                continue
+            # A quote is flagged when no file the item cites holds it; it is named by the file before it.
+            pieces = [_norm(p.strip(" .,;:")) for p in _ELLIPSIS.split(q.group(1))]
+            if not bodies or any(all(p in body for p in pieces if len(p) >= MIN_QUOTE) for body in bodies.values()):
+                continue
+            before = [name for end, name in cites if end <= q.start() and name in bodies]
+            out.append(f"{before[-1] if before else next(iter(bodies))}: {item[:160]}")
+            break
     return out
 
 
