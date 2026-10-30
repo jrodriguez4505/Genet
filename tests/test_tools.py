@@ -31,7 +31,6 @@ def test_complete_requires_how():
         primary="lead-1",
         goal="x",
         success_criteria=["y"],
-        cadence="now",
         checkpoints=[],
         context="here",
         done_when="there",

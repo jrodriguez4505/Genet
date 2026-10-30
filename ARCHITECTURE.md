@@ -35,7 +35,7 @@ Code decides everything else: who is on the team, which tools run, and what is s
    - a `Run`: state, log and rules;
    - an `Engine`: the loop, with a budget tier, a model adapter, a sandboxed `Toolbox` and a `MemoryStore`.
 
-   The run state also holds fields from the first design that nothing reads yet: `primary`, `cadence`, `checkpoints`, `projections` and `abort_criteria`. `axes` records the method's moves as labels. Design parts 8 and 9 act on them or remove them.
+   The run state holds the shared situation (design part 8): the decision points the kernel checks at, its forecasts, and the operator's abort criteria and main effort. `axes` records the method's moves as labels until design part 9.
 2. **Plan** (`Engine._propose` in `loop.py`). The lead's call carries:
    - the context;
    - the guidelines and lessons from the store;
@@ -43,7 +43,7 @@ Code decides everything else: who is on the team, which tools run, and what is s
    - the plan brief.
 
    The lead replies with proposals in `requests`, as `subtask:<channel>@<skill>=<named_failure>`. `subtasks.py` reads them, and at most 16 are considered.
-3. **Judge** (`assess` in `gates.py`, called from `Engine._assess`). Each proposal passes three gates in order, and each gate fails closed:
+3. **Judge** (`assess` in `gates.py`, called from `Engine._assess`). The main effort, if the operator named one, is judged first. Each proposal passes three gates in order, and each gate fails closed:
    - **Can someone else:** refused if already covered, already staffed, a repeat, or verification.
    - **Should we:** needs a named failure plus a measured reason. The reason is either declared isolation, or material that does not fit in one call. `Toolbox.material` measures the material from file sizes.
    - **Could we:** needs a known skill and a usable channel, a tier that allows a split, a budget for the sub-agents plus merge and verify, and room under the cap of 4.
@@ -54,7 +54,8 @@ Code decides everything else: who is on the team, which tools run, and what is s
      - `Run.set_roster` adds one sub-agent per gate record (INV-1, INV-8).
      - Sub-agents run in parallel. Each gets a brief scoped to its own channel (`MemoryStore.scoped_brief`, INV-6) and a toolbox open only at its files (`Toolbox.scoped`).
      - Tool requests are checked against the skill's allowlist and run read-only (`tools.py`), at most 2 rounds each.
-     - The lead merges. It covers the parts the should-we or could-we gate refused, any proposed past the cap of 16, and any whose sub-agent failed (`_cover`).
+     - With `--report-up`, a sub-agent may hand its part back (`replan:REASON`). The kernel opens a replan request and closes it with a method in which the lead covers the part (`Engine._reports`).
+     - The lead merges. It covers the parts the should-we or could-we gate refused, any proposed past the cap of 16, and any whose sub-agent failed or handed it back (`_cover`).
    - With fewer than two, the lead works alone and switches to the skill the work needs (`Run.switch_skill`, INV-11).
 5. **Verify** (`Engine._verify`, `_verifier_brief`, `checks.py`).
    - The kernel picks sources from the run's record (`checks.pick`; layered by default) and opens them into the verifier's brief.
@@ -65,6 +66,8 @@ Code decides everything else: who is on the team, which tools run, and what is s
    - The operator's question is answered from the gate record, and the kernel raises its cues (`cues.py`).
    - If anything failed, the kernel writes a blameless review and adds a fixed lesson to the store.
    - The run is saved and becomes read-only.
+
+At three decision points (after the judge, after the reports, after the verdict), `Engine._decision_point` forecasts what the rest of the run needs (`situation.forecast`), checks the abort criteria, and records both. A criterion that is met stops the run there, with code `ABORT`. Each call a member makes, tool rounds included, carries the situation as it stands at that call (`Engine._current`).
 
 Every model call goes through `Engine._call`:
 - `_admit` checks the budget before the call, counting calls in flight.
@@ -81,6 +84,7 @@ Every model call goes through `Engine._call`:
 | | `schema.py` | Checks the artifact and run state against `schemas/`. |
 | | `budget.py` | Tiers and caps: calls, tokens, seconds. |
 | | `subtasks.py` | Reads the lead's proposals and the sub-tasks an operator names. |
+| | `situation.py` | Decision points, the kernel's forecasts and the abort criteria (design part 8). |
 | | `cues.py` | Notes the kernel raises for the lead at close, such as a merge review when two channels reported. |
 | | `errors.py`, `factory.py` | The rule error; building a new run. |
 | The loop | `loop.py` | The `Engine`: briefs, budgeted calls, tool rounds, what the gates measure, staffing, merge, verify, close. The comparison's strategies subclass it. |
@@ -136,8 +140,8 @@ Every model call goes through `Engine._call`:
 
 ## How it is tested
 
-- 1,490 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 206 rules one at a time, and a test catches each.
+- 1,538 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 219 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
@@ -155,7 +159,6 @@ Every model call goes through `Engine._call`:
 ## Not built yet
 
 These are the remaining parts of [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), in its order:
-- the shared situation, kept current, with decision points and abort criteria the kernel acts on (part 8);
 - a lead that knows its members (part 7);
 - a reviewer of purpose (part 10);
 - a method made of moves the kernel runs (part 9);

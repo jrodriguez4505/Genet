@@ -42,6 +42,8 @@ def _stop(code: str, reason: str) -> tuple[str, str | None] | None:
     """What a halt says, as (what failed, lesson key). Reasons used here are the kernel's own text."""
     if code == "VERIFY":
         return None  # the verifier's misses are reviewed from their own record
+    if code == "ABORT":
+        return f"the run stopped at a decision point: {reason}", None
     if code == "BUDGET":
         if "not sent" in reason:
             return "a brief was too large to send", "brief_size"
@@ -68,6 +70,7 @@ def part_statuses(run) -> dict[str, str]:
     """Each part of the work and what became of it, from the record."""
     merged = {d.channel_id for d in run.deltas if d.stream == "merge"}
     failed = {e.detail.get("channel"): e.detail.get("code") for e in run.log if e.event == "part_failed"}
+    reported = {e.detail.get("channel") for e in run.log if e.event == "part_reported"}
     covered = any(c.get("function") == "lead" and c.get("mode") == "integrate" for c in run.calls)
     parts: dict[str, str] = {}
     for slot in run.state.slots:
@@ -76,6 +79,8 @@ def part_statuses(run) -> dict[str, str]:
         ch = slot.channel_id
         if ch in failed:
             parts[ch] = f"failed ({failed[ch]}); " + ("covered by the lead" if covered else "not covered: the run stopped first")
+        elif ch in reported:
+            parts[ch] = "handed back: the plan was wrong for it; " + ("covered by the lead" if covered else "not covered: the run stopped first")
         else:
             parts[ch] = "merged" if ch in merged else "not finished: the run stopped first"
     for e in run.log:
@@ -130,7 +135,11 @@ def team_review(run, error: BaseException | None) -> dict | None:
     for ch, status in part_statuses(run).items():
         if status.startswith("failed") and "covered by the lead" in status:
             done.append(f"the lead covered {ch}")
-    if any(n.kind == "replan" and n.response == "CHANGE_METHOD" for n in run.notes.values()):
+    for ch, status in part_statuses(run).items():
+        if status.startswith("handed back") and "covered by the lead" in status:
+            done.append(f"the lead covered {ch}, which its sub-agent handed back")
+    # The verifier's replan request, not a part handed back.
+    if any(n.id == "replan" and n.response == "CHANGE_METHOD" for n in run.notes.values()):
         done.append("the lead reworked the product once")
     done.append("the product was verified" if run.status.value == "complete" else "the run stopped")
     return {

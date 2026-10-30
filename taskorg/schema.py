@@ -41,7 +41,7 @@ def state_contract(pic: RunState) -> dict:
     return {
         "roster": {"lead_id": pic.lead_id, "slots": [s.id for s in pic.slots], "primary": pic.primary},
         "goal": {"goal": pic.goal, "success_criteria": list(pic.success_criteria)},
-        "schedule": {"cadence": pic.cadence, "checkpoints": list(pic.checkpoints)},
+        "schedule": {"checkpoints": list(pic.checkpoints)},
         "context": {"context": pic.context, "done_when": pic.done_when},
         "purpose": {"purpose": pic.purpose},
         "method": {"method": pic.method, "axes": list(pic.axes)},

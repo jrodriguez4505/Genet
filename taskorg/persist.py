@@ -41,7 +41,6 @@ def run_to_dict(m: Run) -> dict:
             "primary": m.state.primary,
             "goal": m.state.goal,
             "success_criteria": m.state.success_criteria,
-            "cadence": m.state.cadence,
             "checkpoints": m.state.checkpoints,
             "context": m.state.context,
             "initial_context": m.state.initial_context,
@@ -93,6 +92,7 @@ def save_run(m: Run, path: Path) -> Path:
 
 
 # Files saved before the 0.2 rename used older field names. Read them, write the new ones.
+# Pace (tempo, then cadence) was dropped in 0.8: an older file's value is read and ignored.
 _LEGACY_STATE = {
     "who_head_id": "lead_id", "effect": "goal", "tempo": "cadence", "decision_points": "checkpoints",
     "current_picture": "context", "step_off_picture": "initial_context", "end_state": "done_when",
@@ -232,7 +232,7 @@ def _check_types(raw: dict) -> None:
     st = raw.get("state")
     _need(isinstance(st, dict), "state: an object")
     _need(isinstance(st.get("slots"), list) and all(isinstance(s, dict) for s in st["slots"]), "state.slots: objects")
-    for k in ("lead_id", "primary", "goal", "cadence", "context", "done_when", "purpose", "method"):
+    for k in ("lead_id", "primary", "goal", "context", "done_when", "purpose", "method"):
         _need(isinstance(st.get(k), str), f"state.{k}: a string")
     for k in ("success_criteria", "checkpoints", "projections", "axes", "abort_criteria"):
         if k in st:
@@ -280,7 +280,6 @@ def _from_dict(raw: dict) -> Run:
         primary=st["primary"],
         goal=st["goal"],
         success_criteria=st["success_criteria"],
-        cadence=st["cadence"],
         checkpoints=st["checkpoints"],
         context=st["context"],
         initial_context=st.get("initial_context", ""),

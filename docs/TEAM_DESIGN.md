@@ -1,6 +1,6 @@
 # Team structure: design
 
-Status: proposal, 28 October 2026. Part 2, the independent verifier, is built (v0.7.0); the rest is not. Parts 7 to 11 were added on 29 October. Parts 8 to 11 carry forward ideas from Genet's first design, and [The first design](#the-first-design) records what became of the rest.
+Status: proposal, 28 October 2026. Part 2, the independent verifier, is built (v0.7.0), and part 8, the shared situation (v0.8.0); the rest is not. Parts 7 to 11 were added on 29 October. Parts 8 to 11 carry forward ideas from Genet's first design, and [The first design](#the-first-design) records what became of the rest.
 
 ## What it must serve
 
@@ -47,7 +47,7 @@ Today's should-we gate measures two of these: material that does not fit is focu
 
 Positions differ. What they share is what lets each member do more than it could alone:
 
-- the situation: the goal, its purpose and done-when, and the method (part 8 adds decision points and abort criteria, and keeps it current during the run);
+- the situation: the goal, its purpose and done-when, the method, and since v0.8.0 the decision points and abort criteria (part 8), kept current during the run;
 - the shared context, with every member's notes, except where a view leaves them out;
 - the guidelines and the lessons from past runs, which every brief carries. They are plain files today. When the team needs more, the store will be an off-the-shelf or model-provider memory (see [Decisions](#decisions));
 - the run's record, which the kernel writes, and from which come the lead's account, the review and the verifier's sources;
@@ -165,7 +165,7 @@ The test runs the same tasks with and without the cards. The sim shows only what
 
 The same records are what a learned staffing model would train on. The first design built one: `policy.py`, `imitate.py` and `rl.py`, an experiment that can only propose and is not used in runs. It waits until the records show a need for it.
 
-### 8. The shared situation, kept current (proposed 29 October, from the first design)
+### 8. The shared situation, kept current (built in v0.8.0, from the first design)
 
 In the first design, five questions set what a team must cover:
 - who: the lead builds the team;
@@ -174,32 +174,39 @@ In the first design, five questions set what a team must cover:
 - where: where the work is going, projected forward;
 - why: questions, the way a child asks why.
 
-They shaped both the roster's positions (lead, memory, reviewer) and a situation in six parts that every member works from. The run state still holds that situation, renamed in v0.2, but the kernel acts on only some of it:
+They shaped both the roster's positions (lead, memory, reviewer) and a situation in six parts that every member works from. The run state held that situation, renamed in v0.2, but until v0.8.0 the kernel acted on only part of it. Now:
 
-| Part | Fields | In the kernel today |
+| Part | Fields | In the kernel |
 |---|---|---|
-| Who | lead, roster, main effort | `lead_id` and `slots`: only the lead changes them (INV-1). `primary` is set to the lead and never read. |
+| Who | lead, roster, main effort | `lead_id` and `slots`: only the lead changes them (INV-1). `primary` is the main effort, which the gates judge first. |
 | What | goal, success criteria | `goal` and `success_criteria`: the verifier checks every criterion. |
-| When | pace, decision points | `cadence` and `checkpoints`: set when the run is made, and never read. |
-| Where | current picture, end state, forecasts | `context`, `done_when` and `context_sufficient` (INV-10) are used. `projections` is never read. |
-| Why | purpose, open questions | `purpose` is in every brief. Open questions are review notes. |
-| How | method, moves, abort criteria | `method` and `axes` are recorded (part 9). `abort_criteria` is never read. |
+| When | decision points | `checkpoints`: the decision points the kernel checks at. Pace (`cadence`) is gone. |
+| Where | current picture, end state, forecasts | `context`, `done_when` and `context_sufficient` (INV-10). `projections`: the kernel's forecasts. |
+| Why | purpose, open questions | `purpose` is in every brief, and kept current. Open questions are review notes. |
+| How | method, moves, abort criteria | `method` and `axes` are recorded (part 9). `abort_criteria`: checked at every decision point. |
 
-The rule: the kernel acts on every field, or the field is removed.
+The rule: the kernel acts on every field, or the field is removed. The code is in `taskorg/situation.py` and the loop.
 
-- **Decision points** become fixed places in the loop: after the plan, after the sub-agents report, and after the verdict. At each one, the kernel checks the abort criteria and the forecast, and records that it did.
-- **Forecasts** are computed by the kernel, never written by a model: the measured cost of the work left, against the budget left. The could-we gate already makes one before a split.
-- **Abort criteria** come from a fixed list the kernel can test, each with a value, as the gates' reasons do. Two examples: the forecast shows the budget cannot finish the work, or more than a set number of parts have failed. Free text cannot be tested in code, so it is refused. When one is met, the run stops at that decision point and its review names the criterion. Today a run stops only when its budget is spent; this stops it before.
-- **Main effort** names the part the goal depends on most. If the budget cannot cover every part, that one is covered first.
-- **Pace** is dropped. The decision points say when a run checks.
-- **Kept current.** The first design held that shared understanding is what a team starts with, and that it has to keep happening as the work develops. Today a sub-agent gets the context as it stood at the split. Instead, when the lead changes the situation during the run (the method, the purpose, or a fact every part depends on), the kernel puts the change in each working member's next call. It goes in as the record has it, not as a summary: an agent can read what the lead read, where a person would get a report. Working facts stay in their own channel (INV-6).
-- **Reported up.** A member that finds the plan wrong can say so in its reply, with a fixed request. The kernel opens a replan request, which the lead closes only with a new method or goal (INV-14). Today only a failed check opens one.
+- **Decision points** are three fixed places in the loop: after the plan is judged, after the sub-agents report, and after the verdict. A run lists the ones it checks at, all three by default. At each one, the kernel forecasts, checks the abort criteria, and records both (`decision_point`).
+- **Forecasts** are the kernel's, never a model's. A forecast counts the fewest calls the rest of the loop makes from that point, and prices them at the run's average cost per call so far. It sets them against the calls and tokens left. Working calls carry files and run larger than a plan, so a forecast is a floor: it errs toward going on.
+- **Abort criteria** are the operator's (`--abort`), from a fixed list:
+  - `forecast_short`: the forecast shows the budget cannot finish the work;
+  - `parts_failed:N`: N parts' sub-agents have failed.
 
-The test is in code first: unit tests that each field changes what the kernel does. Then two sim cases:
-- a run that meets an abort criterion stops at the next decision point, and spends less than one that goes on;
-- a change made after the split reaches the members whose calls come after it.
+  Anything else is refused before the run starts. When one is met, the run stops at that decision point with code `ABORT`, and its review names the criterion. Without one, a run stops only when its budget is spent. The suite's case is 4,000 tokens a call against a budget of 10,000. With `forecast_short`, the run stops after its plan, at one call. Without it, the same run makes three calls and stops on its budget.
+- **Main effort** is the operator's (`--main-effort CHANNEL`). If the lead proposes that part, the gates judge it first, so it is staffed first when the budget or the cap of 4 runs short. In the suite's case of six proposals, it gets one of the four places it would otherwise miss.
+- **Pace** is gone. The decision points say when a run checks. An older saved run's value is read and ignored.
+- **Kept current.** Every call a member makes, tool rounds included, carries the goal, purpose, done-when and criteria as they stand at that call, not as they stood at its first call. If one changed, the call says which (`SITUATION CHANGED`), and the record notes it (`situation_update`). The context stays as it stood at the split, so a sibling's notes still never reach a sub-agent (INV-6).
+  - In a flat run, nothing changes the situation between the split and the merge, so this matters once nesting is built.
+  - The proposal also covered a fact every part depends on. That is not built: there is no way yet to mark one.
+- **Reported up** (`--report-up`, off by default because it changes the sub-agent brief). A sub-agent may hand its part back with the request `replan:REASON`.
+  - Its reply is not merged. The kernel posts the reason on the escalate stream and opens a replan request.
+  - After the reports, the kernel closes the request for the lead with the method that follows, in which the lead covers the part (INV-14). The merge brief gives the lead the reason.
+  - A part handed back is covered, not failed: it does not count toward `parts_failed`.
 
-It needs no live spend.
+With default flags, every request is byte for byte what it was. The 28 and 29 October tapes replay with no missing requests and the same results, and the sim figures are unchanged.
+
+Not measured yet: whether a sub-agent on a real model hands back a part it cannot do, rather than guess. That needs a live run of the crew with `--report-up`, on the operator's go-ahead for spend.
 
 ### 9. A method made of moves (proposed 29 October, from the first design)
 
@@ -295,7 +302,7 @@ Each could fail in a specific way:
 ## Order
 
 1. The independent verifier: built in v0.7.0, with the full and layered checks and the verify bench, and run on Haiku 5.5 on 29 October (`docs/LIVE_TESTS.md`). Sources decided the catch: `full` caught 12 of 12, `layered` 9 of 12 for the right reason, `today` 2. The independent view made no measurable difference at this size.
-2. The shared situation (part 8): in code and the sim, with no live spend. It comes first because parts 9 and 10 build on it, and its fields should be true before more rests on them.
+2. The shared situation (part 8): built in v0.8.0, in code with no live spend. Reported up waits for a live crew run.
 3. The lead knows its members (part 7): sim for cost, then Haiku. It comes before nesting because nesting multiplies the leads that plan.
 4. A reviewer of purpose (part 10): a review bench, sim then Haiku.
 5. A method made of moves (part 9): chains in the sim first.
@@ -360,7 +367,7 @@ A survey on 28 October 2026 covered about 40 searches across papers, framework d
 | Authority in code | Plans moved into code ([Claude Code workflows](https://code.claude.com/docs/en/workflows)). Hooks that can block task creation. Policy layers that approve or block actions ([arXiv 2606.04306](https://arxiv.org/abs/2606.04306)). Budget-constrained team selection done offline ([BAMAS](https://arxiv.org/abs/2511.21572)). | Partly done. Ordered admission gates for each proposed agent (covered already, then a measured reason, then affordable), with the model only proposing, were not found. |
 | Independent verifier | Verification prompts that leave out the original answer score better ([Chain-of-Verification, factored](https://arxiv.org/abs/2309.11495)). Reviewers given only a diff, from a clean context ([Cognition, April 2026](https://cognition.com/blog/multi-agents-working)). Models catch errors framed as someone else's that they miss as their own ([arXiv 2507.02778](https://arxiv.org/abs/2507.02778)). | Done as practice, with limits. Models agree about 60% of the time when both are wrong ([arXiv 2506.07962](https://arxiv.org/abs/2506.07962)). Verification gains shrink as solver and verifier grow alike, and cross-family checking works best ([arXiv 2512.02304](https://arxiv.org/abs/2512.02304)). No measurement was found that withholding the author's reasoning lowers error correlation between agents of one model. The verify bench measures that: on Haiku 5.5, over 24 products whose author note does not argue for the error, it made no difference. |
 | The lead knows its members (searched 29 October) | Executors described by capability, cost and tools, from which an orchestrator picks ([EASy](https://arxiv.org/abs/2608.04588)). Agents chosen by a reputation built from rated performance ([DRF](https://arxiv.org/abs/2509.05764)). Trust kept for each skill rather than one score for each agent ([arXiv 2606.14200](https://arxiv.org/abs/2606.14200)). Perfect delegation would beat measured delegation by 15 to 31 points ([arXiv 2605.19099](https://arxiv.org/abs/2605.19099)). | Mostly done. Profiles and track records exist. Here the kernel keeps them from the run record, by position rather than by agent, and they inform proposals that still pass the gates. |
-| The shared situation | A shared JSON workspace whose decision packet keeps the conditions for reopening a decision ([DCI, arXiv 2603.11781](https://arxiv.org/abs/2603.11781)). A blackboard in place of each agent's private memory ([arXiv 2507.01701](https://arxiv.org/abs/2507.01701)). Stop conditions the runtime checks after each reply ([AutoGen](https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/termination.html)). Trigger, condition and action rules enforced at runtime ([AgentSpec](https://arxiv.org/abs/2503.18666)). | Partly done. Not found: a fixed situation in every brief, with abort criteria the lead sets for each task from a list the kernel can test. Magentic-One's ledger is nearest, but its orchestrator judges for itself when work has stalled. |
+| The shared situation | A shared JSON workspace whose decision packet keeps the conditions for reopening a decision ([DCI, arXiv 2603.11781](https://arxiv.org/abs/2603.11781)). A blackboard in place of each agent's private memory ([arXiv 2507.01701](https://arxiv.org/abs/2507.01701)). Stop conditions the runtime checks after each reply ([AutoGen](https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/termination.html)). Trigger, condition and action rules enforced at runtime ([AgentSpec](https://arxiv.org/abs/2503.18666)). | Partly done. Not found: a fixed situation in every brief, with abort criteria the operator sets for each run from a list the kernel can test. Magentic-One's ledger is nearest, but its orchestrator judges for itself when work has stalled. |
 | A method made of moves | Workflows searched offline from a set of operators ([AFlow](https://arxiv.org/abs/2410.10762), [MaAS](https://arxiv.org/abs/2502.04180)), or written as free code ([ADAS](https://arxiv.org/abs/2408.08435)). Sequential, parallel and loop agents run by fixed logic ([Google ADK](https://adk.dev/agents/workflow-agents/)). Chaining, parallel and routing patterns ([LangGraph](https://docs.langchain.com/oss/python/langgraph/workflows-agents)). | Partly done. Operators are chosen offline or wired by a developer. Not found: a lead that names its moves at runtime from a closed list, each checked and recorded in code. A caution for reverse: models plan backward poorly unless the problem is turned around ([arXiv 2411.01790](https://arxiv.org/abs/2411.01790)). |
 | A reviewer of purpose | A Challenger whose challenge invites defend, refine, update or concede, in a session that can close with objections still open (DCI). A member added for structured dissent ([Catfish agent](https://arxiv.org/abs/2505.21503)). A single agent that lists likely failures before it acts ([Devil's Advocate](https://arxiv.org/abs/2405.16334)). A merge blocked until every review conversation is resolved ([GitHub](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)). | Partly done. Not found: a typed answer the runtime requires for every note (keep, change the method, revise the goal, or defer with a reason), from a member with no authority, with the run unable to complete while a note is open. Genet's kernel already enforces that; part 10 adds the model that raises the notes. |
 | Peer teams | Teams that work apart and swap solutions at set phases ([Croto](https://arxiv.org/abs/2406.08979)). Nested teams with typed messages and separate memories ([TalkHier](https://arxiv.org/abs/2502.11098)). A shared message pool that agents subscribe to ([MetaGPT](https://arxiv.org/abs/2308.00352)), and messages routed by topic ([AutoGen Core](https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/core-concepts/topic-and-subscription.html)). Agents that trade typed tasks and artifacts without access to each other's state ([A2A](https://a2a-protocol.org/latest/specification/)). | Partly done. The pieces exist apart. Not found together: siblings under one parent, typed updates the runtime passes, and no peer able to change another's team or method. Flat teams have beaten hierarchical ones ([arXiv 2510.07488](https://arxiv.org/abs/2510.07488)), so nesting has to earn each level. |

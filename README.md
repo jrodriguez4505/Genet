@@ -30,8 +30,11 @@ Genet is built for a small, cohesive team:
 
 Every agent is the same model and could hold any skill. So a member is a position, not a kind of agent, and authority belongs to the position. Each member the team adds must do work the others could not.
 
-Built so far: an independent verifier, shown sources the kernel picks (see [Verification](#verification)). Designed, not built:
-- a shared situation that the kernel acts on and keeps current, with decision points and abort criteria;
+Built so far:
+- an independent verifier, shown sources the kernel picks (see [Verification](#verification));
+- a shared situation that the kernel acts on and keeps current: decision points with its own forecasts, abort criteria you set, a main effort, and sub-agents that can hand a part back (see [The shared situation](#the-shared-situation)).
+
+Designed, not built:
 - a lead that knows its members, from a record the kernel keeps;
 - a reviewer that checks the plan against the purpose before the work starts;
 - a method made of moves the kernel runs, so that a chain of dependent parts is not split;
@@ -176,6 +179,9 @@ Every run command takes these flags:
 - `--isolate`: the sub-tasks must not share a context, which is a declared reason to fan out.
 - `--split-policy measured|stated`: what "should we" accepts (default `measured`).
 - `--tier`, plus budget overrides: `--max-calls`, `--max-tokens`, `--max-seconds`, `--max-tokens-per-call`.
+- `--abort forecast_short` or `--abort parts_failed:N`: stop at a decision point when the criterion is met (see [The shared situation](#the-shared-situation)).
+- `--main-effort CHANNEL`: the part the goal depends on most; the gates judge it first.
+- `--report-up`: a sub-agent may hand its part back when the plan is wrong for it.
 
 Each run starts with clean working memory, even when you reuse a run id. Runs saved before the 0.2 rename still load.
 
@@ -314,6 +320,22 @@ When one sub-agent fails, or you press Ctrl-C, the run closes at once and the su
 
 Malformed JSON from the endpoint or the model, including nesting too deep and numbers too long to convert, stops the call as a `LIVE` or `SCHEMA` error. A malformed saved run is refused as `PERSIST`, and a saved run cannot give a slot tools its skill does not allow. See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
+## The shared situation
+
+Every member works from the same situation: the goal, its purpose, done-when, the criteria and the method. The kernel acts on each part of it (design part 8):
+
+- **Decision points.** After the plan is judged, after the sub-agents report, and after the verdict, the kernel forecasts what the rest of the run needs and records it. The forecast counts the fewest calls left to make, at the run's average cost per call so far, against what the budget has left.
+- **Abort criteria**, from a fixed list, set with `--abort`:
+  - `forecast_short` stops the run when the forecast shows the budget cannot finish the work, before it spends the rest;
+  - `parts_failed:N` stops it when N parts' sub-agents have failed.
+
+  Free text is refused, because code cannot test it. A run that stops this way ends with code `ABORT`, and its review names the criterion.
+- **Main effort.** `--main-effort CHANNEL` names the part the goal depends on most. The gates judge it first, so it is staffed first when the budget or the cap runs short.
+- **Kept current.** Each call a member makes carries the situation as it stands at that call, tool rounds included, and says what changed since its last one. Its context stays as it stood at the split.
+- **Reported up.** With `--report-up`, a sub-agent may answer `replan:REASON` when the plan is wrong for its part. Its reply is not merged. The kernel opens a replan request, closes it with a method in which the lead covers the part, and gives the lead the reason.
+
+None of these change a request unless you use them: with default flags, older tapes replay unchanged.
+
 ## Verification
 
 The verifier's verdict is the first word of its claim: PASS passes, and anything else fails, so "Passing this would be wrong" is not a pass. A live verifier is told to pass a product only if it answers the goal, its subject and its question, and to fail one about something else even when it repeats the criteria: a past live run passed an answer about Jean Genet the playwright on a task about this kernel. Then every success criterion must appear in the product itself, as a whole word or number ("4.1" is not met by "14.1"): its claim, evidence or context update. The verifier's own evidence does not count, so it cannot pass a product by echoing the criteria. These run-state checks must also hold:
@@ -366,7 +388,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 1,490 checks with no network and no key:
+`pytest -q` runs about 1,540 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -388,7 +410,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 206 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security and run-state checks, and confirms that some test fails for each. All 206 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 219 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All 219 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -405,7 +427,11 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 | Method | The current plan. Its moves are recorded as labels; design part 9 would have the kernel run them. | `RunState.method`, `axes` |
 | Context | The shared state of what is known. | `RunState.context`, `Run.update_context()` |
 | Review | A concern raised to the lead, which must answer it. | `Run.open_review()`, `Run.answer_review()` |
-| Replan request | A review that says the plan no longer fits; only a method or goal change closes it. | `Run.request_replan()`, INV-14 |
+| Decision point | A place in the loop where the kernel forecasts the rest of the run and checks the abort criteria: plan, reports, verdict. | `RunState.checkpoints`, `Engine._decision_point()` |
+| Forecast | The kernel's estimate of what the rest of the run needs, against what is left. | `situation.forecast()`, `RunState.projections` |
+| Abort criterion | A condition, from a fixed list, that stops the run at a decision point. | `RunState.abort_criteria`, `--abort` |
+| Main effort | The part the goal depends on most; the gates judge it first. | `RunState.primary`, `--main-effort` |
+| Replan request | A review that says the plan no longer fits; only a method or goal change closes it. A failed check opens one, and with `--report-up` so can a sub-agent. | `Run.request_replan()`, INV-14 |
 | Run log | The trace and audit log of every decision. | `Run.log`, `diagnose()` |
 | Team review | The kernel's blameless review of a run that had a failure: what failed, each part's outcome, what the team did. | `Run.review`, `review.team_review()` |
 | Lessons | Fixed sentences, one per kind of failure, that every later brief carries. | `guidelines/lessons.md`, `MemoryStore.add_lesson()`, `--no-lessons` |
@@ -416,7 +442,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.7.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
+v0.8.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. [ARCHITECTURE.md](ARCHITECTURE.md) maps the modules and lists the open design questions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 
