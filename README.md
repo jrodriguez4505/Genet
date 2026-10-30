@@ -31,11 +31,14 @@ Genet is built for a small, cohesive team:
 Every agent is the same model and could hold any skill. So a member is a position, not a kind of agent, and authority belongs to the position. Each member the team adds must do work the others could not.
 
 Built so far: an independent verifier, shown sources the kernel picks (see [Verification](#verification)). Designed, not built:
+- a shared situation that the kernel acts on and keeps current, with decision points and abort criteria;
 - a lead that knows its members, from a record the kernel keeps;
-- teams that nest under the same gates;
+- a reviewer that checks the plan against the purpose before the work starts;
+- a method made of moves the kernel runs, so that a chain of dependent parts is not split;
+- teams that nest under the same gates, and trade updates with their peers without merging contexts;
 - a lead that can be replaced from the record.
 
-The design is in [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), and [ARCHITECTURE.md](ARCHITECTURE.md) maps the code.
+The design is in [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), which also records what became of Genet's first design. [ARCHITECTURE.md](ARCHITECTURE.md) maps the code.
 
 ## What it refuses
 
@@ -127,7 +130,7 @@ The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. Th
 | Normal | `--tier normal` | + replan | 8 / 15k / 60s |
 | Open | `--tier open` | + gated fan-out | 12 / 50k / 120s |
 
-The CLI defaults to tight. Do not raise the budget because the model sounded ready. A run may spend its whole budget, but not one call more.
+The tiers began as a way to test in steps, with guardrails, so that no run could start and fail to stop. The CLI defaults to tight. Do not raise the budget because the model sounded ready. A run may spend its whole budget, but not one call more.
 
 ## Install
 
@@ -399,7 +402,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 | Split policy | What counts as a reason to fan out: measured (default) or stated. | `Engine(split_policy=...)`, `--split-policy` |
 | Skill | A role brief plus a tool allowlist. | `Slot.skill`, `SKILLS`, `Run.switch_skill()` |
 | Goal | What the run must deliver, with success criteria and a done-when condition. | `goal`, `success_criteria`, `done_when` |
-| Method | The current plan. | `RunState.method`, `axes` |
+| Method | The current plan. Its moves are recorded as labels; design part 9 would have the kernel run them. | `RunState.method`, `axes` |
 | Context | The shared state of what is known. | `RunState.context`, `Run.update_context()` |
 | Review | A concern raised to the lead, which must answer it. | `Run.open_review()`, `Run.answer_review()` |
 | Replan request | A review that says the plan no longer fits; only a method or goal change closes it. | `Run.request_replan()`, INV-14 |

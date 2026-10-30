@@ -2,7 +2,7 @@
 
 This page is for someone reviewing Genet's design. It covers how a run moves through the code, what each module does, the decisions behind them, and the questions still open. Other documents cover the rest:
 - the [README](README.md): use;
-- [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md): where the team goes next;
+- [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md): where the team goes next, and what became of Genet's first design;
 - [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md): what the runs on Claude showed.
 
 ## Why it exists
@@ -34,6 +34,8 @@ Code decides everything else: who is on the team, which tools run, and what is s
 1. **Set up** (`cli.py`, `factory.py`, `budget.py`). The CLI builds two objects:
    - a `Run`: state, log and rules;
    - an `Engine`: the loop, with a budget tier, a model adapter, a sandboxed `Toolbox` and a `MemoryStore`.
+
+   The run state also holds fields from the first design that nothing reads yet: `primary`, `cadence`, `checkpoints`, `projections` and `abort_criteria`. `axes` records the method's moves as labels. Design parts 8 and 9 act on them or remove them.
 2. **Plan** (`Engine._propose` in `loop.py`). The lead's call carries:
    - the context;
    - the guidelines and lessons from the store;
@@ -126,7 +128,8 @@ Every model call goes through `Engine._call`:
 | A reason to split is measured, not stated. | A lead can always give a reason. `--split-policy stated` keeps the old rule for comparison, and on Haiku it was the weakest strategy. |
 | Models fill a fixed artifact, and authority stays in code. | No prompt can change the team. Red-team tests and the mutation check hold this. |
 | One owner, a shared outcome. | A failed part goes back to the lead, and the run goes on. The review and the lessons come from the record, never from model text. |
-| Hard budgets. | A run may spend its whole budget, but not one call more. Merge and verify are reserved before a split. |
+| Hard budgets. | A run may spend its whole budget, but not one call more. Merge and verify are reserved before a split. The tiers began as a way to test in steps, so that no run could start and fail to stop. |
+| No memory system of Genet's own. | Today's store is plain files. When a part needs more, an off-the-shelf or model-provider memory goes behind `MemoryStore`, and the kernel still decides what is written. |
 | Read-only tools in a sandbox. | Workspace only. Hidden files, binaries and symlinks out of the workspace are refused. |
 | The kernel picks the verifier's sources. | Neither the author nor the verifier chooses them. In the live bench, the sources decided the catch. |
 | Every figure can be rerun. | A deterministic reader and tapes let every result replay with no key and no spend. |
@@ -146,13 +149,20 @@ Every model call goes through `Engine._call`:
 5. **The lead knowing its members** (design part 7): a record of each position, kept by the kernel, in the lead's plan brief. Does a track record belong in the brief, in the gates, or nowhere?
 6. **`loop.py` is 944 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
 7. **Hand-offs lose information.** The always-split crew lost answers as the work grew. What would show where?
+8. **A reviewer of purpose** (design part 10) adds a call before the work, to check the plan against the purpose. Is that worth it, or is checking the product afterwards enough?
+9. **Sequential work** (design part 9). The gate would refuse to split a chain of parts unless a link does not fit. Is a dependency the lead declares enough to find chains, or should the kernel find them?
 
 ## Not built yet
 
-These are the remaining parts of [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md):
-- nesting (part 3);
+These are the remaining parts of [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), in its order:
+- the shared situation, kept current, with decision points and abort criteria the kernel acts on (part 8);
+- a lead that knows its members (part 7);
+- a reviewer of purpose (part 10);
+- a method made of moves the kernel runs (part 9);
+- nesting (part 3), with peer teams (part 11);
 - succession, with re-planning on a measured overflow (part 4);
-- members that differ by model (part 6), waiting on a go-ahead for spend;
-- a lead that knows its members (part 7).
+- members that differ by model (part 6), waiting on a go-ahead for spend.
+
+Later, if needed: a learned staffing model, trained on part 7's records.
 
 The README's "workers that spawn workers" refusal stays until nesting is built.
