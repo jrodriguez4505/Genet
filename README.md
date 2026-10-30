@@ -6,7 +6,7 @@ One organism. Many stems.
 
 **The question is not how many agents you can run. It is whether a second one is doing new work.**
 
-Genet is a small multi-agent runtime. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
+Genet is a small multi-agent runtime. Agent counts have become a headline number, with products advertising hundreds of sub-agents on one task, but a count says what was spent, not what was gained. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/patterns-dark.svg">
@@ -18,6 +18,27 @@ Genet is a small multi-agent runtime. Most stacks treat headcount as capacity; G
 The team is small, and every agent can switch skills, with specialists added only when a sub-task needs one. The lead owns the roster. The goal stays fixed while the method changes. Work fans out to sub-agents only when the task has independent parts, then merges back.
 
 Quality of process over quantity of agents: possibly more efficient, and possibly more effective. That stays a claim until measured. `taskorg compare` exists to measure it (see [Proving it](#proving-it)).
+
+## The team
+
+Genet is built for a small, cohesive team:
+
+- The lead knows what each member can do.
+- Members differ where it matters: in what they see, what they may open, and which model fills them. They do not differ by a persona in the prompt.
+- Everyone works from the same goal, purpose and done-when.
+- Responsibility is shared. Decisions and the outcome are the lead's.
+
+Every agent is the same model and could hold any skill. So a member is a position, not a kind of agent, and authority belongs to the position. Each member the team adds must do work the others could not.
+
+Built so far: an independent verifier, shown sources the kernel picks (see [Verification](#verification)). Designed, not built:
+- a shared situation that the kernel acts on and keeps current, with decision points and abort criteria;
+- a lead that knows its members, from a record the kernel keeps;
+- a reviewer that checks the plan against the purpose before the work starts;
+- a method made of moves the kernel runs, so that a chain of dependent parts is not split;
+- teams that nest under the same gates, and trade updates with their peers without merging contexts;
+- a lead that can be replaced from the record.
+
+The design is in [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), which also records what became of Genet's first design. [ARCHITECTURE.md](ARCHITECTURE.md) maps the code.
 
 ## What it refuses
 
@@ -109,7 +130,7 @@ The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. Th
 | Normal | `--tier normal` | + replan | 8 / 15k / 60s |
 | Open | `--tier open` | + gated fan-out | 12 / 50k / 120s |
 
-The CLI defaults to tight. Do not raise the budget because the model sounded ready. A run may spend its whole budget, but not one call more.
+The tiers began as a way to test in steps, with guardrails, so that no run could start and fail to stop. The CLI defaults to tight. Do not raise the budget because the model sounded ready. A run may spend its whole budget, but not one call more.
 
 ## Install
 
@@ -345,7 +366,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 
 ## Tests
 
-`pytest -q` runs about 1,480 checks with no network and no key:
+`pytest -q` runs about 1,490 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -381,7 +402,7 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 | Split policy | What counts as a reason to fan out: measured (default) or stated. | `Engine(split_policy=...)`, `--split-policy` |
 | Skill | A role brief plus a tool allowlist. | `Slot.skill`, `SKILLS`, `Run.switch_skill()` |
 | Goal | What the run must deliver, with success criteria and a done-when condition. | `goal`, `success_criteria`, `done_when` |
-| Method | The current plan. | `RunState.method`, `axes` |
+| Method | The current plan. Its moves are recorded as labels; design part 9 would have the kernel run them. | `RunState.method`, `axes` |
 | Context | The shared state of what is known. | `RunState.context`, `Run.update_context()` |
 | Review | A concern raised to the lead, which must answer it. | `Run.open_review()`, `Run.answer_review()` |
 | Replan request | A review that says the plan no longer fits; only a method or goal change closes it. | `Run.request_replan()`, INV-14 |
@@ -397,7 +418,7 @@ This Genet is software, not the playwright.
 
 v0.7.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
 
-The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
+The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. [ARCHITECTURE.md](ARCHITECTURE.md) maps the modules and lists the open design questions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 
 ## Use, partnerships, commercial
 
