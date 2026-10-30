@@ -143,19 +143,22 @@ class GateRecord:
 class RunState:
     lead_id: str
     slots: list[Slot]
+    # The main effort: the channel the goal depends on most, judged first. "" for none.
     primary: str
     goal: str
     success_criteria: list[str]
-    cadence: str
+    # The decision points the kernel checks at (situation.DECISION_POINTS).
     checkpoints: list[str]
     context: str
     done_when: str
     purpose: str
     method: str
     initial_context: str = ""
+    # The kernel's forecasts, one per decision point reached. Never written by a model.
     projections: list[str] = field(default_factory=list)
     context_sufficient: bool = False
     axes: list[str] = field(default_factory=list)
+    # From situation.ABORT_CRITERIA, set by the operator.
     abort_criteria: list[str] = field(default_factory=list)
 
     def worker_count(self) -> int:

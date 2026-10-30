@@ -1,5 +1,6 @@
 from .run import Run
 from .models import RunState, Slot
+from .situation import DECISION_POINTS
 
 
 # What a run checks when the operator names nothing. Any reply that echoes its brief meets these,
@@ -16,11 +17,10 @@ def new_run(run_id: str, goal: str, purpose: str, done_when: str) -> Run:
     state = RunState(
         lead_id="lead-1",
         slots=[lead, verifier, memory, reviewer],
-        primary="lead-1",
+        primary="",
         goal=goal,
         success_criteria=list(DEFAULT_CRITERIA),
-        cadence="run",
-        checkpoints=["context", "switch_skill", "gates", "complete"],
+        checkpoints=list(DECISION_POINTS),
         context="initial context",
         done_when=done_when,
         purpose=purpose,

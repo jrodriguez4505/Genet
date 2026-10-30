@@ -2,6 +2,35 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.8.0 — October 2026: the shared situation
+
+**Why.** Genet's first design gave every run a situation in six parts: who, what, when, where, why and how. The run state kept those fields after v0.2, but the kernel read only some of them. Pace and the decision points were set when a run was made and never read. The forecasts, the abort criteria and the main effort were never read at all. This is part 8 of the team design (`docs/TEAM_DESIGN.md`): the kernel acts on every field of the situation, or the field goes.
+
+**Built** (`taskorg/situation.py` and the loop):
+- **Decision points.** After the plan is judged, after the sub-agents report, and after the verdict. At each one, the kernel forecasts what the rest of the run needs and records it in `projections` and a `decision_point` event. The forecast is the fewest calls left, at the run's average cost per call so far, against the calls and tokens left. A run checks at the decision points its `checkpoints` list, all three by default.
+- **Abort criteria** (`--abort`), from a fixed list:
+  - `forecast_short`: the budget cannot finish the work;
+  - `parts_failed:N`: N parts' sub-agents have failed.
+
+  Free text is refused before the run starts. A criterion that is met stops the run with code `ABORT`, and the review names it. In the suite's case (4,000 tokens a call against a budget of 10,000), `forecast_short` stops the run after its plan, at one call; without it, the run makes three calls and stops on its budget.
+- **Main effort** (`--main-effort CHANNEL`). The gates judge that part first, so it is staffed first when the budget or the cap of 4 runs short.
+- **Kept current.** Every call a member makes, tool rounds included, carries the goal, purpose, done-when and criteria as they stand at that call. If one changed since its last call, the call says which, and the record notes it. The context stays as it stood at the split.
+- **Reported up** (`--report-up`, off by default because it changes the sub-agent brief). A sub-agent may hand its part back with `replan:REASON`.
+  - Its reply is not merged.
+  - The kernel posts the reason on the escalate stream and opens a replan request.
+  - After the reports, the kernel closes the request for the lead with the method that follows, in which the lead covers the part.
+  - The merge brief gives the lead the reason.
+  - A part handed back is covered, not failed: it does not count toward `parts_failed`, and the review lists it as handed back.
+- **Pace is gone.** `cadence` left the run state, the saved run and the schema. An older saved run's value is read and ignored. The JSON schema now lists the decision points and the form of an abort criterion.
+
+**Unchanged by default.** With default flags, every request is byte for byte what it was. The 28 October concept tape and the 29 October verify-bench tape replay with no missing requests and the same results. The sim figures are unchanged: 1.20 times a single agent roomy, 0.92 times the crew tight.
+
+**Not built or not measured yet.**
+- Marking a fact every part depends on, so a change to it reaches every member. There is no way yet to mark one.
+- Whether a sub-agent on a real model hands back a part it cannot do, rather than guess. That needs a live crew run with `--report-up`, on a go-ahead for spend.
+
+- `tests/test_situation.py` (35 tests), and 13 new mutations, for 219, all caught. 1,538 tests.
+
 ## v0.7.0 — October 2026: a verifier that can check
 
 **Why.** In the 28 October rerun, the verifier passed a single agent's wrong total, 1152.1 for 1142.6. It had no sources, and its brief carried the author's own note that look-alike files were excluded. The verifier is the one member whose work is to disagree with the author, and it could neither check nor come to the product fresh. This is part 2 of the team design (`docs/TEAM_DESIGN.md`): members differ by what they see and what they may open, not by what they know.

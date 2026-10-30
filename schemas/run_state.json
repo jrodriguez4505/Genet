@@ -25,10 +25,9 @@
     },
     "schedule": {
       "type": "object",
-      "required": ["cadence", "checkpoints"],
+      "required": ["checkpoints"],
       "properties": {
-        "cadence": { "type": "string" },
-        "checkpoints": { "type": "array", "items": { "type": "string" } }
+        "checkpoints": { "type": "array", "items": { "enum": ["plan", "reports", "verdict"] } }
       }
     },
     "context": {
@@ -58,7 +57,10 @@
           "type": "array",
           "items": { "enum": ["parallel", "fallback", "reroute", "sequential", "reverse", "fan_in"] }
         },
-        "abort_criteria": { "type": "array", "items": { "type": "string" } }
+        "abort_criteria": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^(forecast_short|parts_failed:[1-9][0-9]{0,3})$" }
+        }
       }
     }
   },

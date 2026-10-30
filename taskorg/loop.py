@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .adapters import TOOL_RESULTS, Brief, OperatorQuestion, ModelAdapter, StubAdapter
-from . import checks
+from . import checks, situation
 from .budget import Budget
 from .cues import fire_auto_cues
 from .errors import InvariantError
@@ -59,8 +59,8 @@ def world_misses(run: Run, product: Artifact | None) -> list[str]:
         misses.append("world: product claim empty")
     if run.state.worker_count() > 0:
         merged = [d for d in run.deltas if d.stream == "merge"]
-        # A part whose sub-agent failed is accounted for: the lead covered it.
-        covered = any(e.event == "part_failed" for e in run.log)
+        # A part whose sub-agent failed, or handed it back, is accounted for: the lead covered it.
+        covered = any(e.event in ("part_failed", "part_reported") for e in run.log)
         if not merged and not covered:
             misses.append("world: workers exist but merged no results")
     if run.open_review_ids():
@@ -131,6 +131,14 @@ RETRY_NOTE = ("\nRETRY. Your last reply was not the JSON object the schema asks 
 # Model output is untrusted. These bound what one reply can make the kernel do.
 MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
 MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
+REPORT_REASON_CHARS = 200
+
+# Reported up (team design part 8): with report_up on, a sub-agent may hand its part back with this request.
+REPLAN_REQUEST = "replan:"
+REPORT_UP_NOTE = (" If your part cannot be done as planned, because your files do not hold what it needs or the "
+                  "plan is wrong for it, do not guess: add the request replan:REASON, and the lead takes the part back.")
+# Kept current: what a member's next call says when the situation changed since its last one.
+SITUATION_CHANGED = "SITUATION CHANGED since your last call: {fields}. The brief shows it as it stands now."
 
 PLAN_BRIEF = (
     "PLAN. Decide how to staff this task. Default is a single agent: you do the work yourself. "
@@ -179,6 +187,15 @@ def _sibling_heard(run: Run, brief: Brief) -> list[str]:
         if any(m in seen_text for m in marks):
             heard.append(other)
     return heard
+
+
+def _plan_wrong(art: Artifact) -> str | None:
+    """The reason a sub-agent gave for handing its part back, or None. Model text: bounded, never a lesson."""
+    for r in art.requests:
+        text = r.strip()
+        if text[:len(REPLAN_REQUEST)].lower() == REPLAN_REQUEST:
+            return text[len(REPLAN_REQUEST):].strip()[:REPORT_REASON_CHARS] or "no reason given"
+    return None
 
 
 def _stop_reason(e: BaseException) -> str:
@@ -230,6 +247,7 @@ class Engine:
         verify_view: str = "shared",
         verify_sources: str = "layered",
         verify_sample: int = checks.SAMPLE,
+        report_up: bool = False,
     ):
         self.store = store
         self.adapter = adapter or StubAdapter()
@@ -253,6 +271,8 @@ class Engine:
         self.verify_view = verify_view
         self.verify_sources = verify_sources
         self.verify_sample = max(0, int(verify_sample))
+        # A sub-agent may hand its part back when the plan is wrong for it. Off by default: it changes the sub-agent brief.
+        self.report_up = report_up
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
         # Calls started but not yet recorded, per run. Admission counts them, so parallel
@@ -520,12 +540,53 @@ class Engine:
                         # The files it showed, so a check later knows what the run saw and what it never did.
                         **checks.files_in_result(out),
                     })
-            brief = replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join(results))
+            brief = self._current(run, replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join(results)), slot)
             art = self._call(run, brief, slot)
         if any(_tool_name(r) in RUNNABLE for r in art.requests):
             with self._lock:
                 run._record("tool_rounds_exhausted", {"slot": slot.id if slot else brief.slot_function})
         return art
+
+    def _current(self, run: Run, brief: Brief, slot: Slot | None) -> Brief:
+        """Kept current (part 8): a member's next call carries the situation as it stands now, as the record
+        has it, and says what changed since its last call. Its context and working facts stay as they were."""
+        now = {"goal": run.state.goal, "purpose": run.state.purpose, "done_when": run.state.done_when,
+               "success_criteria": list(run.state.success_criteria)}
+        changed = [k for k, v in now.items() if getattr(brief, k) != v]
+        if not changed:
+            return brief
+        with self._lock:
+            run._record("situation_update", {"slot": slot.id if slot else brief.slot_function, "changed": changed})
+        return replace(brief, **now, packet=brief.packet + "\n" + SITUATION_CHANGED.format(fields=", ".join(changed)))
+
+    def _decision_point(self, run: Run, at: str, calls: int) -> None:
+        """Part 8. Forecast what the rest of the run needs, check the abort criteria, and record both.
+        A criterion that is met stops the run here, before it spends the rest of its budget.
+
+        calls: the fewest calls the rest of the loop makes from here."""
+        if at not in run.state.checkpoints:
+            return
+        with self._lock:
+            criteria = situation.parse_abort(run.state.abort_criteria)
+            fc = situation.forecast(run, at, calls)
+            hit = situation.met(run, fc, criteria)
+            run.state.projections.append(fc.line())
+            run._record("decision_point", fc.as_dict() | {"abort": hit})
+            if hit:
+                run.halt(f"abort criterion {hit} met at {at}. {fc.line()}", code="ABORT")
+
+    def _reports(self, run: Run, added: list[Slot], arts: list[Artifact | None]) -> tuple[list[str], dict[str, str]]:
+        """After the sub-agents report: the parts that failed and the parts handed back, then the reports
+        decision point. Each part handed back has a replan request open; the kernel closes it for the lead
+        with the method that follows, in which the lead covers the part (INV-14)."""
+        reported = {e.detail["channel"]: e.detail["reason"] for e in run.log if e.event == "part_reported"}
+        failed = [w.channel_id or "" for w, a in zip(added, arts) if a is None and w.channel_id not in reported]
+        self._decision_point(run, "reports", 2)  # the merge and the check
+        lead = run.state.lead_id
+        for ch in reported:
+            run.answer_review(lead, f"replan-{ch}", "CHANGE_METHOD",
+                              f"{run.state.method}; the lead covers {ch}, which its sub-agent reported could not be done as planned")
+        return failed, reported
 
     # --- task organization ---
 
@@ -565,6 +626,13 @@ class Engine:
     def _assess(self, run: Run, subtasks: list[Subtask], *, declared: bool = False) -> list[Assessment]:
         """declared: the operator named these sub-tasks, so the need is theirs to state."""
         b = run.budget
+        main = run.state.primary
+        if main:
+            # The main effort (part 8) is judged first, so it is staffed first when the budget or the cap runs short.
+            first = next((s for s in subtasks if s.channel_id == main), None)
+            if first is not None:
+                subtasks = [first] + [s for s in subtasks if s is not first]
+            run._record("main_effort", {"channel": main, "proposed": first is not None})
         if len(subtasks) > MAX_PROPOSALS:
             run._record("gate_overflow", {"proposed": len(subtasks), "considered": MAX_PROPOSALS})
             subtasks = subtasks[:MAX_PROPOSALS]
@@ -618,7 +686,8 @@ class Engine:
                 extra=f"channel={worker.channel_id} only. Do not see sibling channels."
                 + (f" Your files: {', '.join(own)}; your tools open only these. Report what they hold for the goal;"
                    " the other parts are other sub-agents', and the lead combines them." if own else "")
-                + (f" Lead's note for this sub-agent: {note}" if note else ""),
+                + (f" Lead's note for this sub-agent: {note}" if note else "")
+                + (REPORT_UP_NOTE if self.report_up else ""),
                 slot=worker, context=split_context, mode="work",
             )
             try:
@@ -656,19 +725,28 @@ class Engine:
                                             "code": art.code, "error": str(art)[:200]})
                 arts[i] = None
                 continue
+            why = _plan_wrong(art) if self.report_up else None
+            if why is not None:
+                # Reported up (part 8): the plan is wrong for this part. It goes back to the lead with the
+                # reason, as a failed part does, and a replan request stays open until the method changes.
+                run._record("part_reported", {"channel": worker.channel_id, "slot": worker.id, "reason": why})
+                run.request_replan(f"{worker.channel_id}: {why}", note_id=f"replan-{worker.channel_id}")
+                arts[i] = None
+                continue
             run.accept_artifact(art)
             run.post_delta(Delta(claim=art.context_update or art.claim, evidence=list(art.evidence), uncertainty=art.uncertainty, channel_id=art.channel_id, stream="merge"))
             self.store.remember_working(run.id, f"channel:{worker.channel_id}", art.claim)
         return arts
 
-    def _cover(self, run: Run, verdicts: list[Assessment], failed: list[str]) -> str:
+    def _cover(self, run: Run, verdicts: list[Assessment], failed: list[str], reported: dict[str, str] | None = None) -> str:
         """Parts the lead covers in the merge: refused for capacity or a malformed proposal, or whose
-        sub-agent failed. Gives the lead a skill that can read, and returns the brief text naming them."""
+        sub-agent failed or handed it back. Gives the lead a skill that can read, and returns the brief
+        text naming them."""
         refused = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
         # Proposals past the cap were never judged, so they have no verdict; their parts are the lead's too.
         past = next((e.detail for e in reversed(run.log) if e.event == "gate_overflow"), None)
         unjudged = past["proposed"] - past["considered"] if past else 0
-        if not refused and not failed and not unjudged:
+        if not refused and not failed and not unjudged and not reported:
             return ""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent finished")
@@ -677,6 +755,9 @@ class Engine:
             text += f" These parts got no sub-agent and are yours to cover: {', '.join(refused)}."
         if failed:
             text += f" These parts' sub-agents failed, so they are yours to cover: {', '.join(failed)}."
+        if reported:
+            text += (" These parts' sub-agents reported they could not be done as planned, so they are yours to cover: "
+                     + "; ".join(f"{ch} (its reason: {why})" for ch, why in reported.items()) + ".")
         if unjudged:
             text += f" {unjudged} more proposed part(s) came past the cap of {MAX_PROPOSALS} and are yours to cover too."
         return text
@@ -731,7 +812,9 @@ class Engine:
         if not verified:
             self._record_verify_failed(run)
         b = run.budget
-        if not verified and adapt and getattr(b, "allow_adapt", True) and self._calls_left(run) >= 2:
+        rework = not verified and adapt and getattr(b, "allow_adapt", True)
+        self._decision_point(run, "verdict", 2 if rework else 0)  # a rework and its check, or nothing
+        if rework and self._calls_left(run) >= 2:
             last = run.last_verify or {}
             misses = list(last.get("misses", [])) + list(last.get("world_misses", []))
             run.request_replan(f"verifier did not pass: {check.claim[:160]}; misses: {', '.join(misses) or 'none named'}")
@@ -793,11 +876,14 @@ class Engine:
         return skill
 
     @staticmethod
-    def _account(verdicts: list[Assessment], added: list[Slot], failed: list[str] | None = None) -> str:
+    def _account(verdicts: list[Assessment], added: list[Slot], failed: list[str] | None = None,
+                 reported: dict[str, str] | None = None) -> str:
         """The lead's answer to the operator, built from the gate record."""
         refused = [f"{v.subtask.channel_id}: {v.refused}" for v in verdicts if not v.legal]
         if failed:
             refused = refused + [f"{c}: its sub-agent failed, and the lead covered the part" for c in failed]
+        if reported:
+            refused = refused + [f"{c}: its sub-agent reported the plan wrong for it, and the lead covered the part" for c in reported]
         if added:
             answer = f"{len(added)} sub-agents: {', '.join(w.channel_id or '' for w in added)}"
         elif verdicts:
@@ -842,18 +928,23 @@ class Engine:
 
         verdicts = self._judge(run, self._propose(run))
         legal = [v for v in verdicts if v.legal]
+        split = len(legal) >= self.min_split
+        # The sub-agents, the merge and the check; or the work and the check.
+        self._decision_point(run, "plan", len(legal) + 2 if split else 2)
 
         added: list[Slot] = []
-        if len(legal) >= self.min_split:
+        failed: list[str] = []
+        reported: dict[str, str] = {}
+        if split:
             run.set_method(lead, "sub-agents: " + ", ".join(v.subtask.channel_id for v in legal), axes or ["parallel", "fan_in"])
             split_context = run.state.context
             added = self._staff(run, legal)
             arts = self._run_workers(run, added, split_context, notes={v.subtask.channel_id: v.subtask.named_failure for v in legal})
-            failed = [w.channel_id or "" for w, a in zip(added, arts) if a is None]
+            failed, reported = self._reports(run, added, arts)
             extra = "MERGE. Integrate the sub-agent results against the goal. Do not invent what a sub-agent did not report."
-            # Parts refused for capacity or a malformed proposal, and parts whose sub-agent failed, still
-            # need doing: the lead covers them.
-            cover = self._cover(run, verdicts, failed)
+            # Parts refused for capacity or a malformed proposal, and parts whose sub-agent failed or handed
+            # them back, still need doing: the lead covers them.
+            cover = self._cover(run, verdicts, failed, reported)
             if cover:
                 extra += cover
             else:
@@ -868,7 +959,7 @@ class Engine:
         self.store.remember_working(run.id, "product", product.claim)
 
         product, verified = self._verify(run, product, adapt=True)
-        reason = self._account(verdicts, added, failed if added else [])
+        reason = self._account(verdicts, added, failed, reported)
         question = self._close(run, product, operator_question, "KEEP_ROSTER", reason, f"workers={len(added)}; goal={run.state.goal}")
         return LoopResult(
             run=run, product=product, verified=verified, operator_question=question,
@@ -906,11 +997,12 @@ class Engine:
         verdicts = self._assess(run, subtasks, declared=True)
         split_context = run.state.context
         legal = [v for v in verdicts if v.legal]
+        self._decision_point(run, "plan", len(legal) + 2)  # the sub-agents, the merge and the check
         added = self._staff(run, legal)
         arts = self._run_workers(run, added, split_context, notes={v.subtask.channel_id: v.subtask.named_failure for v in legal})
-        failed = [w.channel_id or "" for w, a in zip(added, arts) if a is None]
-        # Refused for capacity or a malformed spec, or a sub-agent that failed: never silently dropped.
-        extra = "integrate isolated artifacts; do not invent subtasks." + self._cover(run, verdicts, failed)
+        failed, reported = self._reports(run, added, arts)
+        # Refused for capacity or a malformed spec, or a sub-agent that failed or handed its part back: never silently dropped.
+        extra = "integrate isolated artifacts; do not invent subtasks." + self._cover(run, verdicts, failed, reported)
         integrate = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"), reserve=1)
         run.accept_artifact(integrate)
         integrate, verified = self._verify(run, integrate, adapt=False)
@@ -918,6 +1010,8 @@ class Engine:
             run.send_peer(lead, f"run {run.id} holding {len(added)} channels", peer_id="peer-run")
             if failed:
                 lead_reason = f"{lead_reason}; {', '.join(failed)}: the sub-agent failed, and the lead covered the part"
+            if reported:
+                lead_reason = f"{lead_reason}; {', '.join(reported)}: the sub-agent reported the plan wrong for it, and the lead covered the part"
         else:
             # No sub-agent was staffed: the answer says so, from the gate record, instead of claiming a fan-out.
             lead_response, lead_reason = "KEEP_ROSTER", self._account(verdicts, added)

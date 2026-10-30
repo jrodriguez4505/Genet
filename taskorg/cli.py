@@ -15,6 +15,7 @@ from .loop import Engine
 from .memory_store import MemoryStore
 from .persist import load_run, save_run
 from .reads import attach_reads
+from .situation import parse_abort
 from .subtasks import parse_subtasks
 from .tools import Toolbox
 from .verify_bench import SETUPS as VERIFY_SETUPS
@@ -95,6 +96,13 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
                         "(the brief before v0.7.0, which older tapes replay)")
+    p.add_argument("--abort", action="append", default=[], metavar="CRITERION",
+                   help="stop at a decision point when this is met: forecast_short (the budget cannot finish the "
+                        "work), or parts_failed:N (N parts' sub-agents failed)")
+    p.add_argument("--main-effort", default="", metavar="CHANNEL",
+                   help="the part the goal depends on most; the gates judge it first")
+    p.add_argument("--report-up", action="store_true",
+                   help="a sub-agent may hand its part back with replan:REASON when the plan is wrong for it")
     _add_budget_args(p)
 
 
@@ -121,6 +129,8 @@ def _new_run(args: argparse.Namespace, store: MemoryStore):
         if not criteria:
             raise InvariantError("CLI", "--criteria is blank; name what the product must show")
         run.state.success_criteria = criteria
+    run.state.abort_criteria = parse_abort(args.abort)
+    run.state.primary = args.main_effort.strip()
     exists = [str(p) for p in args.exists]
     run.world = World(existing_files=exists, existing_channels=[Path(p).stem for p in exists])
     return run
@@ -133,7 +143,7 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
     toolbox = Toolbox(roots=args.workspace, files=args.read)
     return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
                   split_policy=args.split_policy, isolation_required=args.isolate, lessons=not args.no_lessons,
-                  verify_view=args.verify_view, verify_sources=args.verify_sources)
+                  verify_view=args.verify_view, verify_sources=args.verify_sources, report_up=args.report_up)
 
 
 def _out_path(raw: str | None, default: Path) -> Path:
