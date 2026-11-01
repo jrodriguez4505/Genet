@@ -40,7 +40,8 @@ Code decides everything else: who is on the team, which tools run, and what is s
    - the context;
    - the guidelines and lessons from the store;
    - a SIZE note on what one call holds;
-   - the plan brief.
+   - the plan brief;
+   - with `--cards`, a table with a card for each position the lead can staff (design part 7, `members.py`): tools, calls a part, model, the cost of a call, and counts from past runs.
 
    The lead replies with proposals in `requests`, as `subtask:<channel>@<skill>=<named_failure>`. `subtasks.py` reads them, and at most 16 are considered.
 3. **Judge** (`assess` in `gates.py`, called from `Engine._assess`). The main effort, if the operator named one, is judged first. Each proposal passes three gates in order, and each gate fails closed:
@@ -65,9 +66,10 @@ Code decides everything else: who is on the team, which tools run, and what is s
 6. **Close** (`Engine._account`, `_close`, `review.py`, `persist.py`).
    - The operator's question is answered from the gate record, and the kernel raises its cues (`cues.py`).
    - If anything failed, the kernel writes a blameless review and adds a fixed lesson to the store.
+   - If the run staffed sub-agents, the kernel adds each position's counts to `records/positions.json` in the store (`Engine._keep_records`, `members.from_run`). A damaged file never changes the outcome.
    - The run is saved and becomes read-only.
 
-At three decision points (after the judge, after the reports, after the verdict), `Engine._decision_point` forecasts what the rest of the run needs (`situation.forecast`), checks the abort criteria, and records both. A criterion that is met stops the run there, with code `ABORT`. Each call a member makes, tool rounds included, carries the situation as it stands at that call (`Engine._current`).
+At three decision points (after the judge, after the reports, after the verdict), `Engine._decision_point` forecasts what the rest of the run needs (`situation.forecast`), checks the abort criteria (`forecast_short` by default; `--abort none` turns it off), and records both. A criterion that is met stops the run there, with code `ABORT`. Each call a member makes, tool rounds included, carries the situation as it stands at that call (`Engine._current`).
 
 Every model call goes through `Engine._call`:
 - `_admit` checks the budget before the call, counting calls in flight.
@@ -85,6 +87,7 @@ Every model call goes through `Engine._call`:
 | | `budget.py` | Tiers and caps: calls, tokens, seconds. |
 | | `subtasks.py` | Reads the lead's proposals and the sub-tasks an operator names. |
 | | `situation.py` | Decision points, the kernel's forecasts and the abort criteria (design part 8). |
+| | `members.py` | Each position's record from past runs, and the cards in the lead's plan brief (design part 7). |
 | | `cues.py` | Notes the kernel raises for the lead at close, such as a merge review when two channels reported. |
 | | `errors.py`, `factory.py` | The rule error; building a new run. |
 | The loop | `loop.py` | The `Engine`: briefs, budgeted calls, tool rounds, what the gates measure, staffing, merge, verify, close. The comparison's strategies subclass it. |
@@ -101,6 +104,7 @@ Every model call goes through `Engine._call`:
 | Measurement | `compare.py` | A single agent, an always-split crew and Genet side by side, graded against ground truth. |
 | | `suite.py` | The seeded synthetic task suite. |
 | | `verify_bench.py` | The verifier on its own: planted errors under five setups. |
+| | `report_bench.py` | A sub-agent on its own: parts with a planted plan error, with `--report-up` and without. |
 | | `bench.py`, `diagnostics.py` | Fixtures scored on the run's graph; health and audit of a run. |
 | Operator | `cli.py`, `persist.py`, `atomic.py` | Commands; saving and loading runs, older formats included; writes that land whole. |
 | Experiment, not used in runs | `policy.py`, `imitate.py`, `rl.py`, `finetune.py` | A socket for a learned policy head that could propose in place of the lead, and experiments to train one. It has no path to the roster. |
@@ -136,22 +140,24 @@ Every model call goes through `Engine._call`:
 | No memory system of Genet's own. | Today's store is plain files. When a part needs more, an off-the-shelf or model-provider memory goes behind `MemoryStore`, and the kernel still decides what is written. |
 | Read-only tools in a sandbox. | Workspace only. Hidden files, binaries and symlinks out of the workspace are refused. |
 | The kernel picks the verifier's sources. | Neither the author nor the verifier chooses them. In the live bench, the sources decided the catch. |
-| Every figure can be rerun. | A deterministic reader and tapes let every result replay with no key and no spend. |
+| Records are kept by position, and shown as counts after 3 runs. | Agents are copies of one model, so a record of an agent would describe nothing. A score would judge for the lead, and one bad run should not steer it. The gates do not read the record. |
+| Every figure can be rerun. | A deterministic reader and tapes let every result replay with no key and no spend. On a clean clone with no key and no SDK, the 28 and 29 October tapes reproduce every trial and review to the token. The tapes are [published as a release](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) with a replay command for each. |
+| `forecast_short` is on by default. | It judges the whole budget with a floor forecast, so it stops only a run that cannot finish. It never fired on 372 taped trials, and on the simulated reader it cut what a run that cannot finish spends by 69 to 85%. |
 
 ## How it is tested
 
-- 1,538 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 219 rules one at a time, and a test catches each.
+- 1,640 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 248 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
 
 1. **Is admission control the right place for the staffing decision?** The alternatives are learning the staffing offline, as BAMAS does, or leaving it to the lead's judgment. Genet decides each proposal at runtime, in code.
 2. **Should the should-we gate count cost?** It counts two reasons: declared isolation, and material that does not fit. At 20 companies a single agent costs 1.5 times the crew in the sim, because re-sent tool results grow each round. Genet still stays single.
-3. **Fit judged before the work is unreliable on a real model.** Is re-planning on a measured overflow (design part 4) the answer, or a better estimate in the gate?
+3. **Fit judged before the work is unreliable on a real model.** Is re-planning on a measured overflow (design part 4) the answer, or a better estimate in the gate? On the tapes, re-planning reaches more: of the 9 tight-cap failures left once sub-agents were scoped, a better estimate could reach 3, and in 5 the lead never proposed a split for the gate to judge (`docs/LIVE_TESTS.md`). At a 200,000-token cap nothing overflowed, so neither has been needed at a real context size.
 4. **Nesting** (design part 3): the same gates at every level, depth 2, and at most 4 direct reports a lead, with a budget reserved from the parent's. Are 4 and 2 the right limits?
-5. **The lead knowing its members** (design part 7): a record of each position, kept by the kernel, in the lead's plan brief. Does a track record belong in the brief, in the gates, or nowhere?
-6. **`loop.py` is 944 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
+5. **The lead knowing its members** (design part 7, built with `--cards`): a record of each position, kept by the kernel, in the lead's plan brief. Does a track record belong in the brief, in the gates, or nowhere?
+6. **`loop.py` is about 1,070 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
 7. **Hand-offs lose information.** The always-split crew lost answers as the work grew. What would show where?
 8. **A reviewer of purpose** (design part 10) adds a call before the work, to check the plan against the purpose. Is that worth it, or is checking the product afterwards enough?
 9. **Sequential work** (design part 9). The gate would refuse to split a chain of parts unless a link does not fit. Is a dependency the lead declares enough to find chains, or should the kernel find them?
@@ -159,7 +165,6 @@ Every model call goes through `Engine._call`:
 ## Not built yet
 
 These are the remaining parts of [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), in its order:
-- a lead that knows its members (part 7);
 - a reviewer of purpose (part 10);
 - a method made of moves the kernel runs (part 9);
 - nesting (part 3), with peer teams (part 11);

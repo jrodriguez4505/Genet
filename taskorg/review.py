@@ -71,7 +71,10 @@ def part_statuses(run) -> dict[str, str]:
     merged = {d.channel_id for d in run.deltas if d.stream == "merge"}
     failed = {e.detail.get("channel"): e.detail.get("code") for e in run.log if e.event == "part_failed"}
     reported = {e.detail.get("channel") for e in run.log if e.event == "part_reported"}
-    covered = any(c.get("function") == "lead" and c.get("mode") == "integrate" for c in run.calls)
+    # Covered: the lead merged, or it worked alone and its product reached the verifier.
+    alone = any(c.get("function") == "lead" and c.get("mode") == "work" for c in run.calls)
+    checked = any(c.get("function") == "verifier" for c in run.calls)
+    covered = any(c.get("function") == "lead" and c.get("mode") == "integrate" for c in run.calls) or (alone and checked)
     parts: dict[str, str] = {}
     for slot in run.state.slots:
         if slot.function != "worker" or not slot.channel_id:

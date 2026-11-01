@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). Run files and tapes stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as a GitHub release, [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -173,6 +173,20 @@ This run measures the fix for the verifier that passed a wrong total on 28 Octob
 
 After this run, `--verify-sources layered` became the default. First, the kernel's quote check, which comes with it, was run offline over all 885 products on the Claude tapes. It flagged 88, nearly all falsely, mostly evidence lines that cite two files, where it matched every quote against the first. Fixed, it flags 6, each a quote the cited files do not hold.
 
+## 1 November 2026: the tapes read again, no new calls
+
+An outside review raised six things to test: admission control, the verifier's independence, the policy boundary, model independence, what a dashboard would add, and whether a stranger can rerun the results. These were checked on the Claude tapes and the simulated reader, for $0.
+
+- **Why Genet failed at the 4,000-token cap.** 13 of its 20 trials failed. Four were the unscoped sub-agents fixed after the first run. Of the other 9, the lead proposed no split in 5, so the gates had nothing to judge; the gates refused a split in 3; and an allowed split ran out in 1. A perfect fit estimate could reach only those 3.
+- **The fit estimate.** Over a sweep of caps, on single-agent trials, the estimate said "fits" in 27 to 30% of the cases that overflow. A factor of 1.7 on the material, fitted on 27 October's tapes, cut that to 8% there and 2% on 28 October's 24 trials, with about 6% of the cases that fit called too big. Applied to the 26 proposals on the tapes, it flips 3 decisions, each on a run that had failed, and none at a cap of 16,000 or 200,000. Where a stated-policy run on the same task did split, 1 of 2 got the answer. It is not built: at a 200,000-token cap nothing overflowed, and a live tight-cap run should show it first.
+- **The gates are deterministic.** The gate code, run again on all 26 recorded proposals of two or more parts, gave the recorded staffing decision every time.
+- **What the verifier missed.** All 10 wrong answers it passed were one kind: a look-alike's figure, confirmed against ground truth. None was arithmetic, and of 44 written-out sums on the tapes only one fails to add up, in a product whose final answer was right, so recomputing sums would have caught nothing. All 10 came before the verifier was given sources. Today's `layered` pick would open the right file for 9 of them, since no call read or searched it.
+- **A figure check in code, tried and not built.** The idea was to check each figure against the file of the company it is given for, at no token cost. On the verify bench it flagged 12 of 12 wrong products and 0 of 12 right ones. On real products, tuned on some tapes and read on all, it flagged 3 of 11 wrong figures and 5 of 272 right products. The bench's products are tidier than a model's prose, so a check that parses products should not be judged on the bench alone.
+- **A stranger's run.** A clean clone reproduces the simulated figures, and with the tapes copied in, all 24 of the 28 October trials to the token, with no key and no SDK. Without the tapes it cannot rerun any live figure. They are 2.5 MB gzipped, and a scan for keys, local paths and names found none.
+- **The default abort check, read against the record.** The kernel's forecast was rebuilt at every decision point of all 372 trials, 807 points. `forecast_short` would never have fired, and the nearest case needed a tenth of what was left. All 45 budget halts were one call too large to send at the 4,000 cap, which the forecast does not judge. So the default, on since v0.9.0, costs nothing on these runs; its benefit is shown on the simulated reader, at a budget below the run's cost.
+- **The author's note, on the verify tape.** In the shared view the brief carries the note (checked on all 12 look-alike reviews), yet no verifier reply that passed a wrong product echoed it, and only 2 of 120 replies echoed it at all. A mild note had no visible pull. Whether a note that argues for the error does, and whether an instruction planted in a source file does, are the two new arms of `verify-bench` (`--arms note,planted`), waiting on a live run.
+- **Other models.** Both adapters send the same system prompt and message. The OpenAI-compatible parser takes fenced JSON, prose around it, and missing keys; it refuses a `<think>` block with braces in it, and any extra key, the second by design.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.
@@ -252,4 +266,4 @@ World: `$HOME/genet-job/note-a.txt` filed, `note-b.txt` open.
 
 ## Run files
 
-The Claude pilot's results are in `data/compare/` and its tapes in `data/tapes/`. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.
+The Claude runs' results are in `data/compare/` and their tapes in `data/tapes/`, and both are published as [a release](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) with a `REPLAY.md` that gives each tape's command. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.

@@ -30,6 +30,8 @@ _NAME = {slug(n): n for n in ALL_COMPANIES}
 _REPORT = re.compile(r"(?<![a-z0-9-])([a-z0-9-]+) (revenue|churn) (Q[1-4]) = (\d+(?:\.\d+)?)")
 _READ = re.compile(r"\[read ([^\]\n]+)\]\n")
 _FIGURE = r"\s*(?:[:=]\s*)?\$?(\d+(?:\.\d+)?)"
+# What a sub-agent brief says when it may hand its part back (loop.REPORT_UP_NOTE).
+_MAY_HAND_BACK = "add the request replan:REASON"
 
 
 def _pattern(template: str) -> re.Pattern:
@@ -158,7 +160,8 @@ class SimModel(ModelAdapter):
         known = self._known(packet, q)
         if brief.slot_function == "worker":
             note = _section(packet, "\nBRIEF\n")
-            targets = find_slugs(f"{brief.channel_id} {note}") or q.slugs[:1]
+            # Companies its channel and note name: as file names, or by name ("report Orbrook's ...").
+            targets = list(dict.fromkeys(find_slugs(f"{brief.channel_id} {note}") + parse_question(note).slugs)) or q.slugs[:1]
             return self._work(brief, q, targets, known, report_only=True)
         return self._work(brief, q, q.slugs, known, report_only=False)
 
@@ -196,6 +199,10 @@ class SimModel(ModelAdapter):
         if wanted and "read" in (brief.tools or []):
             return self._art("Reading first.", requests=[f"read:{s}.md" for s in wanted])
         lines = [f"{s} {q.metric} {q.quarter} = {known[s]:.1f}" for s in targets if s in known]
+        if report_only and missing and _MAY_HAND_BACK in brief.packet:
+            # Its files do not hold what its part names: a perfect sub-agent hands the part back.
+            names = ", ".join(_NAME.get(s, s) for s in missing)
+            return self._art("; ".join(lines) or "no figures found", requests=[f"replan:{names} not in my files"])
         if report_only:
             return self._art("; ".join(lines) or "no figures found")
         return self._art("; ".join(lines) + f"\nANSWER: {self._answer(q, known)}")

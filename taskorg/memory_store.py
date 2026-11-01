@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 LESSONS = "lessons"      # guidelines/lessons.md, kept by the kernel
 MAX_LESSONS = 10
 _LESSON_LINE = re.compile(r"^- (.+) \(seen (\d+)x\)$")
+POSITIONS = "positions"  # records/positions.json, kept by the kernel (team design part 7)
 
 
 def _safe_id(run_id: str) -> str:
@@ -65,6 +67,31 @@ class MemoryStore:
             body = ("# Lessons from earlier runs\n\nWritten by the kernel from runs that had a failure. "
                     "Every agent reads these.\n\n" + "\n".join(f"- {t} (seen {n}x)" for t, n in seen[:MAX_LESSONS]) + "\n")
             atomic.write_text(self.guidelines / f"{LESSONS}.md", body)
+
+    def _positions_path(self) -> Path:
+        return self.root / "records" / f"{POSITIONS}.json"
+
+    def position_records(self) -> list:
+        """Each position's counts from past runs, as stored. Beside the lessons, but not in the guidelines:
+        only the lead's plan brief carries them, and only when the engine shows its cards."""
+        path = self._positions_path()
+        if not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, RecursionError) as e:
+            raise InvariantError("STORE", f"position records are damaged: {path}: {type(e).__name__}") from e
+        if not isinstance(data, dict) or not isinstance(data.get(POSITIONS), list):
+            raise InvariantError("STORE", f"position records are damaged: {path}: not a list of positions")
+        return data[POSITIONS]
+
+    def update_position_records(self, update: Callable[[list], list]) -> None:
+        """Read, update and write the records under the store's lock, so two runs cannot lose each other's counts."""
+        path = self._positions_path()
+        with self._lock:
+            records = update(self.position_records())
+            path.parent.mkdir(parents=True, exist_ok=True)
+            atomic.write_text(path, json.dumps({POSITIONS: records}, indent=2))
 
     def guidelines_packet(self) -> str:
         parts = []

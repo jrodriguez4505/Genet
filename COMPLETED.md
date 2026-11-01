@@ -2,6 +2,29 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.9.0 — November 2026: the lead knows its members, and a review read against the code
+
+**Why.** Part 7 of the team design: the lead staffs positions, and should know what each can do and has done. Then an outside review of the README made claims and recommendations, and each was tested against the code and the tapes rather than taken or refused on its wording (`docs/LIVE_TESTS.md`, 1 November).
+
+**Built.**
+- **Positions and records** (`taskorg/members.py`). A position is a skill and the model that fills it. At the end of every run that staffed a sub-agent, the kernel adds each position's counts from the run's record to `records/positions.json` in the store: parts given, done, verified, failed by code, handed back, calls and tokens. Never from model text; a damaged file never changes the outcome.
+- **Cards** (`--cards`, off by default). The lead's plan brief carries a fixed table, one row a skill: tools, whether they open files, the most calls a part may take, the model, what a call has cost, and the position's counts once it has 3 runs. The gates never read it. Off until a test shows it pays: the design had said a flag turns it off, reversed under the rule that structure is added only when measured. `compare` gains the `genet-cards` strategy and reports the parts each lead proposed, the gates refused, and the lead covered.
+- **`report-bench`** (`taskorg/report_bench.py`). Parts of 20-company aggregate questions whose plan gave the channel the wrong file, run with the default brief and with `--report-up`. On the simulated reader, `--report-up` hands back every wrong part and no right one.
+- **The default abort criterion.** `forecast_short` is on for every new run; `--abort none` turns it off, and naming a criterion replaces the default. It never fired on the 372 taped trials and changes no request.
+- **The verify bench's arms** (`--arms note,planted`). The author's note argues for the planted figure, or every file the goal names carries an instruction to pass a wrong product or fail a right one. The simulated reader is unmoved by both; a model has not run them yet.
+- **A threat map** (`tests/test_threat_map.py`, `SECURITY.md`). A marker in every field a model fills, followed through a plain split, a rework, hostile channel names, a part handed back, a malformed part and the cards: model text never reaches the guidelines, the lessons, the position records or a later run's brief.
+- **The tapes, published.** Every Claude tape and result, with a replay command for each, as the release `tapes-20261029`. A clean clone with no key replays the 28 and 29 October runs to the token.
+
+**Fixed.** A single-agent run reported its refused parts as "not covered" though the lead did the work and the verifier passed it (`review.part_statuses`).
+
+**Tested and not built.** A 1.7 factor on the gates' material estimate (safe on the tapes, flips 3 decisions, all on runs that had failed; waits for a live tight-cap run). A token check in the could-we gate (finished fewer runs than today). A figure check in code before the verifier (12 of 12 on the bench, 3 of 11 on real products). Each is recorded in `docs/LIVE_TESTS.md`.
+
+**Corrected in the docs.** The gates do not check that parts are independent; the could-we gate counts calls, not tokens; the log is a record, not proof against tampering; lessons cost tokens and their benefit is unmeasured; the install needs Python 3.11 or newer.
+
+**Not measured yet.** Whether a real model's lead plans differently with the cards; whether a real sub-agent hands back a part the plan got wrong; whether a real verifier holds against a note that argues or a planted instruction. `scripts/team_runs.sh` runs all three on Claude Haiku 5.5, capped and taped, on a go-ahead for spend.
+
+- `tests/test_members.py` (51), `tests/test_threat_map.py` (10), `tests/test_verify_arms.py` (12); 29 new mutations, all caught.
+
 ## v0.8.0 — October 2026: the shared situation
 
 **Why.** Genet's first design gave every run a situation in six parts: who, what, when, where, why and how. The run state kept those fields after v0.2, but the kernel read only some of them. Pace and the decision points were set when a run was made and never read. The forecasts, the abort criteria and the main effort were never read at all. This is part 8 of the team design (`docs/TEAM_DESIGN.md`): the kernel acts on every field of the situation, or the field goes.

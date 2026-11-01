@@ -17,4 +17,20 @@ The limits that enforce this are listed in the README under Security. They are e
 
 - Genet sends the brief, including workspace text a tool returned, to the model endpoint you configure. Point it only at a provider you trust with that text.
 - Saved runs in `data/` hold briefs and tool results, so treat them like the workspace they came from.
-- The API key is read from `TASKORG_MODEL_KEY`. Keep it out of files the workspace can see.
+- The API key is read from `TASKORG_MODEL_KEY`, and Claude's from `TASKORG_ANTHROPIC_KEY`. Keep them out of files the workspace can see.
+- A model can be steered. A planted instruction in a workspace file can reach every member's brief, the verifier's included, because the kernel opens files for it. Code holds the team, the tools and the budget, and it holds the rule that a verdict's first word decides it. It cannot make a model's judgement sound. How often a planted instruction changes a verdict is not measured.
+- A saved run is a record, not proof. It is checked for its shape, not for edits, so a run rewritten after the fact can load and report healthy.
+
+## What model text can reach
+
+`tests/test_threat_map.py` puts a marker in every field a model fills, then checks where it goes.
+
+| Place | Model text | Why |
+|---|---|---|
+| The roster, the tools, the budget | Never directly | A proposal passes the gates. A tool request passes the skill's allowlist and runs read-only. A channel id must be short and plain. |
+| The next member's brief in this run | Yes | The lead reads its members' reports, and the shared context carries notes. This is how the team works. |
+| The run's log, and the run's saved file | Yes | The record says what each member said. |
+| `episodic/` in the store | Yes | Written at the end of a run. No code reads it back. |
+| `guidelines/` and lessons | Never | A lesson is one of the fixed sentences in `review.py`. |
+| `records/positions.json` | Never | Counts from the run's record. A skill must be a known one, a failure code is checked against a pattern, and the model's name comes from settings. |
+| Any brief in a later run | Never | Each run starts with clean working memory. |

@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .adapters import TOOL_RESULTS, Brief, OperatorQuestion, ModelAdapter, StubAdapter
-from . import checks, situation
+from . import checks, members, situation
 from .budget import Budget
 from .cues import fire_auto_cues
 from .errors import InvariantError
@@ -212,8 +212,10 @@ def _aborts_on_error(method):
         except BaseException as e:
             self._abort(run, e)
             self._team_review(run, e)
+            self._keep_records(run)
             raise
         self._team_review(run, None)
+        self._keep_records(run)
         return result
 
     return wrapper
@@ -248,6 +250,7 @@ class Engine:
         verify_sources: str = "layered",
         verify_sample: int = checks.SAMPLE,
         report_up: bool = False,
+        cards: bool = False,
     ):
         self.store = store
         self.adapter = adapter or StubAdapter()
@@ -273,6 +276,9 @@ class Engine:
         self.verify_sample = max(0, int(verify_sample))
         # A sub-agent may hand its part back when the plan is wrong for it. Off by default: it changes the sub-agent brief.
         self.report_up = report_up
+        # The lead's plan brief carries a card for each position it can staff (part 7). Off by default: it
+        # changes the plan brief, and it stays off until a test shows the cards pay for their tokens.
+        self.cards = cards
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
         # Calls started but not yet recorded, per run. Admission counts them, so parallel
@@ -310,6 +316,24 @@ class Engine:
                 run._record("team_review_failed", {"error": type(e).__name__})
             except Exception:
                 pass
+
+    def _keep_records(self, run: Run) -> None:
+        """At the end of a run that staffed sub-agents: each position's counts from the run's record, into
+        the store beside the lessons. Kept whether or not the cards are shown. Never masks the outcome."""
+        try:
+            found = members.from_run(run, self._position_model)
+            if found:
+                self.store.update_position_records(lambda old: members.merge(members.parse(old), found))
+        except Exception as e:
+            try:
+                run._record("records_failed", {"error": type(e).__name__})
+            except Exception:
+                pass
+
+    def _position_model(self, skill: str) -> str:
+        """The model that fills a position: the skill's own, or the adapter's."""
+        models = getattr(self.adapter, "models", None) or {}
+        return str(models.get(skill) or getattr(self.adapter, "model", "") or getattr(self.adapter, "name", ""))
 
     def _admit(self, run: Run) -> None:
         """Before a call. Near a cap, wait for calls in flight and decide on what they really cost.
@@ -591,8 +615,11 @@ class Engine:
     # --- task organization ---
 
     def _worker_cost(self, subtask: Subtask) -> int:
+        return self._skill_calls(subtask.skill)
+
+    def _skill_calls(self, skill: str) -> int:
         """Calls one sub-agent may spend: one, plus tool rounds if its skill has tools."""
-        runnable = any(t in RUNNABLE for t in SKILL_TOOLS.get(subtask.skill, ()))
+        runnable = any(t in RUNNABLE for t in SKILL_TOOLS.get(skill, ()))
         return 1 + (self.max_tool_rounds if runnable else 0)
 
     def _merge_cost(self) -> int:
@@ -844,11 +871,19 @@ class Engine:
         """The lead reads the context and proposes sub-tasks. Strategies override this."""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, "reason", "read the context; propose sub-tasks only for independent work")
-        base = PLAN_BRIEF.format(skills="|".join(SKILLS))
+        base = PLAN_BRIEF.format(skills="|".join(SKILLS)) + self._cards(run)
         extra = base + self._size_note(run, base)
         plan = self._act(run, self._brief(run, "lead", extra=extra, mode="plan"))
         run.accept_artifact(plan)
         return parse_proposals(plan.requests)
+
+    def _cards(self, run: Run) -> str:
+        """The members table for the plan brief (part 7), or nothing when the cards are off."""
+        if not self.cards:
+            return ""
+        records = members.parse(self.store.position_records())
+        run._record("cards", {"positions": len(SKILLS), "with_counts": members.shown(records, self._position_model)})
+        return "\n" + members.cards(records, self._position_model, self._skill_calls) + "\n"
 
     def _size_note(self, run: Run, plan: str) -> str:
         """What the gates will measure, told to the lead before it plans: what one call holds and how big the

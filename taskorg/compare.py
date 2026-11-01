@@ -8,6 +8,9 @@ concurrency. Only the task organization differs:
   always   crew style: the lead always decomposes and every subtask gets a worker
   genet    the lead proposes sub-agents; the gates judge them (Engine.run_task)
 
+genet-stated and genet-cards are variants of genet: the lead's reasons accepted as stated, and the lead
+shown a card for each position it can staff (team design part 7).
+
 The claim under test: genet matches the better baseline's accuracy at close to
 single-agent cost. The report shows where it does and where it does not.
 """
@@ -120,6 +123,7 @@ STRATEGIES: dict[str, Callable[..., Engine]] = {
     "always": AlwaysSplit,
     "genet": Engine,
     "genet-stated": functools.partial(Engine, split_policy="stated"),
+    "genet-cards": functools.partial(Engine, cards=True),
 }
 
 
@@ -142,6 +146,9 @@ class TrialResult:
     tokens_estimated: bool
     latency_s: float
     workers: int
+    proposed: int = 0    # parts the gates judged
+    refused: int = 0     # of those, parts the gates refused
+    covered: int = 0     # parts whose sub-agent failed or handed them back, for the lead to cover
 
 
 def _last_product(run: Run) -> str:
@@ -196,6 +203,9 @@ def run_trial(
         prompt_tokens=prompt, completion_tokens=completion,
         tokens_estimated=any(c.get("tokens_estimated") for c in run.calls),
         latency_s=round(latency, 3), workers=run.state.worker_count(),
+        proposed=sum(e.event == "gate" for e in run.log),
+        refused=sum(e.event == "gate" and not e.detail.get("legal") for e in run.log),
+        covered=sum(e.event in ("part_failed", "part_reported") for e in run.log),
     )
 
 
@@ -286,6 +296,9 @@ def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | 
         "latency_mean_s": round(statistics.mean(r.latency_s for r in rows), 2),
         "split_rate": round(sum(r.workers > 0 for r in rows) / n, 3),
         "abort_rate": round(sum(r.status == "abort" for r in rows) / n, 3),
+        "proposed_mean": round(statistics.mean(r.proposed for r in rows), 2),
+        "refused_mean": round(statistics.mean(r.refused for r in rows), 2),
+        "covered_mean": round(statistics.mean(r.covered for r in rows), 2),
         "tokens_estimated": any(r.tokens_estimated for r in rows),
     }
     if price_in is not None and price_out is not None:
@@ -315,6 +328,8 @@ def summarize(results: list[TrialResult], *, price_in: float | None = None, pric
         }
         if "always" in overall:
             verdict["genet_tokens_vs_always"] = round(g["tokens_mean"] / max(1, overall["always"]["tokens_mean"]), 2)
+        if "genet-cards" in overall:
+            verdict["cards_tokens_vs_genet"] = round(overall["genet-cards"]["tokens_mean"] / max(1, g["tokens_mean"]), 3)
     return {"overall": overall, "by_family": by_family, "verdict": verdict}
 
 
@@ -335,6 +350,11 @@ def render(summary: dict) -> str:
         return lines
 
     out = ["## Overall", "", *table(summary["overall"]), ""]
+    if any(v.get("proposed_mean") for v in summary["overall"].values()):
+        out += ["## Plans", "", "| strategy | parts proposed | refused | covered by the lead |", "|---|---|---|---|"]
+        out += [f"| {s} | {v.get('proposed_mean', 0)} | {v.get('refused_mean', 0)} | {v.get('covered_mean', 0)} |"
+                for s, v in summary["overall"].items()]
+        out.append("")
     for family, block in summary["by_family"].items():
         out += [f"## {family}", "", *table(block), ""]
     v = summary.get("verdict") or {}
@@ -348,6 +368,8 @@ def render(summary: dict) -> str:
         ]
         if "genet_tokens_vs_always" in v:
             out.append(f"- Genet tokens vs always-split: {v['genet_tokens_vs_always']}×")
+        if "cards_tokens_vs_genet" in v:
+            out.append(f"- Genet with cards, tokens vs genet: {v['cards_tokens_vs_genet']}×")
     if any(x.get("tokens_estimated") for x in summary["overall"].values()):
         out += ["", "Token counts are estimated (the adapter reported no usage)."]
     return "\n".join(out) + "\n"
