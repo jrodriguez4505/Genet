@@ -10,6 +10,9 @@
 #     but it leaves out the sub-agents' reports: does it fail more right answers after a split?
 #   bash scripts/team_runs.sh size   the same 8 trials, now that a lead whose files do not fit one call is told
 #     what they come to: do more leads split?
+#   bash scripts/team_runs.sh wide   single, crew and genet side by side at an 8,000-token cap: all four question
+#     types over 10 companies, then aggregate and breadth over 20. Does genet match the best baseline for less, do
+#     leads stay single where a split is pointless, and does it hold at the limit of 4 sub-agents?
 #
 # 1. The report bench (team design part 8): 24 sub-agent parts of 20-company aggregate questions, 12 with
 #    the plan wrong for them (their files are a look-alike's or an unrelated company's), each run with the
@@ -27,8 +30,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -41,7 +44,9 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = independent ] || [ "$mode" = size ]; then
+if [ "$mode" = wide ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.50 in all, each run capped (\$0.75 in all, and the smoke test)"
+elif [ "$mode" = independent ] || [ "$mode" = size ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.05, capped at \$0.10, and the smoke test"
 elif [ "$mode" = followup ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.09 in all, each run capped (\$0.18 in all, and the smoke test)"
@@ -83,6 +88,33 @@ print(f"smoke: {r['status']}, answer {r['answer']!r} (expected {r['expected']!r}
 if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
     sys.exit("the smoke test did not get the right answer")
 EOF
+
+if [ "$mode" = wide ]; then
+  echo
+  echo ">>> Two runs on $model, about 40 minutes:"
+  echo "    10 companies: 72 trials, 4 question types, single, crew and genet, about \$0.30; it stops itself before \$0.50"
+  echo "    20 companies: 18 trials, aggregate and breadth, the same 3 strategies, about \$0.15; it stops itself before \$0.25"
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  echo
+  echo "== 10 companies, all four question types"
+  "$PY" -m taskorg.cli compare --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.50 \
+    --per-family 6 --entities 10 --distractors 6 --strategies single,always,genet --context 8000 --tool-rounds 4 \
+    --record "data/tapes/wide10-$stamp.jsonl" --out "data/compare/wide10-$stamp.json" 2>&1 \
+    | tee "data/compare/wide10-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+  echo
+  echo "== 20 companies, aggregate and breadth"
+  "$PY" -m taskorg.cli compare --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.25 \
+    --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 --strategies single,always,genet --context 8000 --tool-rounds 4 \
+    --record "data/tapes/wide20-$stamp.jsonl" --out "data/compare/wide20-$stamp.json" 2>&1 \
+    | tee "data/compare/wide20-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+  echo
+  echo "Done. Results: data/compare/wide10-$stamp.json and wide20-$stamp.json   Tapes: data/tapes/wide10-$stamp.jsonl and wide20-$stamp.jsonl"
+  exit 0
+fi
 
 if [ "$mode" = size ]; then
   echo

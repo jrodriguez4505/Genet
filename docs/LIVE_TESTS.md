@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms and three follow-ups (2 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups and a side-by-side run (2 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases, except the side-by-side run's: 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -295,6 +295,32 @@ After the last run the independent view became the default, and the size note ga
 - **Every one of the 15 split runs on this cap has reached the right answer.** The verified runs here cost about what one agent took at a 200,000-token cap on 28 October (38,928), with the verifier opening 2 files as well. This is one family of four questions at a cap chosen to overflow. At 200,000 tokens nothing overflowed, and a single agent got these answers, so it does not show that a split beats one agent where one agent can do the work.
 - **The last failure was a guessed file name.** The lead wrote `cobalt ridge.md` and `ostrander media labs.md`, guessing from the company's name. One group then named no file the workspace holds, so the whole plan read as unmeasured and was refused, and the lead overflowed alone. Open. The brief could list the goal's files, but that would also hand it the look-alike distinction this suite tests.
 - **False failures fell, and the independent view is not the cause of them.** Under it, 2 of 10 split runs have had a FAIL on a right answer, against 3 of 5 under the shared view. This run's one was a different complaint, that a figure's line names no year. The sample is small and the runs differ, so this does not show the view reduces them. After a split the layered pick still opens 2 of 10 files, so a pass checks little under either view.
+
+## 2 November 2026: single, crew and Genet side by side
+
+`bash scripts/team_runs.sh wide`, on Haiku 5.5 at effort `low`, at an 8,000-token cap: 90 trials, 6 questions of each of the four types over 10 companies, then 3 each of aggregate and breadth over 20. It cost $0.33, against an estimate of about $0.50 and caps of $0.75.
+
+| Questions, verified answers | Single | Crew | Genet | Genet's leads that split |
+|---|---|---|---|---|
+| Lookup and compare, which fit one call | 12 of 12 | 7 of 12 | 12 of 12 | 0 of 12 |
+| Aggregate and breadth, 10 companies | 0 of 12 | 4 of 12 | 8 of 12 | 10 of 12 |
+| Aggregate and breadth, 20 companies | 0 of 6 | 0 of 6 | 5 of 6 | 6 of 6 |
+
+| Tokens a task | Single | Crew | Genet |
+|---|---|---|---|
+| Lookup and compare | 9,168 | 16,844 | 10,422 (1.14× single) |
+| Aggregate and breadth, 10 companies | 3,456, stopping early | 30,856 | 28,786 |
+| Aggregate and breadth, 20 companies | 1,959, stopping early | 16,030, stopping early | 43,107 |
+
+- **The leads and the gates did what they are for.** On all 12 questions that fit one call, no lead proposed a split, and Genet matched the single agent at 1.14 times its tokens. On all 18 that do not, every lead proposed one, and the gates admitted 16 of those plans. The size note is doing this: on these questions the kernel told the lead what its files come to, and on the others it had nothing to say.
+- **The single agent cannot do this work at this cap.** It ran out on every aggregate and breadth question. One gave the right answer before it stopped, unverified. That is the cap, not the model: at 200,000 tokens a single agent got these answers on 28 October.
+- **On the small questions the crew lost by itself.** It split one-file lookups into workers it did not need, for example a `verify` worker with no tools and a `draft` worker, and its leads then answered `UNKNOWN` for figures its own workers could read. Genet's gates refuse those parts. This part of the comparison is fair.
+- **On the big questions the comparison is not yet fair.** The crew's plan brief has no size note and no word on naming a group's files, so a crew lead gets no warning that the files will not fit, and its groups may not name them. Some did not, so their workers' tools stayed unscoped. Part of Genet's lead here is notes it was given and the crew was not. So this shows that Genet works at this cap, and not that it beats a crew told the same things. That needs a crew run with the same notes.
+- **No wrong answer got through.** In all 90 trials, no finished run gave a wrong answer. But very few wrong answers were produced for the verifier to catch, and after a split it opens 2 of the files, so this says little about what it would catch.
+- **Genet's 5 misses in 30.** Two plans were refused because the lead guessed files' names (`Quillon Bio.md`), so a group named no file the workspace holds. One group overflowed at 20 companies. Two right answers were stopped by the verifier.
+- **The false failures continue.** Under the independent view, 6 of 26 split runs have now had a FAIL on a right answer, and 4 stopped on it. After all of today's runs, 30 of 31 split runs reached the right answer; the other is that overflow.
+- **The simulated reader got this one wrong.** At 20 companies it fails every Genet trial, because its lead plans one part per file: the gates admit 4, and it cannot then fit the other 16 in its merge call. Haiku grouped the files, and got 5 of 6. A lead that plans by the file at this size would still hit that, so the gates may need to count what they leave for the lead to cover.
+- **Not every trial replays to the token.** 81 of the 90 do. The other 9 stopped during their sub-agents, 8 of the crew's and 1 of Genet's. Sub-agents run in parallel, and when one stops a run, how many calls the others had finished depends on timing, so calls and tokens differ on replay. All 9 failed both when recorded and on replay, and 8 with the same code. This is the first tape to show it, since no earlier one that still replays has a run stopping there.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
