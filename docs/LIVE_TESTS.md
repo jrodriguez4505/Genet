@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run and a told crew (2 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -344,7 +344,28 @@ After the last run the independent view became the default, and the size note ga
 - **On work that fits one call, the gates are what make the difference.** No lead of Genet's proposed a split, and it got 12 of 12 at 1.14 times a single agent's tokens. Told crews still split all 12, as a crew must, and got 9 at 1.79 times. Its 3 misses were comparison questions, whose leads answered "undetermined" from their workers' two reports where a single agent read both files.
 - **Over all 30, Genet verified 25 and the told crew 22, at 0.81 times the tokens.** That is one run of each trial, on one synthetic suite, one model and one cap, so the difference is a sign and not a measure.
 - **Still no wrong answer got through.** No finished run gave a wrong answer in these 30 either.
-- **A kernel behaviour that is not deterministic.** Replaying this tape, one crew trial that finished when recorded stopped in 1 of 3 attempts, on a call of about 6,318 tokens plus 1,691 kept for the reply, 9 over the cap. The size check keeps room for the largest reply so far in the whole run, and with sub-agents in parallel, which replies have arrived depends on timing. So near the cap, the same replies can go either way. The gates themselves are deterministic, and the other 29 trials replay exactly. Open: a sub-agent's room should not depend on its siblings' timing.
+- **A kernel behaviour that is not deterministic.** Replaying this tape, one crew trial that finished when recorded stopped in 1 of 3 attempts, on a call of about 6,318 tokens plus 1,691 kept for the reply, 9 over the cap. The size check keeps room for the largest reply so far in the whole run, and with sub-agents in parallel, which replies have arrived depends on timing. So near the cap, the same replies can go either way. The gates themselves are deterministic, and the other 29 trials replay exactly. Fixed in v0.9.1: a sub-agent no longer counts its siblings' replies, and this trial finished on 5 of 5 replays.
+
+## 2 November 2026: a check of the fixes
+
+`bash scripts/team_runs.sh fixes`, on Haiku 5.5 at effort `low`, on the 30 questions of the side-by-side run, Genet only, with two fixes: a file name counts however a model spelled it, and a part that names no real file goes to the lead while the rest of the plan stands. It cost $0.14, against an estimate of $0.17 and caps of $0.32. The third fix, that a sub-agent's room no longer depends on its siblings, was checked offline.
+
+| Verified, then right, at an 8,000-token cap | Genet before | Genet with the fixes | Told crew |
+|---|---|---|---|
+| Lookup and compare | 12, 12 | 12, 12 | 9, 9 |
+| Aggregate and breadth, 10 companies | 8, 10 | **10, 12** | 9, 12 |
+| Aggregate and breadth, 20 companies | **5, 5** | 3, 3 | 4, 6 |
+| All 30 | 25, 27 | 25, 27 | 22, 27 |
+
+- **The totals did not move.** The fixes helped where they applied and three other stops cost the same amount. Each is one run of each trial, and the lead's plans vary from run to run, so this shows what the fixes do to a plan, not a new rate.
+- **At 10 companies the fixes did what they were for.** No plan was refused, all 12 leads split, and all 12 answers were right. The 2 misses are right answers the verifier stopped.
+- **At 20 companies three runs stopped, and the fixes caused none of them.** All 6 plans get the same verdict from the gates before the fixes, and the room that stopped the third is the same.
+- **One lead ran its file names together.** The brief's only example is a one-word name, `orbrook.md`, so this lead wrote `cobaltridgecapital.md`, and only the 4 one-word names of 20 were found. The gates then measured about a fifth of the work and refused the plan as fitting one call. Run-together names now count. With them, that plan's 20 files are all found, and it is still refused, 43 tokens short: 4,602 for its largest group against 4,559 available.
+- **One run stopped 44 tokens over the cap, on a call that would have fit.** A sub-agent's brief of about 6,036 tokens, plus 2,008 kept for the reply, against 8,000. The 2,008 was the lead's plan reply. No sub-agent's reply on the side-by-side and check tapes passed 1,793, and no sub-agent's call passed 7,268. So the size check and the gates count a figure that says little about a sub-agent. This is open.
+- **One lead's groups were too big, and it had no way back.** It planned 8, 7 and 5 files. The gates were right: the largest needs about 6,539 tokens against 5,773. The lead then worked alone and overflowed on its next call. This is open.
+- **A scoring bug hid a right answer.** One lead wrote `Group-c's own 'ANSWER: 239.1' is a partial subtotal and is not the combined answer. ANSWER: 1020.9`. The verifier passed it and it was right, but the scorer read from the first marker on a line, so it scored wrong. The scorer now takes the last. This changed a score after the result was seen, so both files are kept: the table uses `fixes20-20261102-151115-rescored.json`, and the original is beside it. It is the only one of 958 saved results with a second marker in its answer.
+- **Still no wrong answer got through.** Once that answer is read correctly, every finished run in these 30 is right.
+- **The false failures continue.** 2 of the 15 split runs that reached the right answer had a FAIL on it, and both stopped. Under the independent view that makes 8 of 41 split runs, and 6 stopped. The cause looks the same: the layered pick opens 2 of the files, and the verifier reads the rest as unsupported.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

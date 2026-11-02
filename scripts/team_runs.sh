@@ -16,6 +16,8 @@
 #   bash scripts/team_runs.sh crew   the crew on the wide run's questions, told what genet's lead is told about size.
 #     Without this, the wide run's crew lines compare the notes as well as the staffing. All 4 question types run at
 #     10 companies because naming fewer changes which questions the seeded suite draws.
+#   bash scripts/team_runs.sh fixes   genet on the wide run's questions, now that a guessed file name no longer sinks
+#     a plan and a sub-agent's room no longer depends on its siblings: does it recover the answers it lost?
 #
 # 1. The report bench (team design part 8): 24 sub-agent parts of 20-company aggregate questions, 12 with
 #    the plan wrong for them (their files are a look-alike's or an unrelated company's), each run with the
@@ -33,8 +35,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -47,7 +49,9 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = crew ]; then
+if [ "$mode" = fixes ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.17 in all, each run capped (\$0.32 in all, and the smoke test)"
+elif [ "$mode" = crew ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.20 in all, each run capped (\$0.37 in all, and the smoke test)"
 elif [ "$mode" = wide ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.50 in all, each run capped (\$0.75 in all, and the smoke test)"
@@ -93,6 +97,33 @@ print(f"smoke: {r['status']}, answer {r['answer']!r} (expected {r['expected']!r}
 if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
     sys.exit("the smoke test did not get the right answer")
 EOF
+
+if [ "$mode" = fixes ]; then
+  echo
+  echo ">>> Two runs on $model, about 15 minutes:"
+  echo "    10 companies: 24 genet trials, all 4 question types (the wide run's questions), about \$0.11; it stops itself before \$0.22"
+  echo "    20 companies: 6 genet trials, aggregate and breadth, about \$0.06; it stops itself before \$0.10"
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  echo
+  echo "== genet with the fixes, 10 companies"
+  "$PY" -m taskorg.cli compare --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.22 \
+    --per-family 6 --entities 10 --distractors 6 --strategies genet --context 8000 --tool-rounds 4 \
+    --record "data/tapes/fixes10-$stamp.jsonl" --out "data/compare/fixes10-$stamp.json" 2>&1 \
+    | tee "data/compare/fixes10-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+  echo
+  echo "== genet with the fixes, 20 companies"
+  "$PY" -m taskorg.cli compare --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.10 \
+    --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 --strategies genet --context 8000 --tool-rounds 4 \
+    --record "data/tapes/fixes20-$stamp.jsonl" --out "data/compare/fixes20-$stamp.json" 2>&1 \
+    | tee "data/compare/fixes20-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+  echo
+  echo "Done. Results: data/compare/fixes10-$stamp.json and fixes20-$stamp.json   Tapes: data/tapes/fixes10-$stamp.jsonl and fixes20-$stamp.jsonl"
+  exit 0
+fi
 
 if [ "$mode" = crew ]; then
   echo

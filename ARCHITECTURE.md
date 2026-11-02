@@ -147,8 +147,8 @@ Every model call goes through `Engine._call`:
 
 ## How it is tested
 
-- 1,662 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 261 rules one at a time, and a test catches each.
+- 1,687 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 272 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
@@ -167,8 +167,8 @@ Every model call goes through `Engine._call`:
 
 11. **Should the gates count what a split leaves for the lead?** They admit up to 4 sub-agents and hand the rest to the lead. A lead that plans one part per file at 20 companies then cannot fit the other 16 in its merge call. Haiku grouped its files and got by, but nothing makes a lead do that.
 
-12. **Should one unmeasured part refuse a whole plan?** It does today, so one guessed file name sends the lead to work alone and overflow. A crew given the same notes, with no gate to refuse it, reached 18 of 18 right answers on the large questions where Genet reached 15. Measuring the parts that can be measured, and giving the lead the rest, would keep the rule without losing the plan.
-13. **Should a sub-agent's room depend on its siblings?** The size check keeps room for the largest reply so far in the run, so near the cap, whether a call is sent depends on which sibling's reply has arrived. One finished trial stopped in 1 of 3 replays, 9 tokens over. The gates are deterministic; this check is not.
+12. **What should a sub-agent's call keep room for?** The gates and the size check both count the lead's plan reply, though a plan reply says little about a sub-agent's. On the side-by-side and check runs a plan reply ran from 234 to 2,008 tokens, with a median of 718, and no sub-agent's reply passed 1,793. A plan reply of 2,008 stopped one run 44 tokens over the cap, on a call that would have fit, and a small one keeps too little. A sub-agent's own figure would be steadier, but nothing has measured it on another model.
+13. **Should a refused plan get a second try?** A lead whose groups were too big, 8 and 7 files, was refused correctly, and then had to do the work alone, which could not fit. The refusal's reason is exact, and one more planning call costs about $0.001. A second plan might fit, or might only delay the same stop.
 
 ## Not built yet
 

@@ -33,6 +33,8 @@ the next reply left no room for its brief.
 import math
 from pathlib import Path
 
+import pytest
+
 from taskorg.adapters import Brief, ModelAdapter
 from taskorg.anthropic_live import TOKEN_RATIO, AnthropicAdapter
 from taskorg.budget import Budget
@@ -443,12 +445,113 @@ def test_a_group_that_names_its_files_passes_the_gates_and_opens_only_those(tmp_
     v = assess(named, policy="measured", material=lambda s: box.material(s.channel_id, s.named_failure),
                context_limit=3_000, overhead=500)
     assert [a.legal for a in v] == [True, True] and {a.basis for a in v} == {"measured"}
-    # One group that names nothing leaves the whole split unmeasured, which is what the note is there to prevent.
+    # A group that names nothing goes to the lead, and the groups that can be measured are judged alone.
     v = assess(props, policy="measured", material=lambda s: box.material(s.channel_id, s.named_failure),
                context_limit=3_000, overhead=500)
-    assert not any(a.legal for a in v) and all("material is unknown" in a.refused for a in v)
+    assert [a.legal for a in v] == [True, True, False] and v[2].gate == "should_we" and "material is unknown" in v[2].refused
     scope = box.scoped(box.material(props[0].channel_id, props[0].named_failure))
     assert "Revenue" in scope.read("north.md") and "Revenue" not in scope.read("east.md")
+
+
+def _names(tmp_path: Path, *files: str) -> Toolbox:
+    root = tmp_path / "names"
+    root.mkdir()
+    for name in files:
+        (root / name).write_text("Revenue line. " * 20)
+    return Toolbox(roots=[root])
+
+
+@pytest.mark.parametrize("note, expected", [
+    # What Haiku wrote on 2 November, for files named with hyphens.
+    ("figures mixed everholt.md cobalt ridge.md hollis arcade.md", ["cobalt-ridge.md", "everholt.md", "hollis-arcade.md"]),
+    ("figures mixed Quillon Bio.md, Cobalt Ridge.md", ["cobalt-ridge.md", "quillon-bio.md"]),
+    # And run together, from a brief whose only example was a one-word name.
+    ("figures mixed cobaltridge.md hollisarcade.md everholt.md", ["cobalt-ridge.md", "everholt.md", "hollis-arcade.md"]),
+    ("read quillonbio.md", ["quillon-bio.md"]),
+    # Underscores in a note read as spaces, so a name with one arrives spaced.
+    ("figures mixed q3 report.md", ["q3_report.md"]),
+    # The look-alike whose name holds the other's: the longest wins, and each is told apart.
+    ("read quillon bio.md", ["quillon-bio.md"]),
+    ("read bio.md", ["bio.md"]),
+    ("read quillon bio.md bio.md", ["bio.md", "quillon-bio.md"]),
+    # Prose that mentions a company names no file, and neither does another extension.
+    ("cobalt ridge and everholt figures get mixed", None),
+    ("figures mixed cobalt ridge.txt", None),
+    ("about 4.5 percent, e.g. the Cobalt Ridge figures", None),
+])
+def test_a_note_names_a_file_however_a_model_spelled_it(tmp_path: Path, note, expected):
+    box = _names(tmp_path, "everholt.md", "cobalt-ridge.md", "hollis-arcade.md", "quillon-bio.md", "bio.md", "q3_report.md")
+    found = box.material("group-a", note)
+    assert (sorted(Path(p).name for p in found) if found else None) == expected
+
+
+def test_a_loose_name_stays_in_the_sandbox_and_a_long_note_stays_cheap(tmp_path: Path):
+    box = _names(tmp_path, "cobalt-ridge.md", ".hidden.md")
+    assert box.material("x", "read hidden.md .hidden.md") is None
+    outside = tmp_path / "outside.md"
+    outside.write_text("secret")
+    assert box.material("x", "read outside.md ../outside.md") is None
+    assert box.material("x", "word " * 100_000 + "cobalt ridge.md") is None  # past NOTE_CAP
+    assert sorted(Path(p).name for p in box.material("x", ".x " * 600 + "cobalt ridge.md")) == ["cobalt-ridge.md"]
+
+
+def test_an_unmeasured_part_goes_to_the_lead_and_the_plan_survives(tmp_path: Path):
+    from taskorg.gates import LEAD_COVERS, Subtask, assess
+    from taskorg.sim import SimModel
+    from taskorg.suite import build_suite, slug
+
+    sizes = {"a": {"a": 2_000}, "b": {"b": 2_000}, "c": None}
+    parts = [Subtask(c, "keep apart", skill="retrieve") for c in sizes]
+    v = assess(parts, policy="measured", material=lambda s: sizes[s.channel_id], context_limit=3_000, overhead=500)
+    assert [a.legal for a in v] == [True, True, False] and [a.basis for a in v[:2]] == ["measured", "measured"]
+    # One measured part is not a split. With none, the old refusal stands.
+    v = assess(parts[1:], policy="measured", material=lambda s: sizes[s.channel_id], context_limit=1_000, overhead=500)
+    assert not any(a.legal for a in v)
+    assert all(a.refused.startswith("a split does not make the work fit") for a in v)
+    v = assess(parts[1:], policy="measured", material=lambda s: sizes[s.channel_id], context_limit=4_000, overhead=500)
+    assert not any(a.legal for a in v)
+    sizes["b"] = None
+    v = assess(parts[1:], policy="measured", material=lambda s: sizes[s.channel_id], context_limit=3_000, overhead=500)
+    assert all("no measurable reason" in a.refused for a in v)
+    assert LEAD_COVERS.startswith("one open sub-task")
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    task = suite.tasks[0]
+    files = [f"{slug(e)}.md" for e in task.entities]
+    root = suite.write_corpus(tmp_path / "corpus")
+
+    class Guesses(SimModel):
+        def act(self, brief):
+            art = super().act(brief)
+            if brief.mode == "plan":
+                spaced = " ".join(f.replace("-", " ") for f in files[:4])
+                art.requests = [f"subtask:group-a@retrieve=figures_get_mixed {spaced}",
+                                f"subtask:group-b@retrieve=figures_get_mixed {' '.join(files[4:8])}",
+                                "subtask:group-c@retrieve=figures_get_mixed the_other_two"]
+            return art
+
+    r = run_trial(task, "genet", Guesses(), root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    assert r.workers == 2 and r.refused == 1 and r.status == "complete" and r.answer_right
+
+
+def test_a_sub_agents_room_does_not_depend_on_its_siblings(tmp_path: Path):
+    """One finished crew trial stopped on 1 of 3 replays, 9 tokens over the cap: the room it kept was its
+    sibling's reply, if that had arrived. The same replies must send a call or stop it, every time."""
+    from taskorg.models import Slot
+
+    engine = Engine(MemoryStore(tmp_path))
+    m = new_run("room", "g", "p", "d")
+    m.calls.extend([
+        {"slot": "lead-1", "function": "lead", "completion_tokens": 100},
+        {"slot": "w-a", "function": "worker", "completion_tokens": 300},
+        {"slot": "w-b", "function": "worker", "completion_tokens": 3_000},
+        {"slot": "w-c", "function": "worker", "completion_tokens": 9_000, "failed": True},
+    ])
+    worker = lambda name: Slot(id=f"w-{name}", function="worker", skill="retrieve", channel_id=name)
+    assert engine._reply_room(m, worker("a")) == 300 and engine._reply_room(m, worker("b")) == 3_000
+    assert engine._reply_room(m, worker("d")) == 100  # what came before the split still counts
+    # After the split nothing is racing: the lead keeps room for the largest reply of all.
+    assert engine._reply_room(m) == 3_000 and engine._reply_room(m, Slot(id="lead-1", function="lead", skill="reason")) == 3_000
 
 
 def test_no_size_note_without_a_workspace(tmp_path: Path):

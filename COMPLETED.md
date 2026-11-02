@@ -2,6 +2,20 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.9.1 — November 2026: plans that survive a bad file name
+
+**Why.** The side-by-side run lost two plans to a guessed file name, and replays showed a size check that depended on timing.
+
+**Fixed.**
+- **File names.** A note names a file however a model spelled it: `cobalt ridge.md`, `cobaltridge.md`, `Quillon Bio.md`, `q3 report.md`. Only the words right before a file extension count, so prose names no file (`tools.py`).
+- **A part with no real file.** It goes to the lead, and the rest of the plan stands. With nothing measurable, the old refusal stands (`gates.py`).
+- **A sub-agent's room.** It no longer counts its siblings' replies, so the same replies cannot send a call on one run and stop it on the next (`loop.py`).
+- **The scorer.** It read from the first `ANSWER:` on a line, so a lead that quoted a sub-agent's marker scored wrong though it was right (`suite.py`).
+
+**What the live run showed** (2 November, Haiku 5.5, $0.14). The same totals as before, 25 verified and 27 right of 30: at 10 companies 12 of 12 right, up from 10, and at 20 companies 3 of 6, down from 5, on three stops the fixes did not cause. See [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+
+**Left open.** A sub-agent's call keeps room for the lead's plan reply, which stopped one run 44 tokens over the cap, and a refused plan gets no second try (questions 12 and 13 in [ARCHITECTURE.md](ARCHITECTURE.md)).
+
 ## v0.9.0 — November 2026: the lead knows its members, and a review read against the code
 
 **Why.** Part 7 of the team design: the lead staffs positions, and should know what each can do and has done. Then an outside review of the README made claims and recommendations, and each was tested against the code and the tapes rather than taken or refused on its wording (`docs/LIVE_TESTS.md`, 1 November).

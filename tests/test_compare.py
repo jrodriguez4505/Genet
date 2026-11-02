@@ -86,6 +86,10 @@ def test_grading():
     assert not grade(look_alike, name)
     assert not grade(None, name)
     assert extract_answer("thinking...\nANSWER: 1\nANSWER: 2") == "2"
+    # A lead quotes a sub-agent's marker on the line that ends with its own, as Haiku did on 2 November.
+    assert extract_answer("Group-c's own 'ANSWER: 239.1' is a partial subtotal. ANSWER: 1020.9") == "1020.9"
+    assert extract_answer("ANSWER: 5 ANSWER:") == "5"
+    assert extract_answer("ANSWER: 3 PRIORANSWER: 4") == "3 PRIORANSWER: 4"
 
 
 # --- strategies ---
