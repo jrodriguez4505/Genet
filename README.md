@@ -6,7 +6,7 @@ One organism. Many stems.
 
 **The question is not how many agents you can run. It is whether a second one is doing new work.**
 
-Genet is a small multi-agent runtime. Agent counts have become a headline number, with products advertising hundreds of sub-agents on one task, but a count says what was spent, not what was gained. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
+Genet is a policy-governed agent runtime: models propose, and code decides what runs. Agent counts have become a headline number, with products advertising hundreds of sub-agents on one task, but a count says what was spent, not what was gained. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/patterns-dark.svg">
@@ -15,7 +15,7 @@ Genet is a small multi-agent runtime. Agent counts have become a headline number
 
 *Same task, three ways to staff it. A crew fans out on every task. Genet's lead proposes, and the gates decide whether a fan-out happens at all.*
 
-The team is small, and every agent can switch skills, with specialists added only when a sub-task needs one. The lead owns the roster. The goal stays fixed while the method changes. Work fans out to sub-agents only when the task has independent parts, then merges back.
+The team is small, and every agent can switch skills, with specialists added only when a sub-task needs one. The lead owns the roster. The goal stays fixed while the method changes. Work fans out to sub-agents only when the gates find a measured reason, then merges back. The gates do not yet check that the parts are independent: a chain whose material does not fit one call can still split (design part 9).
 
 Quality of process over quantity of agents: possibly more efficient, and possibly more effective. That stays a claim until measured. `taskorg compare` exists to measure it (see [Proving it](#proving-it)).
 
@@ -32,10 +32,10 @@ Every agent is the same model and could hold any skill. So a member is a positio
 
 Built so far:
 - an independent verifier, shown sources the kernel picks (see [Verification](#verification));
-- a shared situation that the kernel acts on and keeps current: decision points with its own forecasts, abort criteria you set, a main effort, and sub-agents that can hand a part back (see [The shared situation](#the-shared-situation)).
+- a shared situation that the kernel acts on and keeps current: decision points with its own forecasts, abort criteria you set, a main effort, and sub-agents that can hand a part back (see [The shared situation](#the-shared-situation));
+- a lead that knows its members: a card for each position it can staff, with the record the kernel keeps of each, shown with `--cards` (see [The members](#the-members)).
 
 Designed, not built:
-- a lead that knows its members, from a record the kernel keeps;
 - a reviewer that checks the plan against the purpose before the work starts;
 - a method made of moves the kernel runs, so that a chain of dependent parts is not split;
 - teams that nest under the same gates, and trade updates with their peers without merging contexts;
@@ -82,7 +82,7 @@ The lead makes every decision; the outcome is the team's. When something goes wr
 
 - **A failed part goes back to the team.** When a sub-agent's reply is malformed (`SCHEMA`) or its call to the model fails (`LIVE`), the run goes on. The other sub-agents' results are merged, and the lead covers the failed part the same way it covers a part the gates refused. An authority violation, such as a tool the skill does not allow or a roster change, still stops the run at once, as do a budget halt and a crash.
 - **A blameless review after every failure.** When anything failed, even if the team recovered, the kernel writes a review on the run: what failed, what became of each part, and what the team did about it. It is built from the record, never from model text, and it names no agent as the cause.
-- **Lessons for the next run.** Each kind of failure maps to one fixed lesson, which goes into `guidelines/lessons.md` in the store. Every agent's brief carries the guidelines, so the next run starts with what the last one learned. Repeats are counted, at most 10 lessons are kept, and `--no-lessons` turns it off. Comparison trials each use a fresh store, so no lesson carries from one strategy to another.
+- **Lessons for the next run.** Each kind of failure maps to one fixed lesson, which goes into `guidelines/lessons.md` in the store. Every agent's brief carries the guidelines, so the next run starts with what the last one learned. Repeats are counted, at most 10 lessons are kept, and `--no-lessons` turns it off. Comparison trials each use a fresh store, so no lesson carries from one strategy to another. Lessons cost tokens, and whether they pay is not measured: on the simulated reader, a store with 10 lessons adds 31% to a small run.
 
 Decisions stay with one owner because shared authority is no authority: the roster, the gates and the budget answer to the lead and the kernel alone. What is shared is responsibility for the result.
 
@@ -100,10 +100,12 @@ Every proposed sub-task goes through three gates in order, and they fail closed:
 | Gate | Refuses a sub-task when |
 |---|---|
 | Can someone else | A file or channel in the world already covers it, the channel is already staffed, it repeats another proposal, or it is verification (the verifier's job). A single open sub-task is the lead's job, not a new agent's. |
-| Should we | It names no failure: what goes wrong if a single agent does it. Then, for the team: there is no measurable reason a single agent would fail. A fan-out needs one of two reasons: the operator declared that the sub-tasks must stay isolated (`--isolate`), or their material does not fit in one call. The room in one call is the per-call limit less what the lead's own planning call cost, brief and reply. Material is estimated from the sizes of the workspace files each sub-task covers. A file several sub-tasks need counts once, and a split that leaves one sub-agent carrying all of the material is not a reason. If the material can't be measured, it doesn't count as a reason. |
-| Could we | Its skill is unknown, or its channel id is unusable or reserved. The budget tier does not allow a fan-out. The budget cannot pay for the sub-agents plus merge and verify. The cap of 4 workers is full. |
+| Should we | It names no failure: what goes wrong if a single agent does it. Then, for the team: there is no measurable reason a single agent would fail. A fan-out needs one of two reasons: the operator declared that the sub-tasks must stay isolated (`--isolate`), or their material does not fit in one call. The room in one call is the per-call limit less what the lead's own planning call cost, brief and reply. Material is estimated from the sizes of the workspace files each sub-task covers: a file named for its channel, and any it names in its note. When the workspace does not fit one call, the plan brief tells the lead to name a group's files that way, and when the files the goal names do not fit, what they come to. A part that names no file the workspace holds leaves the whole plan unmeasured, which cost two plans on the live run, and underscores in a note read as spaces, so a file whose name has one cannot yet be named. A file several sub-tasks need counts once, and a split that leaves one sub-agent carrying all of the material is not a reason. If the material can't be measured, it doesn't count as a reason. |
+| Could we | Its skill is unknown, or its channel id is unusable or reserved. The budget tier does not allow a fan-out. The call budget cannot pay for the sub-agents plus merge and verify. The cap of 4 workers is full. |
 
 A fan-out needs at least two legal sub-tasks.
+
+The could-we gate counts calls, not tokens. A split can pass it under a token budget too small to finish, and that run stops with `BUDGET` once the budget is spent. `--abort forecast_short` stops it sooner: over a sweep of token budgets on the simulated reader, it cut the tokens spent on runs that could not finish by 69 to 85% when the budget was far too small, and lost no run that could finish. A token check in the gate did worse: its estimate refused splits that would have finished, so fewer runs completed. So the gate stays as it is.
 
 That second check makes the gate measurable rather than rhetorical. The lead can no longer split work just by giving a reason. `--split-policy stated` restores the old behavior, where the lead's named reasons are enough; it is kept for comparison. Fan-outs the operator names with the `fanout` command count as declared.
 
@@ -136,6 +138,8 @@ The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. Th
 The tiers began as a way to test in steps, with guardrails, so that no run could start and fail to stop. The CLI defaults to tight. Do not raise the budget because the model sounded ready. A run may spend its whole budget, but not one call more.
 
 ## Install
+
+Genet needs Python 3.11 or newer. On a Mac whose `python3` is 3.9, the steps below stop with an error about `setup.py` that does not name the cause; use `python3.12 -m venv .venv` there.
 
 ```bash
 git clone https://github.com/jrodriguez4505/Genet.git
@@ -179,9 +183,10 @@ Every run command takes these flags:
 - `--isolate`: the sub-tasks must not share a context, which is a declared reason to fan out.
 - `--split-policy measured|stated`: what "should we" accepts (default `measured`).
 - `--tier`, plus budget overrides: `--max-calls`, `--max-tokens`, `--max-seconds`, `--max-tokens-per-call`.
-- `--abort forecast_short` or `--abort parts_failed:N`: stop at a decision point when the criterion is met (see [The shared situation](#the-shared-situation)).
+- `--abort CRITERION`: `forecast_short` (the default), `parts_failed:N`, or `none`. Naming one replaces the default (see [The shared situation](#the-shared-situation)).
 - `--main-effort CHANNEL`: the part the goal depends on most; the gates judge it first.
 - `--report-up`: a sub-agent may hand its part back when the plan is wrong for it.
+- `--cards`: the lead's plan brief carries a card for each position it can staff (see [The members](#the-members)).
 
 Each run starts with clean working memory, even when you reuse a run id. Runs saved before the 0.2 rename still load.
 
@@ -197,6 +202,8 @@ Each run starts with clean working memory, even when you reuse a run id. Runs sa
 | `always` | Crew style: the lead always decomposes, and every sub-task gets a worker, up to the cap. |
 | `genet` | The lead proposes sub-agents and the gates judge them, with the measured "should we". |
 | `genet-stated` | Same, but the lead's stated reasons are enough. Add it with `--strategies single,always,genet,genet-stated`. |
+| `genet-cards` | Same as `genet`, with the members table in the lead's plan brief (`--cards`). |
+| `always-told` | Same as `always`, with the size notes `genet`'s lead gets. No gates. |
 
 The tasks come from a seeded, synthetic corpus of company operating notes, so ground truth is exact and no model has seen it. Facts are written in varied prose and surrounded by distractors: prior-year figures and look-alike company names.
 
@@ -223,6 +230,17 @@ The arithmetic always adds up, so it never gives an error away. Each product is 
 - `shared-full` and `shared-layered`;
 - `independent-full` and `independent-layered`.
 
+`--arms` puts an argument in front of the verifier, with the same planted errors: `note`, where the author's note argues for the planted figure (wrong products only, since the independent view drops the note), and `planted`, where every file the goal names ends with an instruction to the verifier, to pass a wrong product or fail a right one. The kernel opens those files for the verifier, so the instruction reaches it. On the simulated reader neither arm changes a verdict. On Haiku 5.5 (2 November, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)), they split apart. The planted instruction was never followed in 24 reviews, which is the model's judgement, on one wording, and no limit in code. The false note is what got through:
+
+| Verifier | Sources | Plain | Against the false note |
+|---|---|---|---|
+| shared | layered | 9 of 12 | 8 of 12 |
+| shared | full | 12 of 12 | **7 of 12**, look-alike errors 1 of 6 |
+| independent (default) | layered (default) | 10 of 12 | 10 of 12 |
+| independent | full | 12 of 12 | 12 of 12 |
+
+In the shared layered row the look-alike errors were still caught, but only because the file the note cites was not opened. That is why the independent view became the default in v0.9.0. It leaves out the sub-agents' reports as well, and on split runs that did not fail more right answers: 6 of 26 runs against 3 of 5.
+
 The report shows wrong products caught (by kind), how many of those FAILs name the planted company, right products failed, how often the company's own file was among the sources, and tokens a review. `scripts/verify_runs.sh` runs it on Claude Haiku 5.5, capped and taped. On the simulated reader, a perfect checker of what it is shown, `full` catches every planted error, `layered` every look-alike one, and `today` none. On Haiku 5.5, `today` caught 2 of 12, `full` 12 of 12 in either view, and `layered` 9 of 12 for the right reason in either view. No setup failed a right product.
 
 ```bash
@@ -239,10 +257,10 @@ What the simulated reader shows. These are structural results from a perfect rea
 
 | Per-call context | Single agent | Always-split crew | Genet |
 |---|---|---|---|
-| Roomy, `--context 16000` | 100% · 2,880 tokens/task | 100% · 5,100 | 100% · 3,455 (1.20× single) |
-| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 5,020 | 100% · 4,594 (0.92× crew) |
+| Roomy, `--context 16000` | 100% · 2,842 tokens/task | 100% · 4,998 | 100% · 3,417 (1.20× single) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 4,998 | 100% · 4,683 (0.94× crew) |
 
-The counts include the files the verifier is given, the default since v0.7.0. With `--verify-sources none` they are as before: 2,068, 4,288 and 2,643 (1.28×) roomy, and 4,288 and 3,862 (0.90×) tight.
+The counts include the files the verifier is given, the default since v0.7.0. With `--verify-sources none` they are as before: 2,030, 4,186 and 2,605 (1.28×) roomy, and 4,186 and 3,871 (0.92×) tight.
 
 When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. At 20 companies a question, the simulated single agent costs 1.5 times the crew: it re-sends everything it has read every round.
 
@@ -250,19 +268,23 @@ The stub adapter drives the harness end to end but cannot answer, so its accurac
 
 ### What the live runs show
 
-Every live run so far is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md) with tapes that replay it at no cost.
+Every live run since v0.1 is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). The tapes and results are published, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) and [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), so a reader can rerun the live figures as well as the simulated ones.
 
 - **One agent was enough, and was the most accurate.** On the default questions, with every fix, single, crew and Genet each got every answer on Haiku 5.5, and Sonnet 5.5 did too at eleven times the cost. Asked about 5, 10 and 20 companies at once, about 84,000 tokens a task at the largest, a single agent still got every answer. On this model and these tasks there was no loss for a split to recover, so splitting for quality is not shown.
 - **Headcount cost accuracy.** The always-split crew went from 8 of 8 to 5 of 8 and 5 of 7 as the questions grew, losing answers in hand-offs and merges. It cost 1.8 to 2.5 times a single agent on small questions; past about 10 companies it cost less, but about the same per right answer.
 - **Genet stayed one agent wherever the work fit,** at 1.2 to 1.6 times a single agent's tokens: its planning call, which on a real model costs about as much as a working call. With half of each question's companies already filed, it was the cheapest strategy of all. Haiku's crew lead left filed work out of its plan by itself, so Genet's first gate had nothing to refuse.
-- **A verifier catches what it is shown.** Without sources, Haiku's verifier passed 10 of 12 planted errors, catching only the two whose own evidence quoted the wrong year. Given every file, it caught all 12 and failed none of 12 right products, at about six times a review's tokens. The layered pick caught every look-alike error at 1.6 times. Leaving out the author's notes made no measurable difference.
+- **A verifier catches what it is shown.** Without sources, Haiku's verifier passed 10 of 12 planted errors, catching only the two whose own evidence quoted the wrong year. Given every file, it caught all 12 and failed none of 12 right products, at about six times a review's tokens. The layered pick caught every look-alike error at 1.6 times. Against a mild author's note, leaving it out made no measurable difference; against a false one, it decided the result (below).
 - **Judging fit before the work is unreliable.** At a tight cap, the lead told the limit still judged work too big for one call to fit, and the gates' estimate from file sizes ran short, because searches pull in look-alike files.
+- **A split can work, once the gates can measure it.** At an 8,000-token cap over 10 files, Haiku's lead proposed groups of files, the sensible plan with a cap of 4 sub-agents. The gates measure a part by the files it names, and the plan brief did not ask for that, so they refused every split and all 8 runs overflowed. Told how to name them, 8 of 16 leads split; the other 8 misjudged the sum and overflowed. Told also what the question's files come to, a fact the kernel measures, all 8 proposed, 7 split, and 6 were verified. These are Genet's first live splits on work that does not fit one call.
+- **Side by side at that cap, the gates earned their place on small work, and the notes on large work.** On 12 questions that fit one call, no lead proposed a split, and Genet matched the single agent's 12 of 12 at 1.14 times its tokens. A crew given the same size notes still split all 12 and got 9, at 1.79 times. On 18 that do not fit, that crew and Genet each verified 13, and the single agent none. A crew without the notes verified 4, so most of Genet's lead over it came from the notes, which any lead can be given. The told crew reached more right answers there, 18 against 15, because the gates refused two plans over a guessed file name, though it used about 17% more tokens. Over all 30, Genet verified 25 and the told crew 22. At a 200,000-token cap a single agent gets these answers, so this does not show a split beating one agent where one agent fits.
+- **A sub-agent rarely guesses.** Given the wrong file, Haiku said the figure was missing on 10 of 12 parts, and with `--report-up` handed those same 10 back and no right part. The other 2 took the look-alike's figure under both briefs.
+- **A planted instruction did not move the verifier. The author's false note did.** With every source open, a note arguing for the error got 5 of 6 look-alike errors past it, in the setup that caught all 6 without the note. The independent view, which leaves the note out, caught them all, and is now the default. See [Verification](#verification).
 
-On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 14 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Thirteen are fixed: the verifier now gets the riskiest sources by default, and on Haiku 5.5 it caught every planted error whose file it was shown. Judging fit before the work starts is open.
+On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 18 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Fifteen are fixed: the verifier now gets the riskiest sources by default, and on Haiku 5.5 it caught every planted error whose file it was shown. Three are open: judging fit before the work starts, which telling the lead the total improved; a verifier that fails right answers after a split; and a size check that near the cap depends on sub-agents' timing.
 
 ## Live model (optional)
 
-Any OpenAI-compatible chat endpoint:
+Any OpenAI-compatible chat endpoint. This is independence from the transport, not yet from the model: only v0.1 ran on another provider, and the token ratio the size check uses is set on the Claude adapter, so a different model through this one is estimated at four characters a token until it is measured.
 
 ```bash
 export TASKORG_MODEL_BASE=https://api.x.ai/v1
@@ -292,7 +314,9 @@ Same prompts, the same JSON gate and the same token accounting as the live adapt
 
 `--max-spend` stops a comparison before a trial that could take spending past the cap, judged by the costliest trial so far. Ctrl-C also stops it. Either way the trials already run are saved.
 
-`--record PATH` saves every exchange with the model as it happens: the request, the reply text and its usage, or the error. Never the key, never the base URL. `--replay PATH` answers from that tape instead of a model, with no key and no spend, so the kernel, the gates and the grading can be refined against real replies. A request the tape does not have, because a prompt or brief changed since the recording, fails as `LIVE` and is counted. A tape recorded before v0.7.0 replays with `--verify-sources none`, the verifier's brief at the time. Tool results name files relative to the workspace, so the same request reads the same on every run, and no temp folder or home directory reaches the model.
+The tapes of the Claude runs, with the results each produced and a replay command for each, are published as GitHub releases: [27 to 29 October 2026](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) and [2 November 2026](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102). A clean clone replays the 28 and 29 October tapes to the token with no key and no SDK, and most runs replay exactly. Sub-agents run in parallel, though, so a run may not if it stops during them, or comes within a few tokens of the cap: how many calls had finished depends on timing, and the size check keeps room for the largest reply that has arrived. One finished trial stopped in 1 of 3 replays, 9 tokens over; the 27 October tapes were recorded under prompts that later changed, and stay as the record.
+
+`--record PATH` saves every exchange with the model as it happens: the request, the reply text and its usage, or the error. Never the key, never the base URL. `--replay PATH` answers from that tape instead of a model, with no key and no spend, so the kernel, the gates and the grading can be refined against real replies. A request the tape does not have, because a prompt or brief changed since the recording, fails as `LIVE` and is counted. A tape recorded before v0.7.0 replays with `--verify-sources none`, the verifier's brief at the time, and one recorded before the independent view became the default replays with `--verify-view shared`. Tool results name files relative to the workspace, so the same request reads the same on every run, and no temp folder or home directory reaches the model.
 
 ## Security
 
@@ -330,11 +354,32 @@ Every member works from the same situation: the goal, its purpose, done-when, th
   - `parts_failed:N` stops it when N parts' sub-agents have failed.
 
   Free text is refused, because code cannot test it. A run that stops this way ends with code `ABORT`, and its review names the criterion.
+
+  `forecast_short` is on by default since v0.9.0; `--abort none` turns every criterion off, and naming a criterion replaces the default. It judges the run's whole budget, never the size of one call, and the forecast is a floor, so it stops only a run that cannot finish. On the 372 taped Claude trials, whose budgets were roomy, it would never have fired; on the simulated reader with a budget below the run's cost, it cut the tokens spent on runs that could not finish by 69 to 85% and lost no run that could finish.
 - **Main effort.** `--main-effort CHANNEL` names the part the goal depends on most. The gates judge it first, so it is staffed first when the budget or the cap runs short.
 - **Kept current.** Each call a member makes carries the situation as it stands at that call, tool rounds included, and says what changed since its last one. Its context stays as it stood at the split.
 - **Reported up.** With `--report-up`, a sub-agent may answer `replan:REASON` when the plan is wrong for its part. Its reply is not merged. The kernel opens a replan request, closes it with a method in which the lead covers the part, and gives the lead the reason.
 
-None of these change a request unless you use them: with default flags, older tapes replay unchanged.
+None of these change a request, the default criterion included.
+
+`report-bench` measures reporting up on its own. A plan that is wrong for one part is too rare in real runs to count, so the bench builds the parts of 20-company aggregate questions the way a lead hands them out. Each part names a company. In half of them the plan gave the part's channel the wrong file: the company's look-alike's notes, which name it only for an FY2025 figure, or an unrelated company's. The sub-agent's tools open only that file. Each part runs with the default brief (`today`) and with `--report-up`, and only the sub-agents' calls go to the model. The report shows wrong parts handed back, said to be missing, or given a figure from the wrong file, and right parts reported or handed back. On the simulated reader, a perfect sub-agent, `--report-up` hands back every wrong part and no right one. On Haiku 5.5 (2 November, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)), `--report-up` handed back 10 of 12 wrong parts and no right one, at 6% more tokens. Under the default brief, the same 10 said in prose that the figure was missing, and in both setups the other 2 gave the look-alike's figure. So reporting up changes where a problem goes, not how many are noticed. Whether the lead then covers the part well is not measured.
+
+```bash
+python -m taskorg.cli report-bench                          # simulated reader, 48 parts, $0
+```
+
+## The members
+
+The lead staffs positions, not agents: a position is a skill and the model that fills it (design part 7). With `--cards`, the lead's plan brief carries a table with one row for each skill. Each row gives:
+- the skill's tools, and whether they open files;
+- the most calls one part may take;
+- the model that would fill it;
+- what one of its calls has cost, measured over past runs;
+- its counts from past runs: parts given, done, verified, failed (by code), handed back, and covered by the lead.
+
+The kernel writes the table from its own tables and from `records/positions.json` in the store, beside the lessons. It updates that file at the end of every run that staffed a sub-agent, from the run's record, never from model text, and whether or not the cards are shown. A position's counts show only after 3 runs, so one bad run does not steer the lead. The table has a fixed size. It shows counts, not scores. The gates never read it.
+
+The cards are off by default. They change the plan brief, and they stay off until a test shows they pay for their tokens. The `genet-cards` strategy compares the same runs with and without them, and `compare` reports the parts each strategy's lead proposed, the parts the gates refused, and the parts the lead had to cover. Each comparison trial uses a fresh store, so there the cards carry no past counts. On the simulated reader, whose lead ignores them, they add about 250 tokens to each plan call, 6 to 7% of a small task; on Claude, about 460. Over two live comparisons of 8 trials each (2 November), they show no sign of helping: once leads could name a group's files, 2 of 4 split with the cards and 3 of 4 without.
 
 ## Verification
 
@@ -353,14 +398,14 @@ The verifier always gets its call. When a split is judged, the gates reserve the
 The verifier sees:
 - the product;
 - up to 12 of its evidence lines;
-- the shared context, which carries every member's notes;
+- the context as the operator gave it, and with `--verify-view shared`, every member's notes and reports;
 - the workspace files the kernel opens for it, by default the riskiest few.
 
 It has no tools of its own. On 28 October, before the kernel opened files for it, that let a wrong total through: the verifier could not open a source, and it read the author's own note that look-alike files were excluded. Two settings decide what it sees. Run commands, `compare` and `verify-bench` all take them:
 
 | Flag | Values | What it does |
 |---|---|---|
-| `--verify-view` | `shared` (default), `independent` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. |
+| `--verify-view` | `independent` (default), `shared` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. `shared` shows it every member's notes and reports: the default until v0.9.0, and how a false note got past it. |
 | `--verify-sources` | `layered` (default), `full`, `none` | The kernel opens workspace files and puts them in the verifier's brief. See below. `none` opens nothing. |
 
 What each mode opens:
@@ -371,7 +416,7 @@ The kernel picks the files from the run's record and the product's text. The aut
 
 With sources on, the kernel also checks, in code, that every evidence quote is in a file its evidence line cites, and tells the verifier which are not. A file named inside the quote does not count as cited. Quotes of the tool's own words, of a search query, or of a member's report are not checked. Over all 885 products on the Claude tapes, it flags 6, and each is a quote the cited files do not hold. The verdict stays the verifier's, and the criteria checks above still apply.
 
-`layered` became the default after its live run (29 October, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). It caught every look-alike error at about 3% more tokens on a 20-company task, where `full` caught every planted error at about a quarter more. A run with no workspace has nothing to open, so its verifier's request is unchanged. `--verify-sources none` sends the verifier's request as it was before v0.7.0, which tapes recorded before then need to replay.
+`layered` became the default after its live run (29 October, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). It caught every look-alike error at about 3% more tokens on a 20-company task, where `full` caught every planted error at about a quarter more. A run with no workspace has nothing to open, so its verifier's request is unchanged. `--verify-sources none --verify-view shared` sends the verifier's request as it was before v0.7.0, which tapes recorded before then need to replay.
 
 ## Diagnose
 
@@ -386,9 +431,11 @@ These count as fails:
 
 Runs saved before isolation was recorded show `isolation_unverified`.
 
+The log is a record, not proof against tampering. A saved run is checked for its shape, not for edits: a run whose gate records were rewritten after the fact still loads and reports healthy.
+
 ## Tests
 
-`pytest -q` runs about 1,540 checks with no network and no key:
+`pytest -q` runs about 1,660 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -407,10 +454,12 @@ Runs saved before isolation was recorded show `isolation_unverified`.
   - what the verifier sees: the default brief is as it was, and the independent view leaves out the author's notes;
   - which files the kernel opens and why: the longest name first, and the same picks for the same product, trimmed to the per-call limit;
   - the quote check, the record of what the tools showed, and the verify bench: arithmetic that never gives an error away, and the simulated reader as each setup's ceiling.
+- **Verifier arms and the default abort.** `tests/test_verify_arms.py`: the note arm changes only a wrong product's note, the planted arm plants in every goal file and nowhere else, the simulated reader is a ceiling under both, `--abort none` turns the default off, and a run that cannot finish stops at its plan.
+- **Threat map.** `tests/test_threat_map.py` marks every field a model fills, across a plain split, a rework, hostile channel names, a part handed back, a malformed part and the cards. Model text must not reach the guidelines, the lessons, the position records or any brief in a later run. [SECURITY.md](SECURITY.md) has the map.
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 219 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All 219 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 261 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All 261 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -431,6 +480,8 @@ Runs saved before isolation was recorded show `isolation_unverified`.
 | Forecast | The kernel's estimate of what the rest of the run needs, against what is left. | `situation.forecast()`, `RunState.projections` |
 | Abort criterion | A condition, from a fixed list, that stops the run at a decision point. | `RunState.abort_criteria`, `--abort` |
 | Main effort | The part the goal depends on most; the gates judge it first. | `RunState.primary`, `--main-effort` |
+| Position | A skill and the model that fills it. Records are kept by position, not by agent. | `members.Record` |
+| Card | A position's row in the lead's plan brief: tools, calls a part, model, cost of a call, and counts from past runs. | `members.cards()`, `--cards` |
 | Replan request | A review that says the plan no longer fits; only a method or goal change closes it. A failed check opens one, and with `--report-up` so can a sub-agent. | `Run.request_replan()`, INV-14 |
 | Run log | The trace and audit log of every decision. | `Run.log`, `diagnose()` |
 | Team review | The kernel's blameless review of a run that had a failure: what failed, each part's outcome, what the team did. | `Run.review`, `review.team_review()` |
@@ -442,7 +493,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.8.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
+v0.9.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. [ARCHITECTURE.md](ARCHITECTURE.md) maps the modules and lists the open design questions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

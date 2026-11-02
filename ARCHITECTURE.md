@@ -39,8 +39,9 @@ Code decides everything else: who is on the team, which tools run, and what is s
 2. **Plan** (`Engine._propose` in `loop.py`). The lead's call carries:
    - the context;
    - the guidelines and lessons from the store;
-   - a SIZE note on what one call holds;
-   - the plan brief.
+   - a SIZE note on what one call holds, and, when they do not fit, what the files the goal names come to and how to name a group of files;
+   - the plan brief;
+   - with `--cards`, a table with a card for each position the lead can staff (design part 7, `members.py`): tools, calls a part, model, the cost of a call, and counts from past runs.
 
    The lead replies with proposals in `requests`, as `subtask:<channel>@<skill>=<named_failure>`. `subtasks.py` reads them, and at most 16 are considered.
 3. **Judge** (`assess` in `gates.py`, called from `Engine._assess`). The main effort, if the operator named one, is judged first. Each proposal passes three gates in order, and each gate fails closed:
@@ -65,9 +66,10 @@ Code decides everything else: who is on the team, which tools run, and what is s
 6. **Close** (`Engine._account`, `_close`, `review.py`, `persist.py`).
    - The operator's question is answered from the gate record, and the kernel raises its cues (`cues.py`).
    - If anything failed, the kernel writes a blameless review and adds a fixed lesson to the store.
+   - If the run staffed sub-agents, the kernel adds each position's counts to `records/positions.json` in the store (`Engine._keep_records`, `members.from_run`). A damaged file never changes the outcome.
    - The run is saved and becomes read-only.
 
-At three decision points (after the judge, after the reports, after the verdict), `Engine._decision_point` forecasts what the rest of the run needs (`situation.forecast`), checks the abort criteria, and records both. A criterion that is met stops the run there, with code `ABORT`. Each call a member makes, tool rounds included, carries the situation as it stands at that call (`Engine._current`).
+At three decision points (after the judge, after the reports, after the verdict), `Engine._decision_point` forecasts what the rest of the run needs (`situation.forecast`), checks the abort criteria (`forecast_short` by default; `--abort none` turns it off), and records both. A criterion that is met stops the run there, with code `ABORT`. Each call a member makes, tool rounds included, carries the situation as it stands at that call (`Engine._current`).
 
 Every model call goes through `Engine._call`:
 - `_admit` checks the budget before the call, counting calls in flight.
@@ -85,6 +87,7 @@ Every model call goes through `Engine._call`:
 | | `budget.py` | Tiers and caps: calls, tokens, seconds. |
 | | `subtasks.py` | Reads the lead's proposals and the sub-tasks an operator names. |
 | | `situation.py` | Decision points, the kernel's forecasts and the abort criteria (design part 8). |
+| | `members.py` | Each position's record from past runs, and the cards in the lead's plan brief (design part 7). |
 | | `cues.py` | Notes the kernel raises for the lead at close, such as a merge review when two channels reported. |
 | | `errors.py`, `factory.py` | The rule error; building a new run. |
 | The loop | `loop.py` | The `Engine`: briefs, budgeted calls, tool rounds, what the gates measure, staffing, merge, verify, close. The comparison's strategies subclass it. |
@@ -101,6 +104,7 @@ Every model call goes through `Engine._call`:
 | Measurement | `compare.py` | A single agent, an always-split crew and Genet side by side, graded against ground truth. |
 | | `suite.py` | The seeded synthetic task suite. |
 | | `verify_bench.py` | The verifier on its own: planted errors under five setups. |
+| | `report_bench.py` | A sub-agent on its own: parts with a planted plan error, with `--report-up` and without. |
 | | `bench.py`, `diagnostics.py` | Fixtures scored on the run's graph; health and audit of a run. |
 | Operator | `cli.py`, `persist.py`, `atomic.py` | Commands; saving and loading runs, older formats included; writes that land whole. |
 | Experiment, not used in runs | `policy.py`, `imitate.py`, `rl.py`, `finetune.py` | A socket for a learned policy head that could propose in place of the lead, and experiments to train one. It has no path to the roster. |
@@ -135,31 +139,40 @@ Every model call goes through `Engine._call`:
 | Hard budgets. | A run may spend its whole budget, but not one call more. Merge and verify are reserved before a split. The tiers began as a way to test in steps, so that no run could start and fail to stop. |
 | No memory system of Genet's own. | Today's store is plain files. When a part needs more, an off-the-shelf or model-provider memory goes behind `MemoryStore`, and the kernel still decides what is written. |
 | Read-only tools in a sandbox. | Workspace only. Hidden files, binaries and symlinks out of the workspace are refused. |
+| The verifier does not see the author's notes. | With every source open, a false note got 5 of 6 look-alike errors past a verifier that saw it, and none past one that did not. A planted instruction in a file moved it not at all, so a member's note is the stronger lever. |
 | The kernel picks the verifier's sources. | Neither the author nor the verifier chooses them. In the live bench, the sources decided the catch. |
-| Every figure can be rerun. | A deterministic reader and tapes let every result replay with no key and no spend. |
+| Records are kept by position, and shown as counts after 3 runs. | Agents are copies of one model, so a record of an agent would describe nothing. A score would judge for the lead, and one bad run should not steer it. The gates do not read the record. |
+| Every figure can be rerun. | A deterministic reader and tapes let every result replay with no key and no spend. On a clean clone with no key and no SDK, the 28 and 29 October tapes reproduce every trial and review to the token. The tapes are published as releases, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) and [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), with a replay command for each. |
+| `forecast_short` is on by default. | It judges the whole budget with a floor forecast, so it stops only a run that cannot finish. It never fired on 372 taped trials, and on the simulated reader it cut what a run that cannot finish spends by 69 to 85%. |
 
 ## How it is tested
 
-- 1,538 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 219 rules one at a time, and a test catches each.
+- 1,662 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 261 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
 
 1. **Is admission control the right place for the staffing decision?** The alternatives are learning the staffing offline, as BAMAS does, or leaving it to the lead's judgment. Genet decides each proposal at runtime, in code.
 2. **Should the should-we gate count cost?** It counts two reasons: declared isolation, and material that does not fit. At 20 companies a single agent costs 1.5 times the crew in the sim, because re-sent tool results grow each round. Genet still stays single.
-3. **Fit judged before the work is unreliable on a real model.** Is re-planning on a measured overflow (design part 4) the answer, or a better estimate in the gate?
+3. **Fit judged before the work is unreliable on a real model.** Is re-planning on a measured overflow (design part 4) the answer, or a better estimate in the gate? On the tapes, re-planning reaches more: of the 9 tight-cap failures left once sub-agents were scoped, a better estimate could reach 3, and in 5 the lead never proposed a split for the gate to judge (`docs/LIVE_TESTS.md`). At a 200,000-token cap nothing overflowed, so neither has been needed at a real context size. On 2 November, at an 8,000-token cap, a lead told how to name a group's files split on 8 of 16 trials, and told also what the goal's files come to, on 23 of 26, with no lead proposing a split on the 12 questions that fit. The gates admitted every part of every plan that named its files, and 30 of 31 split runs reached the right answer. A lead that still misjudges, or guesses a file's name, overflows, so re-planning is what would rescue it. A better estimate is not: a scoped sub-agent's largest call ran at most 1.29 times today's estimate, so the 1.7 factor measured on unscoped searches would refuse work that fits.
 4. **Nesting** (design part 3): the same gates at every level, depth 2, and at most 4 direct reports a lead, with a budget reserved from the parent's. Are 4 and 2 the right limits?
-5. **The lead knowing its members** (design part 7): a record of each position, kept by the kernel, in the lead's plan brief. Does a track record belong in the brief, in the gates, or nowhere?
-6. **`loop.py` is 944 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
+5. **The lead knowing its members** (design part 7, built with `--cards`): a record of each position, kept by the kernel, in the lead's plan brief. Does a track record belong in the brief, in the gates, or nowhere? Two live tests show no sign the cards help, at about 460 tokens a plan call, though past counts have not been tried.
+6. **`loop.py` is about 1,070 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
 7. **Hand-offs lose information.** The always-split crew lost answers as the work grew. What would show where?
 8. **A reviewer of purpose** (design part 10) adds a call before the work, to check the plan against the purpose. Is that worth it, or is checking the product afterwards enough?
 9. **Sequential work** (design part 9). The gate would refuse to split a chain of parts unless a link does not fit. Is a dependency the lead declares enough to find chains, or should the kernel find them?
 
+10. **What should the verifier be shown of a split's work?** The independent view is the default, because with every source open a false note got 5 of 6 look-alike errors past the shared view and none past it. It also leaves out the sub-agents' reports, and under either view the layered pick opens 2 of the files after a split, so a pass checks little, and a verifier sometimes fails a right answer for what it cannot see.
+
+11. **Should the gates count what a split leaves for the lead?** They admit up to 4 sub-agents and hand the rest to the lead. A lead that plans one part per file at 20 companies then cannot fit the other 16 in its merge call. Haiku grouped its files and got by, but nothing makes a lead do that.
+
+12. **Should one unmeasured part refuse a whole plan?** It does today, so one guessed file name sends the lead to work alone and overflow. A crew given the same notes, with no gate to refuse it, reached 18 of 18 right answers on the large questions where Genet reached 15. Measuring the parts that can be measured, and giving the lead the rest, would keep the rule without losing the plan.
+13. **Should a sub-agent's room depend on its siblings?** The size check keeps room for the largest reply so far in the run, so near the cap, whether a call is sent depends on which sibling's reply has arrived. One finished trial stopped in 1 of 3 replays, 9 tokens over. The gates are deterministic; this check is not.
+
 ## Not built yet
 
 These are the remaining parts of [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md), in its order:
-- a lead that knows its members (part 7);
 - a reviewer of purpose (part 10);
 - a method made of moves the kernel runs (part 9);
 - nesting (part 3), with peer teams (part 11);

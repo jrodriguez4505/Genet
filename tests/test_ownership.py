@@ -201,6 +201,7 @@ def test_a_failed_verification_and_its_rework_are_reviewed(tmp_path: Path):
 
 def test_a_stopped_run_is_reviewed_with_its_cause(tmp_path: Path):
     m = _run("own-12")
+    m.state.abort_criteria = []  # with the default forecast_short, this run would stop at its plan instead
     engine = _engine(tmp_path, Team(), budget=Budget(max_calls=1))
     with pytest.raises(InvariantError):
         engine.run_task(m, context="c")

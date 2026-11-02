@@ -80,7 +80,7 @@ def _points(m):
 def test_a_new_run_checks_at_every_decision_point_and_has_no_pace():
     m = _run()
     assert m.state.checkpoints == list(DECISION_POINTS) == ["plan", "reports", "verdict"]
-    assert m.state.primary == "" and m.state.abort_criteria == [] and m.state.projections == []
+    assert m.state.primary == "" and m.state.abort_criteria == ["forecast_short"] and m.state.projections == []
     assert not hasattr(m.state, "cadence")
     contract = state_contract(m.state)
     assert contract["schedule"] == {"checkpoints": ["plan", "reports", "verdict"]}

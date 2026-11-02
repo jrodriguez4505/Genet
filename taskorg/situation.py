@@ -16,6 +16,9 @@ from .errors import InvariantError
 DECISION_POINTS = ("plan", "reports", "verdict")
 # Each criterion, and whether it takes a value.
 ABORT_CRITERIA = {"forecast_short": False, "parts_failed": True}
+# What a new run checks when the operator names nothing. It judges the run's whole budget, never the size of
+# one call, and the forecast is a floor, so it stops only a run that cannot finish. `--abort none` turns it off.
+DEFAULT_ABORT = ("forecast_short",)
 
 
 def parse_abort(raw) -> list[str]:

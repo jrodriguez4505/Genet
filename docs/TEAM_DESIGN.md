@@ -1,6 +1,6 @@
 # Team structure: design
 
-Status: proposal, 28 October 2026. Part 2, the independent verifier, is built (v0.7.0), and part 8, the shared situation (v0.8.0); the rest is not. Parts 7 to 11 were added on 29 October. Parts 8 to 11 carry forward ideas from Genet's first design, and [The first design](#the-first-design) records what became of the rest.
+Status: proposal, 28 October 2026. Part 2, the independent verifier, is built (v0.7.0), part 8, the shared situation (v0.8.0), and part 7, the lead knows its members (v0.9.0); the rest is not. Parts 7 to 11 were added on 29 October. Parts 8 to 11 carry forward ideas from Genet's first design, and [The first design](#the-first-design) records what became of the rest.
 
 ## What it must serve
 
@@ -145,23 +145,28 @@ Any agent can fill any position, so authority cannot belong to an agent. It belo
 
 A skill can already have its own model. The test: a cheap model reads, and a stronger one leads or verifies. It needs a Sonnet run, so it waits for the operator's go-ahead on spend.
 
-### 7. The lead knows its members (proposed 29 October)
+### 7. The lead knows its members (built in v0.9.0)
 
-Today the lead's plan brief names the skills and nothing more. It does not say what each skill can open, what a call costs, or how each has done before. Every agent is the same model, so knowing the members means knowing the positions: what a skill, its access and its model have done.
+Before v0.9.0 the lead's plan brief named the skills and nothing more. It did not say what each skill could open, what a call cost, or how each had done before. Every agent is the same model, so knowing the members means knowing the positions: what a skill, its access and its model have done.
 
-- **A card for each position the lead can staff,** written by the kernel. It gives the skill, its tools, its model, and the measured cost of one of its calls.
-- **A record for each position from past runs,** kept in the store beside the lessons. It counts:
-  - parts done;
-  - parts verified;
-  - parts that failed, and how (`SCHEMA`, `LIVE`);
-  - parts the lead had to cover.
-
-  It is built from the record, never from model text. It is kept by position (skill and model), not by agent, because agents are copies.
-- **In the plan brief, bounded.** The cards go in a table of fixed size. They show counts, not scores, and a position's record shows only after three runs, so one bad run does not steer the lead.
+- **A card for each position the lead can staff,** written by the kernel (`members.cards`). One row a skill, filled by the model the run would use, gives:
+  - its tools, and whether they open files;
+  - the most calls one part may take (`Engine._skill_calls`);
+  - the model;
+  - what one of its calls has cost, averaged over past runs, or "not measured yet".
+- **A record for each position from past runs,** in `records/positions.json` in the store, beside the lessons but not in the guidelines that every brief carries. It counts runs, parts given, parts done, parts verified, parts that failed by code (`SCHEMA`, `LIVE`), parts handed back (part 8), and the calls and tokens they took. Parts covered by the lead are the failed and the handed back.
+  - It is built from the run's record at the end of every run that staffed a sub-agent (`Engine._keep_records`, `members.from_run`), never from model text, and whether or not the cards are shown. A damaged file never changes a run's outcome.
+  - It is kept by position (skill and model), not by agent, because agents are copies.
+- **In the plan brief, bounded.** The table has seven rows, one a skill. It shows counts, not scores, and a position's counts show only after three runs, so one bad run does not steer the lead. Stored counts are clamped, model names are cut at 60 characters, and the store keeps at most 64 positions, the least recently updated going first.
 - **The gates do not read it.** It informs what the lead proposes, and the gates still decide with the same three checks.
-- Comparison trials each use a fresh store, as they do for lessons, and a flag turns the cards off.
+- **Off by default.** The proposal had a flag that turns the cards off. They are built the other way round: `--cards` turns them on, because they change the plan brief, and structure stays off until a test shows it is needed.
+- Comparison trials each use a fresh store, as they do for lessons, so in `compare` the cards carry no past counts. The `genet-cards` strategy runs genet with the cards, and `compare` now reports the parts each lead proposed, the parts refused and the parts the lead covered.
 
-The test runs the same tasks with and without the cards. The sim shows only what the cards cost in tokens, because its reader ignores them. Haiku then shows whether they change the plan. Does a lead with the cards propose fewer parts that are refused or that fail, at the same accuracy and comparable tokens?
+The test runs the same tasks with and without the cards. The sim shows only what the cards cost in tokens, because its reader ignores them: about 250 tokens a plan call, 6 to 7% of a small task. Haiku then shows whether they change the plan. Does a lead with the cards propose fewer parts that are refused or that fail, at the same accuracy and comparable tokens?
+
+The first live run (2 November, `docs/LIVE_TESTS.md`) did not answer this. At an 8,000-token cap over 10 files, the lead proposed mostly groups of files, the gates could not measure them, and all 8 runs overflowed. Once the plan brief said how to name a group's files, 2 of 4 leads split with the cards and 3 of 4 without, in the same run, and the gates admitted every part. Telling the lead what the goal's files come to did far more than the cards: 23 of 26 split, and none of the 12 whose work fit one call proposed it. A crew told the same thing verified as many of the large questions as Genet, so this knowledge belongs to whoever plans, and what the gates add is keeping small work single. So there is no sign the cards help, at about 460 prompt tokens a plan call on Claude. They stay off.
+
+Not measured: whether past counts change a plan. That needs runs that share a store, at least three of them per position, and is left until the cards show they pay at all.
 
 The same records are what a learned staffing model would train on. The first design built one: `policy.py`, `imitate.py` and `rl.py`, an experiment that can only propose and is not used in runs. It waits until the records show a need for it.
 
@@ -189,7 +194,7 @@ The rule: the kernel acts on every field, or the field is removed. The code is i
 
 - **Decision points** are three fixed places in the loop: after the plan is judged, after the sub-agents report, and after the verdict. A run lists the ones it checks at, all three by default. At each one, the kernel forecasts, checks the abort criteria, and records both (`decision_point`).
 - **Forecasts** are the kernel's, never a model's. A forecast counts the fewest calls the rest of the loop makes from that point, and prices them at the run's average cost per call so far. It sets them against the calls and tokens left. Working calls carry files and run larger than a plan, so a forecast is a floor: it errs toward going on.
-- **Abort criteria** are the operator's (`--abort`), from a fixed list:
+- **Abort criteria** are the operator's (`--abort`), from a fixed list. `forecast_short` is on by default since v0.9.0, and `--abort none` turns every criterion off:
   - `forecast_short`: the forecast shows the budget cannot finish the work;
   - `parts_failed:N`: N parts' sub-agents have failed.
 
@@ -206,7 +211,7 @@ The rule: the kernel acts on every field, or the field is removed. The code is i
 
 With default flags, every request is byte for byte what it was. The 28 and 29 October tapes replay with no missing requests and the same results, and the sim figures are unchanged.
 
-Not measured yet: whether a sub-agent on a real model hands back a part it cannot do, rather than guess. That needs a live run of the crew with `--report-up`, on the operator's go-ahead for spend.
+On Haiku 5.5 (2 November, `docs/LIVE_TESTS.md`), a sub-agent on its own handed back 10 of 12 parts the plan got wrong and none of 12 right ones. Under the default brief the same 10 said in prose that the figure was missing, and in both setups the other 2 took a look-alike's figure. Not measured yet: what the lead does with a part handed back. That needs a live run of a crew with `--report-up`, and no crew has yet run with it on work that splits.
 
 ### 9. A method made of moves (proposed 29 October, from the first design)
 
@@ -301,9 +306,9 @@ Each could fail in a specific way:
 
 ## Order
 
-1. The independent verifier: built in v0.7.0, with the full and layered checks and the verify bench, and run on Haiku 5.5 on 29 October (`docs/LIVE_TESTS.md`). Sources decided the catch: `full` caught 12 of 12, `layered` 9 of 12 for the right reason, `today` 2. The independent view made no measurable difference at this size.
-2. The shared situation (part 8): built in v0.8.0, in code with no live spend. Reported up waits for a live crew run.
-3. The lead knows its members (part 7): sim for cost, then Haiku. It comes before nesting because nesting multiplies the leads that plan.
+1. The independent verifier: built in v0.7.0, with the full and layered checks and the verify bench, and run on Haiku 5.5 on 29 October (`docs/LIVE_TESTS.md`). Sources decided the catch: `full` caught 12 of 12, `layered` 9 of 12 for the right reason, `today` 2. The independent view made no measurable difference at this size, with a mild note. Against a false note, on 2 November, it decided the result: with every source open, 12 of 12 caught against 7 of 12 in the shared view. It also leaves out the sub-agents' reports, and on split runs that did not fail more right answers (6 of 26 runs against 3 of 5). It became the default in v0.9.0.
+2. The shared situation (part 8): built in v0.8.0, in code with no live spend. Reported up works on Haiku at the sub-agent level; a crew run with it is next, now that the gates admit a group of files (`docs/LIVE_TESTS.md`, 2 November).
+3. The lead knows its members (part 7): built in v0.9.0, off by default (`--cards`), not yet shown to pay. It comes before nesting because nesting multiplies the leads that plan.
 4. A reviewer of purpose (part 10): a review bench, sim then Haiku.
 5. A method made of moves (part 9): chains in the sim first.
 6. Nesting (part 3), with peer teams (part 11): sim at large sizes. Live only if the sim shows a case.

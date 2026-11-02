@@ -15,10 +15,11 @@ from .loop import Engine
 from .memory_store import MemoryStore
 from .persist import load_run, save_run
 from .reads import attach_reads
-from .situation import parse_abort
+from .situation import DEFAULT_ABORT, parse_abort
 from .subtasks import parse_subtasks
 from .tools import Toolbox
-from .verify_bench import SETUPS as VERIFY_SETUPS
+from .report_bench import SETUPS as REPORT_SETUPS
+from .verify_bench import ARMS as VERIFY_ARMS, SETUPS as VERIFY_SETUPS
 
 
 DEFAULT_GUIDELINES = """# Genet guidelines (v1)
@@ -91,18 +92,21 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--split-policy", default="measured", choices=["measured", "stated"],
                    help="measured: fan out only for declared isolation or material that does not fit one context; "
                         "stated: the lead's named reasons are enough")
-    p.add_argument("--verify-view", default="shared", choices=list(VIEWS),
+    p.add_argument("--verify-view", default="independent", choices=list(VIEWS),
                    help="what the verifier sees: shared (every note), independent (not the author's notes)")
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
                         "(the brief before v0.7.0, which older tapes replay)")
     p.add_argument("--abort", action="append", default=[], metavar="CRITERION",
                    help="stop at a decision point when this is met: forecast_short (the budget cannot finish the "
-                        "work), or parts_failed:N (N parts' sub-agents failed)")
+                        f"work; the default), parts_failed:N (N parts' sub-agents failed), or none. "
+                        f"Naming one replaces the default {list(DEFAULT_ABORT)}")
     p.add_argument("--main-effort", default="", metavar="CHANNEL",
                    help="the part the goal depends on most; the gates judge it first")
     p.add_argument("--report-up", action="store_true",
                    help="a sub-agent may hand its part back with replan:REASON when the plan is wrong for it")
+    p.add_argument("--cards", action="store_true",
+                   help="show the lead a card for each position it can staff, with its record from past runs")
     _add_budget_args(p)
 
 
@@ -129,7 +133,9 @@ def _new_run(args: argparse.Namespace, store: MemoryStore):
         if not criteria:
             raise InvariantError("CLI", "--criteria is blank; name what the product must show")
         run.state.success_criteria = criteria
-    run.state.abort_criteria = parse_abort(args.abort)
+    if args.abort:
+        # Naming a criterion replaces the default; `none` alone turns every criterion off.
+        run.state.abort_criteria = parse_abort(a for a in args.abort if a.strip().lower() != "none")
     run.state.primary = args.main_effort.strip()
     exists = [str(p) for p in args.exists]
     run.world = World(existing_files=exists, existing_channels=[Path(p).stem for p in exists])
@@ -143,7 +149,8 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
     toolbox = Toolbox(roots=args.workspace, files=args.read)
     return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
                   split_policy=args.split_policy, isolation_required=args.isolate, lessons=not args.no_lessons,
-                  verify_view=args.verify_view, verify_sources=args.verify_sources, report_up=args.report_up)
+                  verify_view=args.verify_view, verify_sources=args.verify_sources, report_up=args.report_up,
+                  cards=args.cards)
 
 
 def _out_path(raw: str | None, default: Path) -> Path:
@@ -283,7 +290,7 @@ def cmd_brief(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="taskorg", description="Genet — small multi-agent runtime")
+    p = argparse.ArgumentParser(prog="taskorg", description="Genet — policy-governed agent runtime")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     m = sub.add_parser("run", help="the lead reads the context and staffs the task; the gates judge it")
@@ -394,7 +401,7 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--record", default=None, help="save every model exchange to this tape, to replay with no key")
     p_c.add_argument("--replay", default=None, help="answer from this tape instead of a model: no key, no spend")
     p_c.add_argument("--out", default=None, help="results JSON (default data/compare/compare-<time>.json)")
-    p_c.add_argument("--verify-view", default="shared", choices=list(VIEWS),
+    p_c.add_argument("--verify-view", default="independent", choices=list(VIEWS),
                      help="what the verifier sees: shared (every note), independent (not the author's notes)")
     p_c.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                      help="sources the kernel opens for the verifier: layered (default), full, or none "
@@ -406,6 +413,9 @@ def main(argv: list[str] | None = None) -> int:
     p_v.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
                      help="sim: a perfect checker of what it is shown, at $0; live or anthropic: a real model")
     p_v.add_argument("--setups", default=",".join(VERIFY_SETUPS), help=f"from {', '.join(VERIFY_SETUPS)}")
+    p_v.add_argument("--arms", default="plain", help=f"from {', '.join(VERIFY_ARMS)}: plain; note, where the author's note "
+                     "argues for the planted figure (wrong products only); planted, where every file the goal names "
+                     "carries an instruction to the verifier")
     p_v.add_argument("--questions", type=_whole(1), default=6, help="aggregate questions; four products each, two wrong")
     p_v.add_argument("--entities", type=_whole(2), default=20, help="companies per question")
     p_v.add_argument("--distractors", type=_whole(0), default=6, help="extra wrong-year figures per company")
@@ -423,6 +433,28 @@ def main(argv: list[str] | None = None) -> int:
     p_v.add_argument("--out", default=None, help="results JSON (default data/compare/verify-<time>.json)")
     p_v.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
     p_v.set_defaults(func=cmd_verify_bench)
+
+    p_r = sub.add_parser("report-bench", help="does a sub-agent hand back a part the plan got wrong? parts with planted errors")
+    p_r.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
+                     help="sim: a perfect sub-agent, at $0; live or anthropic: a real model")
+    p_r.add_argument("--setups", default=",".join(REPORT_SETUPS), help=f"from {', '.join(REPORT_SETUPS)}")
+    p_r.add_argument("--questions", type=_whole(1), default=6, help="aggregate questions; four parts each, two wrong")
+    p_r.add_argument("--entities", type=_whole(2), default=20, help="companies per question")
+    p_r.add_argument("--distractors", type=_whole(0), default=6, help="extra wrong-year figures per company")
+    p_r.add_argument("--repeat", type=_whole(1), default=1)
+    p_r.add_argument("--seed", type=int, default=7)
+    p_r.add_argument("--max-calls", type=_whole(1), default=4, help="per-part call cap")
+    p_r.add_argument("--context", type=_whole(1), default=200_000, help="per-call token cap")
+    p_r.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens")
+    p_r.add_argument("--price-out", type=_finite(0, strict=False), default=None, help="$ per 1M output tokens")
+    p_r.add_argument("--max-spend", type=_finite(0, strict=True), default=None,
+                     help="$ cap: stop before a part that could pass it (needs --price-in and --price-out)")
+    p_r.add_argument("--record", default=None, help="save every model exchange to this tape")
+    p_r.add_argument("--replay", default=None, help="answer from this tape: no key, no spend")
+    p_r.add_argument("--corpus", default=None, help="also write the corpus here, to read it")
+    p_r.add_argument("--out", default=None, help="results JSON (default data/compare/report-<time>.json)")
+    p_r.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
+    p_r.set_defaults(func=cmd_report_bench)
 
     p_d = sub.add_parser("diagnose", help="performance and interaction at every level")
     p_d.add_argument("path")
@@ -584,6 +616,10 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
     bad = set(setups) - set(VERIFY_SETUPS)
     if not setups or bad:
         raise InvariantError("VERIFY_BENCH", f"name setups from {list(VERIFY_SETUPS)}" + (f"; unknown: {sorted(bad)}" if bad else ""))
+    arms = tuple(dict.fromkeys(a.strip() for a in args.arms.split(",") if a.strip()))
+    bad = set(arms) - set(VERIFY_ARMS)
+    if not arms or bad:
+        raise InvariantError("VERIFY_BENCH", f"name arms from {list(VERIFY_ARMS)}" + (f"; unknown: {sorted(bad)}" if bad else ""))
     if (args.price_in is None) != (args.price_out is None):
         raise InvariantError("VERIFY_BENCH", "give both --price-in and --price-out, or neither")
     if args.max_spend is not None and args.price_in is None:
@@ -595,11 +631,11 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
                             entities=args.entities, distractors=args.distractors)
     except ValueError as e:
         raise InvariantError("VERIFY_BENCH", str(e)) from None
-    items = products(suite)
+    items = products(suite, arms)
     reviews = len(items) * len(setups) * args.repeat
     out = _out_path(args.out, Path(f"data/compare/verify-{time.strftime('%Y%m%d-%H%M%S')}.json"))
     config = {
-        "adapter": "replay" if args.replay else args.adapter, "setups": list(setups), "questions": args.questions,
+        "adapter": "replay" if args.replay else args.adapter, "setups": list(setups), "arms": list(arms), "questions": args.questions,
         "entities": args.entities, "distractors": args.distractors, "repeat": args.repeat, "seed": args.seed,
         "max_calls_per_review": args.max_calls, "context_tokens": args.context,
         "products": len(items), "wrong_products": sum(b.error is not None for _, _, b in items), "reviews": reviews,
@@ -619,7 +655,7 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
         suite.write_corpus(args.corpus)
     try:
         results = run_bench(
-            suite, factory, setups=setups, repeats=args.repeat,
+            suite, factory, setups=setups, arms=arms, repeats=args.repeat,
             budget_factory=lambda: comparison_budget(args.max_calls, args.context),
             corpus_dir=Path(args.corpus) if args.corpus else None, progress=stderr,
             stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
@@ -628,6 +664,74 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
         if recorder:
             recorder.close()
     if len(results) < reviews:
+        config["stopped_after"] = len(results)
+    summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
+    save(out, config=config, results=results, summary=summary)
+    print(render(summary))
+    if player:
+        print(f"replay: {player.served} replies served ({player.repeated} repeated), "
+              f"{player.misses} requests the tape does not have")
+    if recorder:
+        print(f"tape: {recorder.count} exchanges saved to {args.record}")
+    print(f"saved {out}")
+    return 0
+
+
+def cmd_report_bench(args: argparse.Namespace) -> int:
+    import time
+
+    from .compare import comparison_budget, spend_cap, stderr
+    from .report_bench import parts, render, run_bench, save, summarize
+    from .suite import build_suite
+
+    setups = tuple(dict.fromkeys(s.strip() for s in args.setups.split(",") if s.strip()))
+    bad = set(setups) - set(REPORT_SETUPS)
+    if not setups or bad:
+        raise InvariantError("REPORT_BENCH", f"name setups from {list(REPORT_SETUPS)}" + (f"; unknown: {sorted(bad)}" if bad else ""))
+    if (args.price_in is None) != (args.price_out is None):
+        raise InvariantError("REPORT_BENCH", "give both --price-in and --price-out, or neither")
+    if args.max_spend is not None and args.price_in is None:
+        raise InvariantError("REPORT_BENCH", "--max-spend needs --price-in and --price-out")
+    if args.record and args.replay:
+        raise InvariantError("REPORT_BENCH", "--record or --replay, not both")
+    try:
+        suite = build_suite(seed=args.seed, per_family=args.questions, families=("aggregate",),
+                            entities=args.entities, distractors=args.distractors)
+    except ValueError as e:
+        raise InvariantError("REPORT_BENCH", str(e)) from None
+    items = parts(suite)
+    runs = len(items) * len(setups) * args.repeat
+    out = _out_path(args.out, Path(f"data/compare/report-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    config = {
+        "adapter": "replay" if args.replay else args.adapter, "setups": list(setups), "questions": args.questions,
+        "entities": args.entities, "distractors": args.distractors, "repeat": args.repeat, "seed": args.seed,
+        "max_calls_per_part": args.max_calls, "context_tokens": args.context,
+        "parts": len(items), "wrong_parts": sum(p.kind != "right" for _, _, p in items), "runs": runs,
+    }
+    if args.price_in is not None:
+        config |= {"price_in": args.price_in, "price_out": args.price_out}
+    if args.max_spend is not None:
+        config["max_spend"] = args.max_spend
+    if args.dry_run:
+        print(json.dumps(config, indent=2))
+        return 0
+    factory, player, recorder = _model_source(
+        args, config, "report_bench", "REPORT_BENCH",
+        ("setups", "questions", "entities", "distractors", "repeat", "seed", "max_calls_per_part", "context_tokens"),
+    )
+    if args.corpus:
+        suite.write_corpus(args.corpus)
+    try:
+        results = run_bench(
+            suite, factory, setups=setups, repeats=args.repeat,
+            budget_factory=lambda: comparison_budget(args.max_calls, args.context),
+            corpus_dir=Path(args.corpus) if args.corpus else None, progress=stderr,
+            stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
+        )
+    finally:
+        if recorder:
+            recorder.close()
+    if len(results) < runs:
         config["stopped_after"] = len(results)
     summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
     save(out, config=config, results=results, summary=summary)

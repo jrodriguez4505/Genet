@@ -36,7 +36,7 @@ from pathlib import Path
 from taskorg.adapters import Brief, ModelAdapter
 from taskorg.anthropic_live import TOKEN_RATIO, AnthropicAdapter
 from taskorg.budget import Budget
-from taskorg.compare import CONTEXT, DECOMPOSE_BRIEF, DONE_WHEN, PURPOSE, STRATEGIES, comparison_budget
+from taskorg.compare import CONTEXT, DECOMPOSE_BRIEF, DONE_WHEN, PURPOSE, STRATEGIES, comparison_budget, run_trial
 from taskorg.factory import new_run
 from taskorg.live import LiveAdapter, system_prompt
 from taskorg.loop import PLAN_BRIEF, RETRY_NOTE, Engine
@@ -292,8 +292,8 @@ def test_a_part_with_no_measured_files_keeps_the_whole_workspace(tmp_path: Path)
 # --- from the scoped rerun: the lead plans knowing the limit, and replies are brief ---
 
 
-def _plan_packet(tmp_path: Path, adapter, toolbox, budget):
-    m = new_run("size-1", "What is the total?", "answer from the notes", "ends with ANSWER:")
+def _plan_packet(tmp_path: Path, adapter, toolbox, budget, goal="What is the total?"):
+    m = new_run("size-1", goal, "answer from the notes", "ends with ANSWER:")
     m.state.success_criteria = ["ANSWER:"]
     seen = []
 
@@ -319,6 +319,136 @@ def test_the_file_sizes_are_in_the_models_tokens(tmp_path: Path):
     claude = AnthropicAdapter("", "claude-haiku-5-5", client=object())
     packet = _plan_packet(tmp_path, claude, Toolbox(roots=[_workspace(tmp_path)]), comparison_budget(40, 4000))
     assert f"of about {math.ceil(4 * TOKEN_RATIO)} to {math.ceil(9 * TOKEN_RATIO)} tokens each" in packet
+
+
+def test_a_lead_is_told_what_the_goals_files_come_to_only_when_they_do_not_fit_a_call(tmp_path: Path):
+    """On 2 November half the leads did the sum wrong from a range of sizes, proposed nothing and overflowed."""
+    root = tmp_path / "w"
+    root.mkdir()
+    for name in ("north", "south", "east"):
+        (root / f"{name}.md").write_text("Revenue line. " * 200)  # 700 tokens each
+    box = Toolbox(roots=[root])
+    goal = "What was the revenue of North and South?"
+    claude = AnthropicAdapter("", "claude-haiku-5-5", client=object())
+    short = _plan_packet(tmp_path / "a", claude, box, comparison_budget(40, 3_000), goal=goal)
+    assert f"The 2 files the goal names come to about {2 * math.ceil(700 * TOKEN_RATIO):,} tokens" in short
+    assert "they do not fit one call" in short
+    roomy = _plan_packet(tmp_path / "b", Replies(), box, comparison_budget(40, 200_000), goal=goal)
+    assert "files the goal names" not in roomy
+    # One named file: a split could not help. None named: the kernel has nothing to add up.
+    one = _plan_packet(tmp_path / "c", Replies(), box, comparison_budget(40, 1_000), goal="What was North's revenue?")
+    none = _plan_packet(tmp_path / "d", Replies(), box, comparison_budget(40, 1_000))
+    assert "files the goal names" not in one and "files the goal names" not in none
+
+
+def test_a_lead_is_told_how_to_name_a_group_only_when_the_workspace_does_not_fit_a_call(tmp_path: Path):
+    """On 2 November a lead told the limit proposed groups of files, and the gates refused them all as unknown
+    material. The note costs tokens, and changes the request, so a roomy run neither pays for it nor differs."""
+    root = tmp_path / "w"
+    root.mkdir()
+    for name in ("north", "south", "east"):
+        (root / f"{name}.md").write_text("Revenue line. " * 400)
+    tight = _plan_packet(tmp_path / "tight", Replies(), Toolbox(roots=[root]), comparison_budget(40, 2_000))
+    roomy = _plan_packet(tmp_path / "roomy", Replies(), Toolbox(roots=[root]), comparison_budget(40, 200_000))
+    assert "name each file in NAMED_FAILURE" in tight and "at most 4 sub-agents" in tight
+    assert "SIZE." in roomy and "NAMED_FAILURE, for example subtask:north-group" not in roomy
+
+
+def _crew_plan_packet(tmp_path: Path, strategy: str, cap: int) -> str:
+    from taskorg.suite import build_suite
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    root = suite.write_corpus(tmp_path / f"corpus-{strategy}-{cap}")
+    claude = AnthropicAdapter("", "claude-haiku-5-5", client=object())
+    seen = []
+
+    def act(brief):
+        seen.append(brief)
+        return _art("PASS ANSWER: 1")
+    claude.act = act
+    run_trial(suite.tasks[0], strategy, claude, root, budget=comparison_budget(40, cap), tool_rounds=4)
+    return next(b.packet for b in seen if b.mode == "plan")
+
+
+def test_the_told_crew_gets_the_same_size_notes_in_its_own_words(tmp_path: Path):
+    """A comparison where only one lead is told what fits measures the notes as well as the staffing."""
+    told = _crew_plan_packet(tmp_path, "always-told", 8_000)
+    assert "SIZE. One call holds at most 8,000 tokens" in told and "The 10 files the goal names come to about" in told
+    assert "at most 4 workers" in told and "name each file in WHAT_THE_WORKER_DOES" in told and "NAMED_FAILURE" not in told
+    # The plain crew's request is what its tapes hold, and a roomy told crew has nothing to be told about fit.
+    plain = _crew_plan_packet(tmp_path, "always", 8_000)
+    assert "SIZE." not in plain and "name each file" not in plain
+    roomy = _crew_plan_packet(tmp_path, "always-told", 200_000)
+    assert "SIZE. One call holds at most 200,000 tokens" in roomy and "name each file" not in roomy and "files the goal names" not in roomy
+
+
+def test_the_told_crew_still_has_no_gates(tmp_path: Path):
+    from taskorg.sim import SimModel
+    from taskorg.suite import build_suite, slug
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    task = suite.tasks[0]
+    files = [f"{slug(e)}.md" for e in task.entities]
+    root = suite.write_corpus(tmp_path / "corpus")
+
+    class Groups(SimModel):
+        def act(self, brief):
+            art = super().act(brief)
+            if brief.mode == "plan":
+                art.requests = [f"subtask:group-a@retrieve=report {' '.join(files[:5])}", f"subtask:group-b@retrieve=report {' '.join(files[5:])}"]
+            return art
+
+    # At a roomy cap the gates would keep this single; a crew staffs what it proposes.
+    r = run_trial(task, "always-told", Groups(), root, budget=comparison_budget(40, 200_000), tool_rounds=4)
+    assert r.workers == 2 and r.status == "complete" and r.answer_right
+    assert run_trial(task, "genet", Groups(), root, budget=comparison_budget(40, 200_000), tool_rounds=4).workers == 0
+
+
+def test_a_grouped_plan_runs_end_to_end_on_the_sim(tmp_path: Path):
+    """The rehearsal for the live run: a lead that plans as Haiku did, in groups, with the files named."""
+    from taskorg.sim import SimModel
+    from taskorg.suite import build_suite, slug
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    task = suite.tasks[0]
+    files = [f"{slug(e)}.md" for e in task.entities]
+    root = suite.write_corpus(tmp_path / "corpus")
+
+    class Groups(SimModel):
+        def act(self, brief):
+            art = super().act(brief)
+            if brief.mode == "plan":
+                art.requests = [f"subtask:group-a@retrieve=figures_get_mixed {' '.join(files[:5])}",
+                                f"subtask:group-b@retrieve=figures_get_mixed {' '.join(files[5:])}"]
+            return art
+
+    r = run_trial(task, "genet", Groups(), root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    assert r.workers == 2 and r.refused == 0 and r.status == "complete" and r.answer_right
+
+
+def test_a_group_that_names_its_files_passes_the_gates_and_opens_only_those(tmp_path: Path):
+    from taskorg.gates import assess
+
+    root = tmp_path / "w"
+    root.mkdir()
+    for name in ("north", "south", "east", "west"):
+        (root / f"{name}.md").write_text(f"# {name}\n" + "Revenue line. " * 400)
+    props = parse_proposals(["subtask:north-group@retrieve=regions_get_mixed north.md south.md",
+                             "subtask:east-group@retrieve=regions_get_mixed east.md west.md",
+                             "subtask:unnamed@retrieve=regions_get_mixed"])
+    box = Toolbox(roots=[root])
+    assert sorted(Path(p).name for p in box.material(props[0].channel_id, props[0].named_failure)) == ["north.md", "south.md"]
+    assert box.material(props[2].channel_id, props[2].named_failure) is None
+    named = props[:2]
+    v = assess(named, policy="measured", material=lambda s: box.material(s.channel_id, s.named_failure),
+               context_limit=3_000, overhead=500)
+    assert [a.legal for a in v] == [True, True] and {a.basis for a in v} == {"measured"}
+    # One group that names nothing leaves the whole split unmeasured, which is what the note is there to prevent.
+    v = assess(props, policy="measured", material=lambda s: box.material(s.channel_id, s.named_failure),
+               context_limit=3_000, overhead=500)
+    assert not any(a.legal for a in v) and all("material is unknown" in a.refused for a in v)
+    scope = box.scoped(box.material(props[0].channel_id, props[0].named_failure))
+    assert "Revenue" in scope.read("north.md") and "Revenue" not in scope.read("east.md")
 
 
 def test_no_size_note_without_a_workspace(tmp_path: Path):

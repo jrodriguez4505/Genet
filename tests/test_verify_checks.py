@@ -375,7 +375,7 @@ def test_compare_carries_the_verifier_setting_and_the_sim_still_answers_everythi
 def test_compare_defaults_to_the_layered_check_and_none_is_the_old_verifier(tmp_path):
     suite = build_suite(seed=7, per_family=1)
     plain = run_comparison(suite, SimModel, strategies=("single", "genet"))
-    layered = run_comparison(suite, SimModel, strategies=("single", "genet"), verify={"verify_view": "shared", "verify_sources": "layered"})
+    layered = run_comparison(suite, SimModel, strategies=("single", "genet"), verify={"verify_view": "independent", "verify_sources": "layered"})
     old = run_comparison(suite, SimModel, strategies=("single", "genet"), verify={"verify_view": "shared", "verify_sources": "none"})
     assert [(r.correct, r.tokens, r.calls) for r in plain] == [(r.correct, r.tokens, r.calls) for r in layered]
     assert [(r.correct, r.calls) for r in plain] == [(r.correct, r.calls) for r in old]
@@ -396,7 +396,7 @@ def test_run_commands_take_the_verifier_settings(tmp_path, capsys):
     out2 = tmp_path / "plain.json"
     main([a if a != str(out) else str(out2) for a in argv[:-4]])
     plain = [e["detail"] for e in json.loads(out2.read_text())["log"] if e["event"] == "verify_sources"]
-    assert plain and plain[0]["view"] == "shared" and plain[0]["sources"] == "layered"  # the default
+    assert plain and plain[0]["view"] == "independent" and plain[0]["sources"] == "layered"  # the default
     capsys.readouterr()
     out3 = tmp_path / "old.json"
     main([a if a != str(out) else str(out3) for a in argv[:-4]] + ["--verify-sources", "none"])
