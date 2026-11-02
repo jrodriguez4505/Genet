@@ -39,7 +39,7 @@ Code decides everything else: who is on the team, which tools run, and what is s
 2. **Plan** (`Engine._propose` in `loop.py`). The lead's call carries:
    - the context;
    - the guidelines and lessons from the store;
-   - a SIZE note on what one call holds;
+   - a SIZE note on what one call holds, and, when they do not fit, what the files the goal names come to and how to name a group of files;
    - the plan brief;
    - with `--cards`, a table with a card for each position the lead can staff (design part 7, `members.py`): tools, calls a part, model, the cost of a call, and counts from past runs.
 
@@ -139,22 +139,23 @@ Every model call goes through `Engine._call`:
 | Hard budgets. | A run may spend its whole budget, but not one call more. Merge and verify are reserved before a split. The tiers began as a way to test in steps, so that no run could start and fail to stop. |
 | No memory system of Genet's own. | Today's store is plain files. When a part needs more, an off-the-shelf or model-provider memory goes behind `MemoryStore`, and the kernel still decides what is written. |
 | Read-only tools in a sandbox. | Workspace only. Hidden files, binaries and symlinks out of the workspace are refused. |
+| The verifier does not see the author's notes. | With every source open, a false note got 5 of 6 look-alike errors past a verifier that saw it, and none past one that did not. A planted instruction in a file moved it not at all, so a member's note is the stronger lever. |
 | The kernel picks the verifier's sources. | Neither the author nor the verifier chooses them. In the live bench, the sources decided the catch. |
 | Records are kept by position, and shown as counts after 3 runs. | Agents are copies of one model, so a record of an agent would describe nothing. A score would judge for the lead, and one bad run should not steer it. The gates do not read the record. |
-| Every figure can be rerun. | A deterministic reader and tapes let every result replay with no key and no spend. On a clean clone with no key and no SDK, the 28 and 29 October tapes reproduce every trial and review to the token. The tapes through 29 October are [published as a release](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) with a replay command for each. |
+| Every figure can be rerun. | A deterministic reader and tapes let every result replay with no key and no spend. On a clean clone with no key and no SDK, the 28 and 29 October tapes reproduce every trial and review to the token. The tapes are published as releases, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) and [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), with a replay command for each. |
 | `forecast_short` is on by default. | It judges the whole budget with a floor forecast, so it stops only a run that cannot finish. It never fired on 372 taped trials, and on the simulated reader it cut what a run that cannot finish spends by 69 to 85%. |
 
 ## How it is tested
 
-- 1,648 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 251 rules one at a time, and a test catches each.
+- 1,656 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 257 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
 
 1. **Is admission control the right place for the staffing decision?** The alternatives are learning the staffing offline, as BAMAS does, or leaving it to the lead's judgment. Genet decides each proposal at runtime, in code.
 2. **Should the should-we gate count cost?** It counts two reasons: declared isolation, and material that does not fit. At 20 companies a single agent costs 1.5 times the crew in the sim, because re-sent tool results grow each round. Genet still stays single.
-3. **Fit judged before the work is unreliable on a real model.** Is re-planning on a measured overflow (design part 4) the answer, or a better estimate in the gate? On the tapes, re-planning reaches more: of the 9 tight-cap failures left once sub-agents were scoped, a better estimate could reach 3, and in 5 the lead never proposed a split for the gate to judge (`docs/LIVE_TESTS.md`). At a 200,000-token cap nothing overflowed, so neither has been needed at a real context size. On 2 November, at an 8,000-token cap, a lead told how to name a group's files split on 5 of 8 trials, the gates admitted every part, and all 5 reached the right answer. The other 3 leads judged the work to fit and overflowed, so re-planning is still what would rescue a lead that misjudges. A better estimate is not: a scoped sub-agent's largest call ran at most 1.29 times today's estimate, so the 1.7 factor measured on unscoped searches would refuse work that fits.
+3. **Fit judged before the work is unreliable on a real model.** Is re-planning on a measured overflow (design part 4) the answer, or a better estimate in the gate? On the tapes, re-planning reaches more: of the 9 tight-cap failures left once sub-agents were scoped, a better estimate could reach 3, and in 5 the lead never proposed a split for the gate to judge (`docs/LIVE_TESTS.md`). At a 200,000-token cap nothing overflowed, so neither has been needed at a real context size. On 2 November, at an 8,000-token cap, a lead told how to name a group's files split on 8 of 16 trials, and told also what the goal's files come to, on 7 of 8. The gates admitted every part of every plan that named its files, and all 15 split runs reached the right answer. A lead that still misjudges, or guesses a file's name, overflows, so re-planning is what would rescue it. A better estimate is not: a scoped sub-agent's largest call ran at most 1.29 times today's estimate, so the 1.7 factor measured on unscoped searches would refuse work that fits.
 4. **Nesting** (design part 3): the same gates at every level, depth 2, and at most 4 direct reports a lead, with a budget reserved from the parent's. Are 4 and 2 the right limits?
 5. **The lead knowing its members** (design part 7, built with `--cards`): a record of each position, kept by the kernel, in the lead's plan brief. Does a track record belong in the brief, in the gates, or nowhere? Two live tests show no sign the cards help, at about 460 tokens a plan call, though past counts have not been tried.
 6. **`loop.py` is about 1,070 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
@@ -162,7 +163,7 @@ Every model call goes through `Engine._call`:
 8. **A reviewer of purpose** (design part 10) adds a call before the work, to check the plan against the purpose. Is that worth it, or is checking the product afterwards enough?
 9. **Sequential work** (design part 9). The gate would refuse to split a chain of parts unless a link does not fit. Is a dependency the lead declares enough to find chains, or should the kernel find them?
 
-10. **Which view should the verifier have by default?** With every source open, an author's false note got 5 of 6 look-alike errors past the shared view, and none past the independent one. But the independent view also leaves out the sub-agents' reports, and after a split the shared view already fails right answers for the figures it cannot check. What should it see of a split's work?
+10. **What should the verifier be shown of a split's work?** The independent view is the default, because with every source open a false note got 5 of 6 look-alike errors past the shared view and none past it. It also leaves out the sub-agents' reports, and under either view the layered pick opens 2 of 10 files after a split, so a pass checks little, and a verifier sometimes fails a right answer for what it cannot see.
 
 ## Not built yet
 

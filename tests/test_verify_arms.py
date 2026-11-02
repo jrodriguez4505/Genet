@@ -131,6 +131,20 @@ def test_cli_verify_bench_arms(tmp_path: Path, capsys):
     assert '"VERIFY_BENCH"' in capsys.readouterr().out
 
 
+# --- the default view ---
+
+
+def test_the_independent_view_is_the_default_and_a_note_does_not_reach_it(tmp_path):
+    """With every source open, a false note got 5 of 6 look-alike errors past the shared view, and none past this."""
+    assert Engine(MemoryStore(tmp_path / "a")).verify_view == "independent"
+    out = tmp_path / "plain.json"
+    assert main(["compare", "--adapter", "sim", "--per-family", "1", "--families", "lookup", "--strategies", "single",
+                 "--out", str(out)]) == 0
+    assert json.loads(out.read_text())["config"]["verify_view"] == "independent"
+    assert main(["single", "--tier", "tight", "--store", str(tmp_path / "s"), "--context", "c",
+                 "--out", str(tmp_path / "r.json"), "--verify-view", "shared"]) == 0
+
+
 # --- the default abort criterion ---
 
 

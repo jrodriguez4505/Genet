@@ -92,7 +92,7 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--split-policy", default="measured", choices=["measured", "stated"],
                    help="measured: fan out only for declared isolation or material that does not fit one context; "
                         "stated: the lead's named reasons are enough")
-    p.add_argument("--verify-view", default="shared", choices=list(VIEWS),
+    p.add_argument("--verify-view", default="independent", choices=list(VIEWS),
                    help="what the verifier sees: shared (every note), independent (not the author's notes)")
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
@@ -401,7 +401,7 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--record", default=None, help="save every model exchange to this tape, to replay with no key")
     p_c.add_argument("--replay", default=None, help="answer from this tape instead of a model: no key, no spend")
     p_c.add_argument("--out", default=None, help="results JSON (default data/compare/compare-<time>.json)")
-    p_c.add_argument("--verify-view", default="shared", choices=list(VIEWS),
+    p_c.add_argument("--verify-view", default="independent", choices=list(VIEWS),
                      help="what the verifier sees: shared (every note), independent (not the author's notes)")
     p_c.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                      help="sources the kernel opens for the verifier: layered (default), full, or none "

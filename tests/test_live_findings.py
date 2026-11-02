@@ -292,8 +292,8 @@ def test_a_part_with_no_measured_files_keeps_the_whole_workspace(tmp_path: Path)
 # --- from the scoped rerun: the lead plans knowing the limit, and replies are brief ---
 
 
-def _plan_packet(tmp_path: Path, adapter, toolbox, budget):
-    m = new_run("size-1", "What is the total?", "answer from the notes", "ends with ANSWER:")
+def _plan_packet(tmp_path: Path, adapter, toolbox, budget, goal="What is the total?"):
+    m = new_run("size-1", goal, "answer from the notes", "ends with ANSWER:")
     m.state.success_criteria = ["ANSWER:"]
     seen = []
 
@@ -319,6 +319,26 @@ def test_the_file_sizes_are_in_the_models_tokens(tmp_path: Path):
     claude = AnthropicAdapter("", "claude-haiku-5-5", client=object())
     packet = _plan_packet(tmp_path, claude, Toolbox(roots=[_workspace(tmp_path)]), comparison_budget(40, 4000))
     assert f"of about {math.ceil(4 * TOKEN_RATIO)} to {math.ceil(9 * TOKEN_RATIO)} tokens each" in packet
+
+
+def test_a_lead_is_told_what_the_goals_files_come_to_only_when_they_do_not_fit_a_call(tmp_path: Path):
+    """On 2 November half the leads did the sum wrong from a range of sizes, proposed nothing and overflowed."""
+    root = tmp_path / "w"
+    root.mkdir()
+    for name in ("north", "south", "east"):
+        (root / f"{name}.md").write_text("Revenue line. " * 200)  # 700 tokens each
+    box = Toolbox(roots=[root])
+    goal = "What was the revenue of North and South?"
+    claude = AnthropicAdapter("", "claude-haiku-5-5", client=object())
+    short = _plan_packet(tmp_path / "a", claude, box, comparison_budget(40, 3_000), goal=goal)
+    assert f"The 2 files the goal names come to about {2 * math.ceil(700 * TOKEN_RATIO):,} tokens" in short
+    assert "they do not fit one call" in short
+    roomy = _plan_packet(tmp_path / "b", Replies(), box, comparison_budget(40, 200_000), goal=goal)
+    assert "files the goal names" not in roomy
+    # One named file: a split could not help. None named: the kernel has nothing to add up.
+    one = _plan_packet(tmp_path / "c", Replies(), box, comparison_budget(40, 1_000), goal="What was North's revenue?")
+    none = _plan_packet(tmp_path / "d", Replies(), box, comparison_budget(40, 1_000))
+    assert "files the goal names" not in one and "files the goal names" not in none
 
 
 def test_a_lead_is_told_how_to_name_a_group_only_when_the_workspace_does_not_fit_a_call(tmp_path: Path):

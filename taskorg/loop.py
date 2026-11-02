@@ -154,6 +154,10 @@ PLAN_BRIEF = (
 )
 
 
+GOAL_NOTE = (
+    " The {files} files the goal names come to about {total:,} tokens, and a single agent's later calls carry "
+    "everything it has read, so with this brief they do not fit one call."
+)
 GROUP_NOTE = (
     " There can be at most {workers} sub-agents. For a part that reads several files, name each file in "
     "NAMED_FAILURE, for example subtask:north-group@retrieve=regions_get_mixed north.md south.md: the kernel measures "
@@ -253,7 +257,7 @@ class Engine:
         isolation_required: bool = False,
         fit_fraction: float = 0.5,
         lessons: bool = True,
-        verify_view: str = "shared",
+        verify_view: str = "independent",
         verify_sources: str = "layered",
         verify_sample: int = checks.SAMPLE,
         report_up: bool = False,
@@ -903,6 +907,13 @@ class Engine:
         note = (f" SIZE. One call holds at most {b.max_tokens_per_call:,} tokens in all: its brief, the files it reads "
                 f"and its reply. A brief like this one takes about {brief:,}, and a reply can take as much again. "
                 f"The workspace has {len(sizes)} file(s) of about {min(sizes):,} to {max(sizes):,} tokens each.")
+        # What the goal's own files come to, only when they do not fit: told a range of sizes, half the leads did
+        # the sum wrong ("ten files of about 1,000 tokens each fit 8,000"), proposed nothing and overflowed.
+        names = checks.named_in(run.state.goal, self.toolbox.shown_files())
+        found = self.toolbox.material("", " ".join(names)) if len(names) > 1 else None
+        total = sum(self._model_tokens(t) for t in found.values()) if found else 0
+        if total + brief > b.max_tokens_per_call:
+            note += GOAL_NOTE.format(files=len(found), total=total)
         # Only when the workspace does not fit one call: a lead there groups files, and the gates can measure a
         # group only by its files' names. Told nothing, a lead's groups were all refused as unknown material.
         return note + (GROUP_NOTE.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else "")

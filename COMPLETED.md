@@ -13,7 +13,9 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 - **The default abort criterion.** `forecast_short` is on for every new run; `--abort none` turns it off, and naming a criterion replaces the default. It never fired on the 372 taped trials and changes no request.
 - **The verify bench's arms** (`--arms note,planted`). The author's note argues for the planted figure, or every file the goal names carries an instruction to pass a wrong product or fail a right one. The simulated reader is unmoved by both; a model has not run them yet.
 - **A threat map** (`tests/test_threat_map.py`, `SECURITY.md`). A marker in every field a model fills, followed through a plain split, a rework, hostile channel names, a part handed back, a malformed part and the cards: model text never reaches the guidelines, the lessons, the position records or a later run's brief.
-- **A lead told how to name a group's files.** When the workspace does not fit one call, the plan brief says there can be at most 4 sub-agents, and that a part reading several files names each in its note. Roomy runs do not get the sentence, so their requests are unchanged. On the simulated reader the tight Genet figure moves from 4,594 to 4,662 tokens, 0.93 times the crew.
+- **A lead told how to name a group's files.** When the workspace does not fit one call, the plan brief says there can be at most 4 sub-agents, and that a part reading several files names each in its note. Roomy runs do not get the sentence, so their requests are unchanged. With the changes below, the simulated figures are 3,417 tokens roomy, 1.20 times a single agent, and 4,683 tight, 0.94 times the crew.
+- **A lead told what the goal's files come to.** When the files the goal names do not fit one call, the size note gives their total and says a single agent's later calls carry what it has read. It is a fact the kernel measures, not advice.
+- **The independent view is the default** for run commands and `compare`. Tapes recorded before it replay with `--verify-view shared`. `--verify-view shared` restores the old brief, and the bench's setups name their own view.
 - **The tapes, published.** Every Claude tape and result, with a replay command for each, as the release `tapes-20261029`. A clean clone with no key replays the 28 and 29 October runs to the token.
 
 **Fixed.** A single-agent run reported its refused parts as "not covered" though the lead did the work and the verifier passed it (`review.part_statuses`).
@@ -22,20 +24,21 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 
 **Corrected in the docs.** The gates do not check that parts are independent; the could-we gate counts calls, not tokens; the log is a record, not proof against tampering; lessons cost tokens and their benefit is unmeasured; the install needs Python 3.11 or newer.
 
-**What the live runs showed** (2 November, Haiku 5.5, $0.10 and a $0.08 follow-up, `docs/LIVE_TESTS.md`).
+**What the live runs showed** (2 November, Haiku 5.5, $0.10 and follow-ups of $0.08, $0.03 and $0.05, `docs/LIVE_TESTS.md`).
 - `--report-up`: 10 of 12 wrong parts handed back, no right part, at 6% more tokens. The same 10 said in prose that the figure was missing under the default brief, and the other 2 took a look-alike's figure under both.
-- Groups of files. The lead proposed them on 6 of 8 trials; the gates could not measure a group whose files were not named, refused every split, and all 8 runs overflowed. Told how to name them, 5 of 8 leads split, the gates admitted all 5, and all 5 reached the right answer: Genet's first live splits on work that does not fit one call. 3 leads proposed nothing and overflowed.
-- The verifier then failed right answers in 3 of those 5 runs, because it saw 2 of the 10 files, and 2 runs stopped on it. Open.
+- Groups of files. The lead proposed them on 6 of 8 trials; the gates could not measure a group whose files were not named, refused every split, and all 8 runs overflowed. Told how to name them, 8 of 16 leads split, and the other 8 misjudged the sum, proposed nothing and overflowed. Told also what the files come to, all 8 proposed, 7 split, and 6 were verified. All 15 split runs reached the right answer: Genet's first live splits on work that does not fit one call.
+- The verifier failed right answers in 5 of those 15 runs, and 4 stopped on it: 3 of 5 under the shared view and 2 of 10 under the independent. After a split it opens 2 of 10 files, so a pass checks little under either. Open.
+- One plan was refused because the lead guessed a file's name, so a group named no file the workspace holds. Open.
 - The cards show no sign of helping over 16 trials, at about 460 prompt tokens a plan call on Claude. They stay off.
 - A planted instruction was in all 24 briefs and never followed.
-- A false author's note was the one that worked. With every source open, it got 5 of 6 look-alike errors past the shared view, which catches all 6 without it. The independent view, answered from the 29 October tape at no cost, caught 12 of 12. Open: which should be the default.
+- A false author's note was the one that worked. With every source open, it got 5 of 6 look-alike errors past the shared view, which catches all 6 without it. The independent view, answered from the 29 October tape at no cost, caught 12 of 12, and on split runs it did not fail more right answers. It is now the default.
 - Reading the claims found a bench bug: 2 wrong figures had been scored "said missing". The answer line now decides, and the tape was rescored at no cost.
 
-**Not measured yet.** Whether past counts on the cards change a plan; what a lead does with a part handed back; whether the independent view fails more right answers after a split; whether a planted instruction can steer a lead into writing a false note.
+**Not measured yet.** Whether past counts on the cards change a plan; what a lead does with a part handed back; whether a planted instruction can steer a lead into writing a false note.
 
 **A limit.** Underscores in a note read as spaces, so a file whose name has one cannot yet be named in it.
 
-- `tests/test_members.py` (53), `tests/test_threat_map.py` (10), `tests/test_verify_arms.py` (12); 32 new mutations, all caught.
+- `tests/test_members.py` (53), `tests/test_threat_map.py` (10), `tests/test_verify_arms.py` (12); 38 new mutations, all caught.
 
 ## v0.8.0 — October 2026: the shared situation
 

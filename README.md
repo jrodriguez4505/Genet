@@ -100,7 +100,7 @@ Every proposed sub-task goes through three gates in order, and they fail closed:
 | Gate | Refuses a sub-task when |
 |---|---|
 | Can someone else | A file or channel in the world already covers it, the channel is already staffed, it repeats another proposal, or it is verification (the verifier's job). A single open sub-task is the lead's job, not a new agent's. |
-| Should we | It names no failure: what goes wrong if a single agent does it. Then, for the team: there is no measurable reason a single agent would fail. A fan-out needs one of two reasons: the operator declared that the sub-tasks must stay isolated (`--isolate`), or their material does not fit in one call. The room in one call is the per-call limit less what the lead's own planning call cost, brief and reply. Material is estimated from the sizes of the workspace files each sub-task covers: a file named for its channel, and any it names in its note. When the workspace does not fit one call, the plan brief tells the lead to name a group's files that way. Underscores in a note read as spaces, so a file whose name has one cannot yet be named. A file several sub-tasks need counts once, and a split that leaves one sub-agent carrying all of the material is not a reason. If the material can't be measured, it doesn't count as a reason. |
+| Should we | It names no failure: what goes wrong if a single agent does it. Then, for the team: there is no measurable reason a single agent would fail. A fan-out needs one of two reasons: the operator declared that the sub-tasks must stay isolated (`--isolate`), or their material does not fit in one call. The room in one call is the per-call limit less what the lead's own planning call cost, brief and reply. Material is estimated from the sizes of the workspace files each sub-task covers: a file named for its channel, and any it names in its note. When the workspace does not fit one call, the plan brief tells the lead to name a group's files that way, and when the files the goal names do not fit, what they come to. A part that names no file the workspace holds leaves the whole plan unmeasured, and underscores in a note read as spaces, so a file whose name has one cannot yet be named. A file several sub-tasks need counts once, and a split that leaves one sub-agent carrying all of the material is not a reason. If the material can't be measured, it doesn't count as a reason. |
 | Could we | Its skill is unknown, or its channel id is unusable or reserved. The budget tier does not allow a fan-out. The call budget cannot pay for the sub-agents plus merge and verify. The cap of 4 workers is full. |
 
 A fan-out needs at least two legal sub-tasks.
@@ -233,12 +233,12 @@ The arithmetic always adds up, so it never gives an error away. Each product is 
 
 | Verifier | Sources | Plain | Against the false note |
 |---|---|---|---|
-| shared (default) | layered (default) | 9 of 12 | 8 of 12 |
+| shared | layered | 9 of 12 | 8 of 12 |
 | shared | full | 12 of 12 | **7 of 12**, look-alike errors 1 of 6 |
-| independent | layered | 10 of 12 | 10 of 12 |
+| independent (default) | layered (default) | 10 of 12 | 10 of 12 |
 | independent | full | 12 of 12 | 12 of 12 |
 
-In the default row the look-alike errors were still caught, but only because the file the note cites was not opened. So until this is settled, use `--verify-view independent` where an author's note might argue for its own error. It is not yet the default, because it also leaves out the sub-agents' reports, and whether that fails more right answers after a split has not been run.
+In the shared layered row the look-alike errors were still caught, but only because the file the note cites was not opened. That is why the independent view became the default in v0.9.0. It leaves out the sub-agents' reports as well, and on split runs that did not fail more right answers: 2 of 10 runs against 3 of 5.
 
 The report shows wrong products caught (by kind), how many of those FAILs name the planted company, right products failed, how often the company's own file was among the sources, and tokens a review. `scripts/verify_runs.sh` runs it on Claude Haiku 5.5, capped and taped. On the simulated reader, a perfect checker of what it is shown, `full` catches every planted error, `layered` every look-alike one, and `today` none. On Haiku 5.5, `today` caught 2 of 12, `full` 12 of 12 in either view, and `layered` 9 of 12 for the right reason in either view. No setup failed a right product.
 
@@ -256,10 +256,10 @@ What the simulated reader shows. These are structural results from a perfect rea
 
 | Per-call context | Single agent | Always-split crew | Genet |
 |---|---|---|---|
-| Roomy, `--context 16000` | 100% · 2,880 tokens/task | 100% · 5,100 | 100% · 3,455 (1.20× single) |
-| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 5,020 | 100% · 4,662 (0.93× crew) |
+| Roomy, `--context 16000` | 100% · 2,842 tokens/task | 100% · 4,998 | 100% · 3,417 (1.20× single) |
+| Tight, `--context 1500` | **55%**: runs abort on context overflow | 100% · 4,998 | 100% · 4,683 (0.94× crew) |
 
-The counts include the files the verifier is given, the default since v0.7.0. With `--verify-sources none` they are as before: 2,068, 4,288 and 2,643 (1.28×) roomy, and 4,288 and 3,930 (0.92×) tight.
+The counts include the files the verifier is given, the default since v0.7.0. With `--verify-sources none` they are as before: 2,030, 4,186 and 2,605 (1.28×) roomy, and 4,186 and 3,871 (0.92×) tight.
 
 When the work fits one context, Genet stays a single agent and pays only for its planning call. When it doesn't fit, a single agent fails, and Genet fans out exactly where the material requires it. Per family at `--context 1500`, Genet stays a single agent on lookup and compare, where a single agent scores 100%, and fans out on aggregate and breadth, where it scores 20% and 0%. At 20 companies a question, the simulated single agent costs 1.5 times the crew: it re-sends everything it has read every round.
 
@@ -267,18 +267,18 @@ The stub adapter drives the harness end to end but cannot answer, so its accurac
 
 ### What the live runs show
 
-Every live run since v0.1 is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). The tapes and results through 29 October are [published](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), so a reader can rerun those live figures as well as the simulated ones.
+Every live run since v0.1 is on Claude, recorded in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). The tapes and results are published, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) and [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), so a reader can rerun the live figures as well as the simulated ones.
 
 - **One agent was enough, and was the most accurate.** On the default questions, with every fix, single, crew and Genet each got every answer on Haiku 5.5, and Sonnet 5.5 did too at eleven times the cost. Asked about 5, 10 and 20 companies at once, about 84,000 tokens a task at the largest, a single agent still got every answer. On this model and these tasks there was no loss for a split to recover, so splitting for quality is not shown.
 - **Headcount cost accuracy.** The always-split crew went from 8 of 8 to 5 of 8 and 5 of 7 as the questions grew, losing answers in hand-offs and merges. It cost 1.8 to 2.5 times a single agent on small questions; past about 10 companies it cost less, but about the same per right answer.
 - **Genet stayed one agent wherever the work fit,** at 1.2 to 1.6 times a single agent's tokens: its planning call, which on a real model costs about as much as a working call. With half of each question's companies already filed, it was the cheapest strategy of all. Haiku's crew lead left filed work out of its plan by itself, so Genet's first gate had nothing to refuse.
 - **A verifier catches what it is shown.** Without sources, Haiku's verifier passed 10 of 12 planted errors, catching only the two whose own evidence quoted the wrong year. Given every file, it caught all 12 and failed none of 12 right products, at about six times a review's tokens. The layered pick caught every look-alike error at 1.6 times. Against a mild author's note, leaving it out made no measurable difference; against a false one, it decided the result (below).
 - **Judging fit before the work is unreliable.** At a tight cap, the lead told the limit still judged work too big for one call to fit, and the gates' estimate from file sizes ran short, because searches pull in look-alike files.
-- **A split can work, once the gates can measure it.** At an 8,000-token cap over 10 files, Haiku's lead proposed groups of files, the sensible plan with a cap of 4 sub-agents. The gates measure a part by the files it names, and the plan brief did not ask for that, so they refused every split and all 8 runs overflowed. Told how to name them, 5 of 8 leads split, the gates admitted all 5, and all 5 reached the right answer. These are Genet's first live splits on work that does not fit one call. The other 3 leads judged the work to fit, proposed nothing and overflowed. The verifier then failed right answers in 3 of the 5 split runs, because it saw 2 of the 10 files; 2 of those runs stopped on it.
+- **A split can work, once the gates can measure it.** At an 8,000-token cap over 10 files, Haiku's lead proposed groups of files, the sensible plan with a cap of 4 sub-agents. The gates measure a part by the files it names, and the plan brief did not ask for that, so they refused every split and all 8 runs overflowed. Told how to name them, 8 of 16 leads split; the other 8 misjudged the sum and overflowed. Told also what the question's files come to, a fact the kernel measures, all 8 proposed, 7 split, and 6 were verified. All 15 split runs reached the right answer. These are Genet's first live splits on work that does not fit one call, on one family of four questions at a cap chosen to overflow. At a 200,000-token cap a single agent gets these answers, so this does not show a split beating one agent.
 - **A sub-agent rarely guesses.** Given the wrong file, Haiku said the figure was missing on 10 of 12 parts, and with `--report-up` handed those same 10 back and no right part. The other 2 took the look-alike's figure under both briefs.
-- **A planted instruction did not move the verifier. The author's false note did.** With every source open, a note arguing for the error got 5 of 6 look-alike errors past it, in the setup that caught all 6 without the note. The independent view, which leaves the note out, caught them all. See [Verification](#verification).
+- **A planted instruction did not move the verifier. The author's false note did.** With every source open, a note arguing for the error got 5 of 6 look-alike errors past it, in the setup that caught all 6 without the note. The independent view, which leaves the note out, caught them all, and is now the default. See [Verification](#verification).
 
-On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 17 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Fourteen are fixed: the verifier now gets the riskiest sources by default, and on Haiku 5.5 it caught every planted error whose file it was shown. Three are open: judging fit before the work starts, a verifier that fails right answers after a split, and a verifier that believes the author's false note.
+On this evidence, Genet's value is governance and cost: it stays one agent when one is enough, which here was always, and keeps the decision to split in code. Accuracy gains from splitting are not shown. The live runs found 17 problems the simulated reader could not show, among them sub-agents that read their siblings' files, a verifier shown a stale product, a harness example that primed a look-alike mix-up, and a verifier that passed a wrong total because it could not open a source. Fifteen are fixed: the verifier now gets the riskiest sources by default, and on Haiku 5.5 it caught every planted error whose file it was shown. Two are open: judging fit before the work starts, which telling the lead the total improved, and a verifier that fails right answers after a split.
 
 ## Live model (optional)
 
@@ -312,9 +312,9 @@ Same prompts, the same JSON gate and the same token accounting as the live adapt
 
 `--max-spend` stops a comparison before a trial that could take spending past the cap, judged by the costliest trial so far. Ctrl-C also stops it. Either way the trials already run are saved.
 
-The tapes of the Claude runs from 27 to 29 October, with the results each produced and a replay command for each, are published as a GitHub release: [Live-run tapes, 27 to 29 October 2026](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029). A clean clone replays the 28 and 29 October tapes to the token with no key and no SDK; the 27 October tapes were recorded under prompts that later changed, and stay as the record.
+The tapes of the Claude runs, with the results each produced and a replay command for each, are published as GitHub releases: [27 to 29 October 2026](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) and [2 November 2026](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102). A clean clone replays the 28 and 29 October tapes to the token with no key and no SDK; the 27 October tapes were recorded under prompts that later changed, and stay as the record.
 
-`--record PATH` saves every exchange with the model as it happens: the request, the reply text and its usage, or the error. Never the key, never the base URL. `--replay PATH` answers from that tape instead of a model, with no key and no spend, so the kernel, the gates and the grading can be refined against real replies. A request the tape does not have, because a prompt or brief changed since the recording, fails as `LIVE` and is counted. A tape recorded before v0.7.0 replays with `--verify-sources none`, the verifier's brief at the time. Tool results name files relative to the workspace, so the same request reads the same on every run, and no temp folder or home directory reaches the model.
+`--record PATH` saves every exchange with the model as it happens: the request, the reply text and its usage, or the error. Never the key, never the base URL. `--replay PATH` answers from that tape instead of a model, with no key and no spend, so the kernel, the gates and the grading can be refined against real replies. A request the tape does not have, because a prompt or brief changed since the recording, fails as `LIVE` and is counted. A tape recorded before v0.7.0 replays with `--verify-sources none`, the verifier's brief at the time, and one recorded before the independent view became the default replays with `--verify-view shared`. Tool results name files relative to the workspace, so the same request reads the same on every run, and no temp folder or home directory reaches the model.
 
 ## Security
 
@@ -358,7 +358,7 @@ Every member works from the same situation: the goal, its purpose, done-when, th
 - **Kept current.** Each call a member makes carries the situation as it stands at that call, tool rounds included, and says what changed since its last one. Its context stays as it stood at the split.
 - **Reported up.** With `--report-up`, a sub-agent may answer `replan:REASON` when the plan is wrong for its part. Its reply is not merged. The kernel opens a replan request, closes it with a method in which the lead covers the part, and gives the lead the reason.
 
-None of these change a request, the default criterion included: with default flags, older tapes replay unchanged.
+None of these change a request, the default criterion included.
 
 `report-bench` measures reporting up on its own. A plan that is wrong for one part is too rare in real runs to count, so the bench builds the parts of 20-company aggregate questions the way a lead hands them out. Each part names a company. In half of them the plan gave the part's channel the wrong file: the company's look-alike's notes, which name it only for an FY2025 figure, or an unrelated company's. The sub-agent's tools open only that file. Each part runs with the default brief (`today`) and with `--report-up`, and only the sub-agents' calls go to the model. The report shows wrong parts handed back, said to be missing, or given a figure from the wrong file, and right parts reported or handed back. On the simulated reader, a perfect sub-agent, `--report-up` hands back every wrong part and no right one. On Haiku 5.5 (2 November, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)), `--report-up` handed back 10 of 12 wrong parts and no right one, at 6% more tokens. Under the default brief, the same 10 said in prose that the figure was missing, and in both setups the other 2 gave the look-alike's figure. So reporting up changes where a problem goes, not how many are noticed. Whether the lead then covers the part well is not measured.
 
@@ -396,14 +396,14 @@ The verifier always gets its call. When a split is judged, the gates reserve the
 The verifier sees:
 - the product;
 - up to 12 of its evidence lines;
-- the shared context, which carries every member's notes;
+- the context as the operator gave it, and with `--verify-view shared`, every member's notes and reports;
 - the workspace files the kernel opens for it, by default the riskiest few.
 
 It has no tools of its own. On 28 October, before the kernel opened files for it, that let a wrong total through: the verifier could not open a source, and it read the author's own note that look-alike files were excluded. Two settings decide what it sees. Run commands, `compare` and `verify-bench` all take them:
 
 | Flag | Values | What it does |
 |---|---|---|
-| `--verify-view` | `shared` (default), `independent` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. |
+| `--verify-view` | `independent` (default), `shared` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. `shared` shows it every member's notes and reports: the default until v0.9.0, and how a false note got past it. |
 | `--verify-sources` | `layered` (default), `full`, `none` | The kernel opens workspace files and puts them in the verifier's brief. See below. `none` opens nothing. |
 
 What each mode opens:
@@ -414,7 +414,7 @@ The kernel picks the files from the run's record and the product's text. The aut
 
 With sources on, the kernel also checks, in code, that every evidence quote is in a file its evidence line cites, and tells the verifier which are not. A file named inside the quote does not count as cited. Quotes of the tool's own words, of a search query, or of a member's report are not checked. Over all 885 products on the Claude tapes, it flags 6, and each is a quote the cited files do not hold. The verdict stays the verifier's, and the criteria checks above still apply.
 
-`layered` became the default after its live run (29 October, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). It caught every look-alike error at about 3% more tokens on a 20-company task, where `full` caught every planted error at about a quarter more. A run with no workspace has nothing to open, so its verifier's request is unchanged. `--verify-sources none` sends the verifier's request as it was before v0.7.0, which tapes recorded before then need to replay.
+`layered` became the default after its live run (29 October, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). It caught every look-alike error at about 3% more tokens on a 20-company task, where `full` caught every planted error at about a quarter more. A run with no workspace has nothing to open, so its verifier's request is unchanged. `--verify-sources none --verify-view shared` sends the verifier's request as it was before v0.7.0, which tapes recorded before then need to replay.
 
 ## Diagnose
 
@@ -433,7 +433,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 
 ## Tests
 
-`pytest -q` runs about 1,650 checks with no network and no key:
+`pytest -q` runs about 1,660 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -457,7 +457,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 251 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All 251 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 257 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All 257 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 

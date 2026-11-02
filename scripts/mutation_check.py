@@ -69,6 +69,14 @@ M = [
     ("loop.py", "report-up note always sent", '+ (REPORT_UP_NOTE if self.report_up else "")', "+ REPORT_UP_NOTE"),
     ("loop.py", "handed-back reason unbounded", "[:REPORT_REASON_CHARS] or", " or"),
     ("loop.py", "situation not kept current", "        changed = [k for k, v in now.items() if getattr(brief, k) != v]", "        changed = []"),
+    # the independent view is the default
+    ("loop.py", "the shared view is the engine's default", '        verify_view: str = "independent",', '        verify_view: str = "shared",'),
+    ("cli.py", "the shared view is the run default", 'p.add_argument("--verify-view", default="independent"', 'p.add_argument("--verify-view", default="shared"'),
+    ("cli.py", "the shared view is the compare default", 'p_c.add_argument("--verify-view", default="independent"', 'p_c.add_argument("--verify-view", default="shared"'),
+    # a lead told what the goal's own files come to, only when they do not fit one call
+    ("loop.py", "the goal's total always shown", "        if total + brief > b.max_tokens_per_call:\n            note += GOAL_NOTE", "        if found:\n            note += GOAL_NOTE"),
+    ("loop.py", "the goal's total never shown", "            note += GOAL_NOTE.format(files=len(found), total=total)\n", "            pass\n"),
+    ("loop.py", "the goal's total in the wrong tokens", "total = sum(self._model_tokens(t) for t in found.values())", "total = sum(found.values())"),
     # a lead told how to name a group's files, only when the workspace does not fit one call
     ("loop.py", "the group note always shown", "if sum(sizes) + brief > b.max_tokens_per_call else \"\")", "if True else \"\")"),
     ("loop.py", "the group note never shown", "return note + (GROUP_NOTE.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else \"\")", "return note"),
