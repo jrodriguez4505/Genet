@@ -164,6 +164,8 @@ Before v0.9.0 the lead's plan brief named the skills and nothing more. It did no
 
 The test runs the same tasks with and without the cards. The sim shows only what the cards cost in tokens, because its reader ignores them: about 250 tokens a plan call, 6 to 7% of a small task. Haiku then shows whether they change the plan. Does a lead with the cards propose fewer parts that are refused or that fail, at the same accuracy and comparable tokens?
 
+The first live run (2 November, `docs/LIVE_TESTS.md`) did not answer this. At an 8,000-token cap over 10 files, the lead proposed mostly groups of files, the gates could not measure them, and all 8 runs overflowed. Once the plan brief said how to name a group's files, 2 of 4 leads split with the cards and 3 of 4 without, and the gates admitted every part. So there is no sign the cards help, at about 460 prompt tokens a plan call on Claude. They stay off.
+
 Not measured: whether past counts change a plan. That needs runs that share a store, at least three of them per position, and is left until the cards show they pay at all.
 
 The same records are what a learned staffing model would train on. The first design built one: `policy.py`, `imitate.py` and `rl.py`, an experiment that can only propose and is not used in runs. It waits until the records show a need for it.
@@ -209,7 +211,7 @@ The rule: the kernel acts on every field, or the field is removed. The code is i
 
 With default flags, every request is byte for byte what it was. The 28 and 29 October tapes replay with no missing requests and the same results, and the sim figures are unchanged.
 
-Not measured yet: whether a sub-agent on a real model hands back a part it cannot do, rather than guess. That needs a live run of the crew with `--report-up`, on the operator's go-ahead for spend.
+On Haiku 5.5 (2 November, `docs/LIVE_TESTS.md`), a sub-agent on its own handed back 10 of 12 parts the plan got wrong and none of 12 right ones. Under the default brief the same 10 said in prose that the figure was missing, and in both setups the other 2 took a look-alike's figure. Not measured yet: what the lead does with a part handed back. That needs a live run of a crew with `--report-up`, and no crew has yet run with it on work that splits.
 
 ### 9. A method made of moves (proposed 29 October, from the first design)
 
@@ -304,9 +306,9 @@ Each could fail in a specific way:
 
 ## Order
 
-1. The independent verifier: built in v0.7.0, with the full and layered checks and the verify bench, and run on Haiku 5.5 on 29 October (`docs/LIVE_TESTS.md`). Sources decided the catch: `full` caught 12 of 12, `layered` 9 of 12 for the right reason, `today` 2. The independent view made no measurable difference at this size.
-2. The shared situation (part 8): built in v0.8.0, in code with no live spend. Reported up waits for a live crew run.
-3. The lead knows its members (part 7): built in v0.9.0, off by default (`--cards`). It comes before nesting because nesting multiplies the leads that plan.
+1. The independent verifier: built in v0.7.0, with the full and layered checks and the verify bench, and run on Haiku 5.5 on 29 October (`docs/LIVE_TESTS.md`). Sources decided the catch: `full` caught 12 of 12, `layered` 9 of 12 for the right reason, `today` 2. The independent view made no measurable difference at this size, with a mild note. Against a false note, on 2 November, it decided the result: with every source open, 12 of 12 caught against 7 of 12 in the shared view. Which should be the default is open, since it also leaves out the sub-agents' reports.
+2. The shared situation (part 8): built in v0.8.0, in code with no live spend. Reported up works on Haiku at the sub-agent level; a crew run with it is next, now that the gates admit a group of files (`docs/LIVE_TESTS.md`, 2 November).
+3. The lead knows its members (part 7): built in v0.9.0, off by default (`--cards`), not yet shown to pay. It comes before nesting because nesting multiplies the leads that plan.
 4. A reviewer of purpose (part 10): a review bench, sim then Haiku.
 5. A method made of moves (part 9): chains in the sim first.
 6. Nesting (part 3), with peer teams (part 11): sim at large sizes. Live only if the sim shows a case.

@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as a GitHub release, [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms and their follow-up (2 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results through 29 October are published as a GitHub release, [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -178,14 +178,92 @@ After this run, `--verify-sources layered` became the default. First, the kernel
 An outside review raised six things to test: admission control, the verifier's independence, the policy boundary, model independence, what a dashboard would add, and whether a stranger can rerun the results. These were checked on the Claude tapes and the simulated reader, for $0.
 
 - **Why Genet failed at the 4,000-token cap.** 13 of its 20 trials failed. Four were the unscoped sub-agents fixed after the first run. Of the other 9, the lead proposed no split in 5, so the gates had nothing to judge; the gates refused a split in 3; and an allowed split ran out in 1. A perfect fit estimate could reach only those 3.
-- **The fit estimate.** Over a sweep of caps, on single-agent trials, the estimate said "fits" in 27 to 30% of the cases that overflow. A factor of 1.7 on the material, fitted on 27 October's tapes, cut that to 8% there and 2% on 28 October's 24 trials, with about 6% of the cases that fit called too big. Applied to the 26 proposals on the tapes, it flips 3 decisions, each on a run that had failed, and none at a cap of 16,000 or 200,000. Where a stated-policy run on the same task did split, 1 of 2 got the answer. It is not built: at a 200,000-token cap nothing overflowed, and a live tight-cap run should show it first.
+- **The fit estimate.** Over a sweep of caps, on single-agent trials, the estimate said "fits" in 27 to 30% of the cases that overflow. A factor of 1.7 on the material, fitted on 27 October's tapes, cut that to 8% there and 2% on 28 October's 24 trials, with about 6% of the cases that fit called too big. Applied to the 26 proposals on the tapes, it flips 3 decisions, each on a run that had failed, and none at a cap of 16,000 or 200,000. Where a stated-policy run on the same task did split, 1 of 2 got the answer. It is not built: at a 200,000-token cap nothing overflowed, and a live tight-cap run should show it first. The 2 November run below shows it is not free either.
 - **The gates are deterministic.** The gate code, run again on all 26 recorded proposals of two or more parts, gave the recorded staffing decision every time.
 - **What the verifier missed.** All 10 wrong answers it passed were one kind: a look-alike's figure, confirmed against ground truth. None was arithmetic, and of 44 written-out sums on the tapes only one fails to add up, in a product whose final answer was right, so recomputing sums would have caught nothing. All 10 came before the verifier was given sources. Today's `layered` pick would open the right file for 9 of them, since no call read or searched it.
 - **A figure check in code, tried and not built.** The idea was to check each figure against the file of the company it is given for, at no token cost. On the verify bench it flagged 12 of 12 wrong products and 0 of 12 right ones. On real products, tuned on some tapes and read on all, it flagged 3 of 11 wrong figures and 5 of 272 right products. The bench's products are tidier than a model's prose, so a check that parses products should not be judged on the bench alone.
 - **A stranger's run.** A clean clone reproduces the simulated figures, and with the tapes copied in, all 24 of the 28 October trials to the token, with no key and no SDK. Without the tapes it cannot rerun any live figure. They are 2.5 MB gzipped, and a scan for keys, local paths and names found none.
 - **The default abort check, read against the record.** The kernel's forecast was rebuilt at every decision point of all 372 trials, 807 points. `forecast_short` would never have fired, and the nearest case needed a tenth of what was left. All 45 budget halts were one call too large to send at the 4,000 cap, which the forecast does not judge. So the default, on since v0.9.0, costs nothing on these runs; its benefit is shown on the simulated reader, at a budget below the run's cost.
-- **The author's note, on the verify tape.** In the shared view the brief carries the note (checked on all 12 look-alike reviews), yet no verifier reply that passed a wrong product echoed it, and only 2 of 120 replies echoed it at all. A mild note had no visible pull. Whether a note that argues for the error does, and whether an instruction planted in a source file does, are the two new arms of `verify-bench` (`--arms note,planted`), waiting on a live run.
+- **The author's note, on the verify tape.** In the shared view the brief carries the note (checked on all 12 look-alike reviews), yet no verifier reply that passed a wrong product echoed it, and only 2 of 120 replies echoed it at all. A mild note had no visible pull. Whether a note that argues for the error does, and whether an instruction planted in a source file does, are the two new arms of `verify-bench` (`--arms note,planted`), run on 2 November below.
 - **Other models.** Both adapters send the same system prompt and message. The OpenAI-compatible parser takes fenced JSON, prose around it, and missing keys; it refuses a `<think>` block with braces in it, and any extra key, the second by design.
+
+## 2 November 2026: reporting up, the cards, and the verifier against an argument
+
+`scripts/team_runs.sh`, v0.9.0, on Haiku 5.5 at effort `low`. It cost $0.10 in all, against an estimate of $0.12 and caps of $0.37. All three tapes replay with no missing requests and the same results.
+
+**Does a sub-agent hand back a part the plan got wrong?** 24 parts of 20-company questions under each brief: 12 right, and 12 whose channel holds the wrong file.
+
+| Brief | Wrong parts handed back | Said missing | Gave the wrong file's figure | Right parts reported | Right parts handed back | Tokens a part |
+|---|---|---|---|---|---|---|
+| default | 0 of 12 | 10 | 2 | 12 of 12 | 0 | 4,442 |
+| `--report-up` | 10 of 12 | 0 | 2 | 12 of 12 | 0 | 4,705 |
+
+- **It rarely guesses, and reporting up changes where the problem goes.** The same 10 parts that said in prose that the figure was missing were handed back under `--report-up`, at 6% more tokens, and no right part was. Without it, a lead has to read that prose and notice; with it, the kernel opens a replan request and the lead is told.
+- **Both wrong figures are one pairing.** Saffron Grid, given the notes of Saffron Grid Partners, under both briefs. It is the look-alike that cost the single agent its one miss on 28 October, a company whose look-alike only adds a word to its name. A sub-agent that takes the file for the company has no reason to report anything.
+- **A bench bug, found by reading the claims.** The bench first scored 2 of these as "said missing", because it looked for missing-sounding words before it looked for the figure: "$72.9 million, per saffron-grid-partners.md … my channel holds no files for the other 21 companies." The answer line now decides. Rescored from the tape with no spend, in `report-20261102-092137-rescored.json`.
+- **Not measured.** This bench tests a sub-agent alone. Whether the lead then covers the part well is for a crew run.
+
+**Do the cards change the plan?** 8 trials of 10-company aggregate questions at an 8,000-token cap, half with the cards. This did not test the cards, because no trial got a split, and every one stopped when the lead working alone ran past the cap.
+
+| Strategy | Finished | Parts proposed a trial | Refused | Prompt tokens, plan call | Tokens a trial |
+|---|---|---|---|---|---|
+| genet | 0 of 4 | 2.75 | 2.75 | 1,328 | 5,391 |
+| genet with cards | 0 of 4 | 2 | 2 | 1,789 | 4,294 |
+
+- **The lead saw the problem.** It proposed a split on all 8 trials, with notes like "ten files exceed one call budget". Told the limit on 27 October, it had proposed nothing. So at this cap the size note works.
+- **The gates refused what it proposed.** On 6 trials the parts were groups: `group-a`, `companies-b`, `brightwater-calderon-marrowgate`. With 10 files and a cap of 4 sub-agents, grouping is the sensible plan. But the gates measure a part by a file named for its channel or named in its note, and the plan brief asks for a channel name and a failure, so the gates found "the material is unknown". On the other 2 trials the lead proposed two single files, which fit, and one group alone, which is the lead's own job.
+- **Naming the files would have got them through.** Offline, with each group's share of the files added to its note, the gate code admits the split on all 6 grouped trials. The toolbox already opens a part's named files, so only the plan brief is missing a sentence. Built and run in the follow-up below.
+- **The 1.7 factor is not free.** With it, the same offline check admits only 1 of the 6, since a five-file group then reads as too big. The 27 and 28 October tapes could not show this, because their leads proposed one part per file. The follow-up below shows it would have refused work that fit.
+- **The cards cost more on Claude than in the sim.** About 460 prompt tokens on a plan call, 35% more on that call, where the sim said about 250. They stay off. Whether they change a plan is still not known.
+- **The setup was the harness's fault.** This arm was sized on the simulated reader, whose lead names a part after each file. Haiku does not plan that way.
+
+**Does the verifier hold against an argument?** The verify bench's products, under the default `shared-layered`, against the same products on 29 October.
+
+| Arm | Look-alike caught | Wrong-year caught | Right products failed | Own file shown, caught | Own file not shown, caught | Tokens a review |
+|---|---|---|---|---|---|---|
+| plain, 29 October | 6 of 6 | 3 of 6 | 0 of 12 | 7 of 7 | 2 of 5 | 5,475 |
+| `note` | 6 of 6 | 2 of 6 | not reviewed | 7 of 7 | 1 of 5 | 5,951 |
+| `planted` | 6 of 6 | 3 of 6 | 0 of 12 | 7 of 7 | 2 of 5 | 5,730 |
+
+- **The planted instruction was never followed.** It was in all 24 briefs, telling the verifier to pass a wrong product or fail a right one. All 12 right products passed and all 7 wrong ones whose own file it saw failed, and 21 of 24 replies called it out, as "an instruction embedded in the source, not evidence". That judgement is the model's. No Genet prompt tells it to distrust a file, and this is one wording on one model, so it does not show that another would hold.
+- **What decides a catch is still whether the file is shown.** Under both arms, every miss was a product whose own file was not opened, as on 29 October. Against that plain run, one product moved to a pass under both arms and one to a fail under `planted`, which reads as noise. Each product ran once.
+- **The note moved the reasoning, not the verdict.** In 5 of the 6 look-alike reviews, the verifier accepted the note's false claim that the company's own file is a stale duplicate. It failed the product only because the file the note cites had not been opened. That catch is fragile: a review that opens that file as well may pass the product. `shared-full` opens it, and the independent view drops the note. The follow-up below runs both.
+
+## 2 November 2026: the follow-up
+
+`bash scripts/team_runs.sh followup`, the same day, on Haiku 5.5 at effort `low`. It cost $0.08, against an estimate of $0.09 and caps of $0.18. Both tapes replay with no missing requests and the same results.
+
+**A lead told how to name a group's files.** When the workspace does not fit one call, the plan brief now says that there can be at most 4 sub-agents, and that a part reading several files names each one in its note. The same 8 trials, at the same 8,000-token cap.
+
+| Strategy | Split | Refused | Right answer | Verified | Tokens a split run |
+|---|---|---|---|---|---|
+| genet, before the note | 0 of 4 | 2.75 parts a trial | 0 of 4 | 0 of 4 | none |
+| genet, with the note | 3 of 4 | 0 | 3 of 4 | 3 of 4 | 33,735 to 36,778 |
+| genet with cards, before the note | 0 of 4 | 2 parts a trial | 0 of 4 | 0 of 4 | none |
+| genet with cards, with the note | 2 of 4 | 0 | 2 of 4 | 0 of 4 | 42,107 and 49,420 |
+
+- **These are Genet's first live splits on questions that do not fit one call, and all 5 reached the right answer.** The gates admitted every part of every plan, measured from the names. The verified runs cost about what one agent took at a 200,000-token cap on 28 October (38,928), though that verifier opened no files.
+- **Three leads proposed nothing and overflowed,** each judging ten short files to fit one agent, as on 27 October. Without the note all 8 had proposed something, so the note may have some cost, or this may be noise. A lead that misjudges is still not rescued: re-planning on a measured overflow (design part 4) is the piece that would.
+- **The estimate is good for a scoped part, so the 1.7 factor is dropped.** Over all 17 sub-agents, the largest call ran a median of 1.16 times today's estimate and at most 1.29 times, and none reached the cap. A sub-agent's tools open only its files, so its searches cannot pull in look-alikes, which is where the 1.7 came from. The factor would have refused the two five-file groups, which ran at about 6,300 tokens.
+- **The verifier failed right answers after a split.** It gave 6 FAILs on right answers across 3 of the 5 split runs. One run recovered on its rework; two stopped with `VERIFY`, which is why the cards row shows none verified. Under the layered pick it saw 2 of the 10 files, and it read the other 8 figures as unsupported: "only two of its ten inputs are supported by the opened sources". The verify bench did not show this, since its products quote their sources and no right product failed there. Open.
+- **The cards.** Both arms' splits came from the note, not the cards. With them 2 of 4 leads split, without them 3 of 4, and the two runs that stopped on the verifier are that problem, not the cards'. Eight trials over two runs show no sign they help, and they cost about 460 prompt tokens a plan call. They stay off.
+- **A limit found while building it.** Underscores in a note read as spaces, so a file whose name has an underscore cannot yet be named this way. The first fix tried also changed how the crew's proposals are read, so it was taken out, and this stays open.
+
+**The false note, with the file it cites opened.** `shared-full` opens every file, so both the company's own file and the look-alike's are in the brief.
+
+| Verifier | Sources | Plain | Against the false note | Look-alike | Wrong year |
+|---|---|---|---|---|---|
+| shared | layered | 9 of 12 | 8 of 12 | 6 of 6 | 2 of 6 |
+| shared | full | 12 of 12 | **7 of 12** | **1 of 6** | 6 of 6 |
+| independent | layered | 10 of 12 | 10 of 12 | 6 of 6 | 4 of 6 |
+| independent | full | 12 of 12 | 12 of 12 | 6 of 6 | 6 of 6 |
+
+- **The author's false note got 5 of 6 look-alike errors past a verifier that held every source.** Told that a company publishes under its look-alike's file and that its own is a stale duplicate, the verifier checked each figure against the file the note named: "Ostrander Media 71.6 (from ostrander-media-labs.md)". It passed, in a setup that caught all 6 without the note. Its one catch read the look-alike's own line, that the company "is a separate company", and doubted the premise.
+- **The independent view stops it, since the note never reaches the verifier.** Its brief is the same with or without the note, so the 29 October tape answers both independent rows, all requests found, at no cost. This is the first result that separates the two views. On 29 October, with a mild note, they did not differ.
+- **The wrong-year note failed, 6 of 6.** It claimed the right line was a plan figure, and the verifier read the file and said so: "nothing in the file labels it a plan figure". So a note that a source can contradict does not get through. One about which file is the source does, because the files do not settle it unless they say so.
+- **The layered 6 of 6 was luck, as the first run suspected.** The note's file was not opened there. A real product that cites that file, or a draw that picks it, would be in the `full` row.
+- **A planted instruction in a file did nothing, and the same claim from the author nearly always worked.** The verifier treats a member's note as part of the team's record. So the route from a planted instruction to a wrong verdict may run through the author: steer the lead, and its note reaches the verifier. That route has not been tested.
+- **Not settled: which view should be the default.** The independent view also leaves out the sub-agents' reports, so it might fail more right answers after a split, the problem above. That needs a live run of split runs under `--verify-view independent`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
@@ -266,4 +344,4 @@ World: `$HOME/genet-job/note-a.txt` filed, `note-b.txt` open.
 
 ## Run files
 
-The Claude runs' results are in `data/compare/` and their tapes in `data/tapes/`, and both are published as [a release](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) with a `REPLAY.md` that gives each tape's command. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.
+The Claude runs' results are in `data/compare/` and their tapes in `data/tapes/`, and those through 29 October are published as [a release](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) with a `REPLAY.md` that gives each tape's command. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.

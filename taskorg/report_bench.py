@@ -45,7 +45,7 @@ from .gates import Assessment, Subtask
 from .loop import Engine
 from .memory_store import MemoryStore
 from .models import GATE_ORDER, GateRecord
-from .suite import Suite, Task, slug
+from .suite import Suite, Task, extract_answer, slug
 from .tools import Toolbox
 
 SETUPS: dict[str, bool] = {"today": False, "report-up": True}
@@ -148,6 +148,10 @@ def outcome(part: Part, said: str, handed_back: bool, code: str) -> str:
         return "failed"
     if part.kind == "right":
         return "right" if _states(said, part.true) else "other"
+    # The answer line is what the part reports, whatever else the report says about its files. On Haiku,
+    # "$72.9 million, per the wrong file; my channel holds no files for the others" read as missing without it.
+    if any(_states(extract_answer(said) or "", v) for v in part.planted):
+        return "given a figure"
     if _MISSING.search(said):
         return "said missing"
     if any(_states(said, v) for v in part.planted):

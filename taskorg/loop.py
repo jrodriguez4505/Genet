@@ -154,6 +154,13 @@ PLAN_BRIEF = (
 )
 
 
+GROUP_NOTE = (
+    " There can be at most {workers} sub-agents. For a part that reads several files, name each file in "
+    "NAMED_FAILURE, for example subtask:north-group@retrieve=regions_get_mixed north.md south.md: the kernel measures "
+    "a part by the files it names, and its sub-agent can open only those."
+)
+
+
 def _tool_name(request: str) -> str:
     return parse_request(request)[0]
 
@@ -893,9 +900,12 @@ class Engine:
         if not sizes:
             return ""
         brief = self.adapter.estimate_tokens(self._brief(run, "lead", extra=plan, mode="plan"))
-        return (f" SIZE. One call holds at most {b.max_tokens_per_call:,} tokens in all: its brief, the files it reads "
+        note = (f" SIZE. One call holds at most {b.max_tokens_per_call:,} tokens in all: its brief, the files it reads "
                 f"and its reply. A brief like this one takes about {brief:,}, and a reply can take as much again. "
                 f"The workspace has {len(sizes)} file(s) of about {min(sizes):,} to {max(sizes):,} tokens each.")
+        # Only when the workspace does not fit one call: a lead there groups files, and the gates can measure a
+        # group only by its files' names. Told nothing, a lead's groups were all refused as unknown material.
+        return note + (GROUP_NOTE.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else "")
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""

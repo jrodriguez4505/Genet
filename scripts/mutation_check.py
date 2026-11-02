@@ -69,6 +69,9 @@ M = [
     ("loop.py", "report-up note always sent", '+ (REPORT_UP_NOTE if self.report_up else "")', "+ REPORT_UP_NOTE"),
     ("loop.py", "handed-back reason unbounded", "[:REPORT_REASON_CHARS] or", " or"),
     ("loop.py", "situation not kept current", "        changed = [k for k, v in now.items() if getattr(brief, k) != v]", "        changed = []"),
+    # a lead told how to name a group's files, only when the workspace does not fit one call
+    ("loop.py", "the group note always shown", "if sum(sizes) + brief > b.max_tokens_per_call else \"\")", "if True else \"\")"),
+    ("loop.py", "the group note never shown", "return note + (GROUP_NOTE.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else \"\")", "return note"),
     # the default abort criterion, and the verify bench's arms
     ("factory.py", "forecast_short is not the default", "        abort_criteria=list(DEFAULT_ABORT),\n", ""),
     ("cli.py", "--abort none still aborts", 'parse_abort(a for a in args.abort if a.strip().lower() != "none")', 'parse_abort(a for a in args.abort if a.strip().lower() != "none") or list(DEFAULT_ABORT)'),
@@ -100,6 +103,7 @@ M = [
     ("sim.py", "sim hands back when not told it may", "        if report_only and missing and _MAY_HAND_BACK in brief.packet:", "        if report_only and missing:"),
     ("report_bench.py", "bench gives a look-alike part its own file", "        held = suite.companies[name].sister", "        held = name"),
     ("report_bench.py", "bench ignores the setup", "max_tool_rounds=TOOL_ROUNDS, report_up=SETUPS[setup])", "max_tool_rounds=TOOL_ROUNDS, report_up=True)"),
+    ("report_bench.py", "bench reads a stated answer as missing", '    if any(_states(extract_answer(said) or "", v) for v in part.planted):', "    if False:"),
     ("report_bench.py", "bench counts a guess as missing", "    if any(_states(said, v) for v in part.planted):\n        return \"given a figure\"", "    if any(_states(said, v) for v in part.planted):\n        return \"said missing\""),
     # sandbox
     ("tools.py", "sandbox open", "            path == root or (path.is_relative_to(root) and ", "            True or (path.is_relative_to(root) and "),

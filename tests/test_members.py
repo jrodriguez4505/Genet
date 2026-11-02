@@ -417,6 +417,9 @@ def test_the_bench_refuses_other_families_and_kinds():
     ("right", "", True, "", "handed back"),
     ("other", "Its notes do not hold Orbrook's figure; Vantaro reported 51.9.", False, "", "said missing"),
     ("other", "Orbrook's FY2026 Q2 revenue was 51.9 million.", False, "", "given a figure"),
+    # The live miss: a figure from the wrong file, with missing-sounding words about the rest of the question.
+    ("other", "Orbrook is 51.9 million, per vantaro.md. My channel holds no files for the others. ANSWER: 51.9", False, "", "given a figure"),
+    ("other", "vantaro.md does not hold Orbrook's figure; its own is 51.9. ANSWER: not found", False, "", "said missing"),
     ("other", "Something else entirely.", False, "", "other"),
     ("look-alike", "x", False, "SCHEMA", "failed"),
 ])

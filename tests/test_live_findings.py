@@ -36,7 +36,7 @@ from pathlib import Path
 from taskorg.adapters import Brief, ModelAdapter
 from taskorg.anthropic_live import TOKEN_RATIO, AnthropicAdapter
 from taskorg.budget import Budget
-from taskorg.compare import CONTEXT, DECOMPOSE_BRIEF, DONE_WHEN, PURPOSE, STRATEGIES, comparison_budget
+from taskorg.compare import CONTEXT, DECOMPOSE_BRIEF, DONE_WHEN, PURPOSE, STRATEGIES, comparison_budget, run_trial
 from taskorg.factory import new_run
 from taskorg.live import LiveAdapter, system_prompt
 from taskorg.loop import PLAN_BRIEF, RETRY_NOTE, Engine
@@ -319,6 +319,66 @@ def test_the_file_sizes_are_in_the_models_tokens(tmp_path: Path):
     claude = AnthropicAdapter("", "claude-haiku-5-5", client=object())
     packet = _plan_packet(tmp_path, claude, Toolbox(roots=[_workspace(tmp_path)]), comparison_budget(40, 4000))
     assert f"of about {math.ceil(4 * TOKEN_RATIO)} to {math.ceil(9 * TOKEN_RATIO)} tokens each" in packet
+
+
+def test_a_lead_is_told_how_to_name_a_group_only_when_the_workspace_does_not_fit_a_call(tmp_path: Path):
+    """On 2 November a lead told the limit proposed groups of files, and the gates refused them all as unknown
+    material. The note costs tokens, and changes the request, so a roomy run neither pays for it nor differs."""
+    root = tmp_path / "w"
+    root.mkdir()
+    for name in ("north", "south", "east"):
+        (root / f"{name}.md").write_text("Revenue line. " * 400)
+    tight = _plan_packet(tmp_path / "tight", Replies(), Toolbox(roots=[root]), comparison_budget(40, 2_000))
+    roomy = _plan_packet(tmp_path / "roomy", Replies(), Toolbox(roots=[root]), comparison_budget(40, 200_000))
+    assert "name each file in NAMED_FAILURE" in tight and "at most 4 sub-agents" in tight
+    assert "SIZE." in roomy and "NAMED_FAILURE, for example subtask:north-group" not in roomy
+
+
+def test_a_grouped_plan_runs_end_to_end_on_the_sim(tmp_path: Path):
+    """The rehearsal for the live run: a lead that plans as Haiku did, in groups, with the files named."""
+    from taskorg.sim import SimModel
+    from taskorg.suite import build_suite, slug
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    task = suite.tasks[0]
+    files = [f"{slug(e)}.md" for e in task.entities]
+    root = suite.write_corpus(tmp_path / "corpus")
+
+    class Groups(SimModel):
+        def act(self, brief):
+            art = super().act(brief)
+            if brief.mode == "plan":
+                art.requests = [f"subtask:group-a@retrieve=figures_get_mixed {' '.join(files[:5])}",
+                                f"subtask:group-b@retrieve=figures_get_mixed {' '.join(files[5:])}"]
+            return art
+
+    r = run_trial(task, "genet", Groups(), root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    assert r.workers == 2 and r.refused == 0 and r.status == "complete" and r.answer_right
+
+
+def test_a_group_that_names_its_files_passes_the_gates_and_opens_only_those(tmp_path: Path):
+    from taskorg.gates import assess
+
+    root = tmp_path / "w"
+    root.mkdir()
+    for name in ("north", "south", "east", "west"):
+        (root / f"{name}.md").write_text(f"# {name}\n" + "Revenue line. " * 400)
+    props = parse_proposals(["subtask:north-group@retrieve=regions_get_mixed north.md south.md",
+                             "subtask:east-group@retrieve=regions_get_mixed east.md west.md",
+                             "subtask:unnamed@retrieve=regions_get_mixed"])
+    box = Toolbox(roots=[root])
+    assert sorted(Path(p).name for p in box.material(props[0].channel_id, props[0].named_failure)) == ["north.md", "south.md"]
+    assert box.material(props[2].channel_id, props[2].named_failure) is None
+    named = props[:2]
+    v = assess(named, policy="measured", material=lambda s: box.material(s.channel_id, s.named_failure),
+               context_limit=3_000, overhead=500)
+    assert [a.legal for a in v] == [True, True] and {a.basis for a in v} == {"measured"}
+    # One group that names nothing leaves the whole split unmeasured, which is what the note is there to prevent.
+    v = assess(props, policy="measured", material=lambda s: box.material(s.channel_id, s.named_failure),
+               context_limit=3_000, overhead=500)
+    assert not any(a.legal for a in v) and all("material is unknown" in a.refused for a in v)
+    scope = box.scoped(box.material(props[0].channel_id, props[0].named_failure))
+    assert "Revenue" in scope.read("north.md") and "Revenue" not in scope.read("east.md")
 
 
 def test_no_size_note_without_a_workspace(tmp_path: Path):
