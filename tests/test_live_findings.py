@@ -354,6 +354,56 @@ def test_a_lead_is_told_how_to_name_a_group_only_when_the_workspace_does_not_fit
     assert "SIZE." in roomy and "NAMED_FAILURE, for example subtask:north-group" not in roomy
 
 
+def _crew_plan_packet(tmp_path: Path, strategy: str, cap: int) -> str:
+    from taskorg.suite import build_suite
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    root = suite.write_corpus(tmp_path / f"corpus-{strategy}-{cap}")
+    claude = AnthropicAdapter("", "claude-haiku-5-5", client=object())
+    seen = []
+
+    def act(brief):
+        seen.append(brief)
+        return _art("PASS ANSWER: 1")
+    claude.act = act
+    run_trial(suite.tasks[0], strategy, claude, root, budget=comparison_budget(40, cap), tool_rounds=4)
+    return next(b.packet for b in seen if b.mode == "plan")
+
+
+def test_the_told_crew_gets_the_same_size_notes_in_its_own_words(tmp_path: Path):
+    """A comparison where only one lead is told what fits measures the notes as well as the staffing."""
+    told = _crew_plan_packet(tmp_path, "always-told", 8_000)
+    assert "SIZE. One call holds at most 8,000 tokens" in told and "The 10 files the goal names come to about" in told
+    assert "at most 4 workers" in told and "name each file in WHAT_THE_WORKER_DOES" in told and "NAMED_FAILURE" not in told
+    # The plain crew's request is what its tapes hold, and a roomy told crew has nothing to be told about fit.
+    plain = _crew_plan_packet(tmp_path, "always", 8_000)
+    assert "SIZE." not in plain and "name each file" not in plain
+    roomy = _crew_plan_packet(tmp_path, "always-told", 200_000)
+    assert "SIZE. One call holds at most 200,000 tokens" in roomy and "name each file" not in roomy and "files the goal names" not in roomy
+
+
+def test_the_told_crew_still_has_no_gates(tmp_path: Path):
+    from taskorg.sim import SimModel
+    from taskorg.suite import build_suite, slug
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    task = suite.tasks[0]
+    files = [f"{slug(e)}.md" for e in task.entities]
+    root = suite.write_corpus(tmp_path / "corpus")
+
+    class Groups(SimModel):
+        def act(self, brief):
+            art = super().act(brief)
+            if brief.mode == "plan":
+                art.requests = [f"subtask:group-a@retrieve=report {' '.join(files[:5])}", f"subtask:group-b@retrieve=report {' '.join(files[5:])}"]
+            return art
+
+    # At a roomy cap the gates would keep this single; a crew staffs what it proposes.
+    r = run_trial(task, "always-told", Groups(), root, budget=comparison_budget(40, 200_000), tool_rounds=4)
+    assert r.workers == 2 and r.status == "complete" and r.answer_right
+    assert run_trial(task, "genet", Groups(), root, budget=comparison_budget(40, 200_000), tool_rounds=4).workers == 0
+
+
 def test_a_grouped_plan_runs_end_to_end_on_the_sim(tmp_path: Path):
     """The rehearsal for the live run: a lead that plans as Haiku did, in groups, with the files named."""
     from taskorg.sim import SimModel

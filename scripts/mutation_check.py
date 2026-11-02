@@ -69,6 +69,11 @@ M = [
     ("loop.py", "report-up note always sent", '+ (REPORT_UP_NOTE if self.report_up else "")', "+ REPORT_UP_NOTE"),
     ("loop.py", "handed-back reason unbounded", "[:REPORT_REASON_CHARS] or", " or"),
     ("loop.py", "situation not kept current", "        changed = [k for k, v in now.items() if getattr(brief, k) != v]", "        changed = []"),
+    # a crew told what genet's lead is told about size
+    ("compare.py", "the told crew is told nothing", "return base + self._size_note(run, base, group=CREW_GROUP_NOTE)", "return base"),
+    ("compare.py", "the told crew gets genet's wording", "self._size_note(run, base, group=CREW_GROUP_NOTE)", "self._size_note(run, base)"),
+    ("compare.py", "the plain crew is told too", '        return DECOMPOSE_BRIEF.format(skills="|".join(SKILLS))\n', '        return DECOMPOSE_BRIEF.format(skills="|".join(SKILLS)) + self._size_note(run, DECOMPOSE_BRIEF)\n'),
+    ("loop.py", "the crew's wording is ignored", "return note + (group.format(workers=MAX_WORKERS)", "return note + (GROUP_NOTE.format(workers=MAX_WORKERS)"),
     # the independent view is the default
     ("loop.py", "the shared view is the engine's default", '        verify_view: str = "independent",', '        verify_view: str = "shared",'),
     ("cli.py", "the shared view is the run default", 'p.add_argument("--verify-view", default="independent"', 'p.add_argument("--verify-view", default="shared"'),
@@ -79,7 +84,7 @@ M = [
     ("loop.py", "the goal's total in the wrong tokens", "total = sum(self._model_tokens(t) for t in found.values())", "total = sum(found.values())"),
     # a lead told how to name a group's files, only when the workspace does not fit one call
     ("loop.py", "the group note always shown", "if sum(sizes) + brief > b.max_tokens_per_call else \"\")", "if True else \"\")"),
-    ("loop.py", "the group note never shown", "return note + (GROUP_NOTE.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else \"\")", "return note"),
+    ("loop.py", "the group note never shown", "return note + (group.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else \"\")", "return note"),
     # the default abort criterion, and the verify bench's arms
     ("factory.py", "forecast_short is not the default", "        abort_criteria=list(DEFAULT_ABORT),\n", ""),
     ("cli.py", "--abort none still aborts", 'parse_abort(a for a in args.abort if a.strip().lower() != "none")', 'parse_abort(a for a in args.abort if a.strip().lower() != "none") or list(DEFAULT_ABORT)'),

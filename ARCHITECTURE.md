@@ -147,8 +147,8 @@ Every model call goes through `Engine._call`:
 
 ## How it is tested
 
-- 1,656 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 257 rules one at a time, and a test catches each.
+- 1,662 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 261 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
@@ -166,6 +166,9 @@ Every model call goes through `Engine._call`:
 10. **What should the verifier be shown of a split's work?** The independent view is the default, because with every source open a false note got 5 of 6 look-alike errors past the shared view and none past it. It also leaves out the sub-agents' reports, and under either view the layered pick opens 2 of the files after a split, so a pass checks little, and a verifier sometimes fails a right answer for what it cannot see.
 
 11. **Should the gates count what a split leaves for the lead?** They admit up to 4 sub-agents and hand the rest to the lead. A lead that plans one part per file at 20 companies then cannot fit the other 16 in its merge call. Haiku grouped its files and got by, but nothing makes a lead do that.
+
+12. **Should one unmeasured part refuse a whole plan?** It does today, so one guessed file name sends the lead to work alone and overflow. A crew given the same notes, with no gate to refuse it, reached 18 of 18 right answers on the large questions where Genet reached 15. Measuring the parts that can be measured, and giving the lead the rest, would keep the rule without losing the plan.
+13. **Should a sub-agent's room depend on its siblings?** The size check keeps room for the largest reply so far in the run, so near the cap, whether a call is sent depends on which sibling's reply has arrived. One finished trial stopped in 1 of 3 replays, 9 tokens over. The gates are deterministic; this check is not.
 
 ## Not built yet
 

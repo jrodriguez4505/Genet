@@ -65,6 +65,14 @@ DECOMPOSE_BRIEF = (
 )
 
 
+# The note on naming a group's files, in the crew brief's own words.
+CREW_GROUP_NOTE = (
+    " There can be at most {workers} workers. For a worker that reads several files, name each file in "
+    "WHAT_THE_WORKER_DOES, for example subtask:north-group@retrieve=report Q2 revenue from north.md and south.md: "
+    "the kernel measures a worker's part by the files it names, and the worker can open only those."
+)
+
+
 def task_context(task: Task) -> str:
     """The shared context, plus the figures already filed for this question. They are in the context, so
     every agent has them, and a sub-agent for one of them would repeat finished work."""
@@ -90,9 +98,12 @@ class AlwaysSplit(Engine):
     def _propose(self, run: Run) -> list[Subtask]:
         lead = run.state.lead_id
         run.switch_skill(lead, lead, "reason", "decompose into sub-tasks for the crew")
-        plan = self._act(run, self._brief(run, "lead", extra=DECOMPOSE_BRIEF.format(skills="|".join(SKILLS)), mode="plan"))
+        plan = self._act(run, self._brief(run, "lead", extra=self._plan_brief(run), mode="plan"))
         run.accept_artifact(plan)
         return parse_proposals(plan.requests)
+
+    def _plan_brief(self, run: Run) -> str:
+        return DECOMPOSE_BRIEF.format(skills="|".join(SKILLS))
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """No gates. Only what the kernel cannot run is dropped: bad ids, repeats, past the worker cap."""
@@ -116,11 +127,21 @@ class AlwaysSplit(Engine):
         return out
 
 
+class ToldCrew(AlwaysSplit):
+    """The crew, told what genet's lead is told about size. Still no gates: it always splits, and staffs what it
+    proposes. Without this, a comparison on work that does not fit one call is partly a comparison of the notes."""
+
+    def _plan_brief(self, run: Run) -> str:
+        base = super()._plan_brief(run)
+        return base + self._size_note(run, base, group=CREW_GROUP_NOTE)
+
+
 # genet uses the measured "should we"; genet-stated accepts the lead's reasons, for comparison.
 BASELINES = ("single", "always")
 STRATEGIES: dict[str, Callable[..., Engine]] = {
     "single": SingleAgent,
     "always": AlwaysSplit,
+    "always-told": ToldCrew,
     "genet": Engine,
     "genet-stated": functools.partial(Engine, split_policy="stated"),
     "genet-cards": functools.partial(Engine, cards=True),

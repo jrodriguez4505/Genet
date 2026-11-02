@@ -896,7 +896,7 @@ class Engine:
         run._record("cards", {"positions": len(SKILLS), "with_counts": members.shown(records, self._position_model)})
         return "\n" + members.cards(records, self._position_model, self._skill_calls) + "\n"
 
-    def _size_note(self, run: Run, plan: str) -> str:
+    def _size_note(self, run: Run, plan: str, group: str = GROUP_NOTE) -> str:
         """What the gates will measure, told to the lead before it plans: what one call holds and how big the
         workspace files are. Not told, a lead on a tight cap proposed nothing and the work overflowed."""
         b = run.budget
@@ -916,7 +916,7 @@ class Engine:
             note += GOAL_NOTE.format(files=len(found), total=total)
         # Only when the workspace does not fit one call: a lead there groups files, and the gates can measure a
         # group only by its files' names. Told nothing, a lead's groups were all refused as unknown material.
-        return note + (GROUP_NOTE.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else "")
+        return note + (group.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else "")
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""
