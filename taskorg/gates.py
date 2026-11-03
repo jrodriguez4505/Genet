@@ -84,6 +84,8 @@ def refuse_could_we_first() -> None:
 
 # The refusal for a lone open sub-task. The engine reads it to hand the work to the lead.
 LEAD_COVERS = "one open sub-task: the lead covers it without a second agent"
+# The refusal for a part the gates cannot measure, in a plan whose other parts they can.
+UNMEASURED = "its material is unknown: it names no file the workspace holds, so the lead covers it"
 
 # Channel ids the kernel uses for its own traffic. A sub-agent may not take one.
 RESERVED_CHANNELS = {"lead", "lead-plan", "lead-merge", "verify", "merge", "escalate", "report", "peer"}
@@ -158,8 +160,8 @@ def _need(open_: list[Assessment], policy: str, declared: bool, material, contex
         return "declared"
     if policy == "stated":
         return "stated"
-    shares = [material(a.subtask) if material else None for a in open_]
-    if context_limit is None or any(s is None for s in shares):
+    shares = [s for s in (material(a.subtask) if material else None for a in open_) if s is not None]
+    if context_limit is None or not shares:
         return "refuse:no measurable reason to split: the material is unknown and isolation was not declared"
     union = {name: tokens for share in shares for name, tokens in share.items()}
     total = sum(union.values())
@@ -220,7 +222,8 @@ def assess(
                            The room is context_limit less overhead (the measured cost
                            of a call before material), or fit_fraction of context_limit
                            when no overhead is measured.
-                           Material that cannot be measured is not a reason.
+                           Material that cannot be measured is not a reason: a part
+                           with none goes to the lead, and the others are judged alone.
                            Under policy="stated", the named failures are enough.
       3. could we          the budget tier allows a split; the budget pays for every
                            sub-agent plus merge and verify; the worker cap holds
@@ -262,6 +265,8 @@ def assess(
         for a in open_:
             if need.startswith("refuse:"):
                 a.refuse("should_we", need[len("refuse:"):])
+            elif need == "measured" and material(a.subtask) is None:
+                a.refuse("should_we", UNMEASURED)
             else:
                 a.basis = need
         open_ = [a for a in open_ if a.legal]

@@ -87,8 +87,12 @@ def test_the_room_is_the_limit_less_the_measured_overhead():
 
 
 def test_unknown_material_is_not_a_reason():
-    verdicts = assess(PAIR, policy="measured", material=_sizes(a=5000), context_limit=2000)
+    verdicts = assess(PAIR, policy="measured", material=_sizes(), context_limit=2000)
     assert all("no measurable reason" in v.refused for v in verdicts)
+    # One part that can be measured is not a reason either: either it fits, or a split would not help.
+    for size in (1000, 1500):
+        verdicts = assess(PAIR, policy="measured", material=_sizes(a=size), context_limit=2000, overhead=800)
+        assert not any(v.legal for v in verdicts)
 
 
 def test_declared_isolation_is_a_reason_even_when_it_fits():

@@ -438,10 +438,14 @@ class Engine:
                                       "channel": brief.channel_id or brief.slot_function, "after": e.code})
             return self._attempt(run, replace(brief, packet=brief.packet + RETRY_NOTE), slot)
 
-    def _reply_room(self, run: Run) -> int:
+    def _reply_room(self, run: Run, slot: Slot | None = None) -> int:
         """Room a reply needs in the call: the largest reply in this run so far, and at least what the
-        adapter expects before it has replied at all."""
-        seen = max((c.get("completion_tokens") or 0 for c in run.calls if not c.get("failed")), default=0)
+        adapter expects before it has replied at all. A sub-agent does not count its siblings' replies:
+        they run in parallel, so which have arrived depends on timing, and the same replies could send a
+        call on one run and stop it on the next."""
+        mine = slot.id if slot and slot.function == "worker" else None
+        seen = max((c.get("completion_tokens") or 0 for c in run.calls if not c.get("failed")
+                    and (mine is None or c.get("function") != "worker" or c.get("slot") == mine)), default=0)
         return max(seen, getattr(self.adapter, "min_reply_tokens", 0))
 
     def _attempt(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
@@ -451,7 +455,7 @@ class Engine:
             self._arm(run)
             self._admit(run)
             b = run.budget
-            reply = self._reply_room(run) if b else 0
+            reply = self._reply_room(run, slot) if b else 0
             if b and size + reply > b.max_tokens_per_call:
                 # Checked before the call, reply included: an oversized call is never sent, so never paid for.
                 run.halt(f"brief of ~{size} tokens, plus ~{reply} for the reply, exceeds max_tokens_per_call "

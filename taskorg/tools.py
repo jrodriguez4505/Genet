@@ -39,6 +39,37 @@ ECHO_CAP = 200           # chars of a request echoed back in a tool result
 _PATH_ERRORS = (OSError, ValueError, RuntimeError)
 SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache"}
 _FILE_NAME = re.compile(r"[\w.-]+\.\w+")
+_EXTENSION = re.compile(r"\.[A-Za-z0-9]+\b")
+_NAME_WORD = re.compile(r"[A-Za-z0-9]+")
+NAME_WORDS = 6           # words before a file extension tried as a file's name
+
+
+def _spelled(words: list[str], suffix: str) -> str:
+    return "".join(w.lower() for w in words) + suffix.lower()
+
+
+def _loosely_named(note: str, paths: list[Path]) -> tuple[set[Path], set[str]]:
+    """Files a note names however a model spelled them: "cobalt ridge.md", "cobaltridge.md" or "Quillon Bio.md"
+    for a hyphenated name, or "q3 report.md", since underscores in a note read as spaces. Only the words right
+    before a file extension count, so prose that mentions a company names no file. The longest match wins. Also
+    returns the tails of those longer names: "bio.md" in "quillon bio.md" is not a file the note names."""
+    known: dict[str, list[Path]] = {}
+    for path in paths:
+        known.setdefault(_spelled(_NAME_WORD.findall(path.stem), path.suffix), []).append(path)
+    found: set[Path] = set()
+    tails: set[str] = set()
+    start = 0
+    for m in _EXTENSION.finditer(note):
+        words = _NAME_WORD.findall(note[start:m.start()])
+        for n in range(min(len(words), NAME_WORDS), 0, -1):
+            hit = known.get(_spelled(words[-n:], m.group(0)))
+            if hit:
+                found.update(hit)
+                if n > 1:
+                    tails.add(_spelled(words[-1:], m.group(0)))
+                break
+        start = m.end()
+    return found, tails
 
 
 def _skipped(name: str) -> bool:
@@ -231,10 +262,12 @@ class Toolbox:
         """
         # Word by word, so a long run of characters cannot make the scan quadratic.
         names = {n.lower() for word in note[:NOTE_CAP].split() if len(word) <= 255 for n in _FILE_NAME.findall(word)}
-        wanted = {channel.lower()} | names
+        paths = list(self._walk())
+        loose, tails = _loosely_named(note[:NOTE_CAP], paths)
+        wanted = {channel.lower()} | (names - tails)
         found: dict[str, int] = {}
-        for path in self._walk():
-            if path.stem.lower() in wanted or path.name.lower() in wanted:
+        for path in paths:
+            if path.stem.lower() in wanted or path.name.lower() in wanted or path in loose:
                 text = self._text(path)
                 if text is not None:
                     found[str(path.resolve())] = min(len(text), READ_CAP) // 4  # what one read returns

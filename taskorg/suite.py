@@ -232,8 +232,9 @@ def build_suite(seed: int = 7, per_family: int = 5, families: tuple[str, ...] = 
 
 # --- grading ---
 
-# The marker the brief asks for, in capitals. A lower-case "answer:" in prose is not one.
-_ANSWER = re.compile(r"(?<![A-Za-z])ANSWER:[ \t]*([^\n]+)")
+# The marker the brief asks for, in capitals. A lower-case "answer:" in prose is not one. A value stops at the
+# next marker: a lead may quote a sub-agent's answer earlier on the line that ends with its own.
+_ANSWER = re.compile(r"(?<![A-Za-z])ANSWER:[ \t]*((?:(?!(?<![A-Za-z])ANSWER:)[^\n])+)")
 _PERIOD = re.compile(r"\b(?:FY\d{2,4}|Q[1-4]|H[12])\b", re.IGNORECASE)
 _NUMBER = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?")
 
