@@ -86,7 +86,7 @@ def part_statuses(run) -> dict[str, str]:
             parts[ch] = "handed back: the plan was wrong for it; " + ("covered by the lead" if covered else "not covered: the run stopped first")
         else:
             parts[ch] = "merged" if ch in merged else "not finished: the run stopped first"
-    for e in run.log:
+    for e in run.since_last_plan():
         d = e.detail
         if e.event == "gate" and not d.get("legal") and d.get("gate") in ("should_we", "could_we") and d.get("channel_id") not in parts:
             parts[d["channel_id"]] = "no sub-agent; " + ("covered by the lead" if covered else "not covered")

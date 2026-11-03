@@ -31,6 +31,7 @@ the next reply left no room for its brief.
 """
 
 import math
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,7 @@ from taskorg.live import LiveAdapter, system_prompt
 from taskorg.loop import PLAN_BRIEF, RETRY_NOTE, Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import Artifact, Status
+from taskorg.sim import SimModel
 from taskorg.subtasks import parse_proposals
 from taskorg.suite import extract_answer
 from taskorg.tools import READ_CAP, Toolbox
@@ -549,7 +551,7 @@ def test_a_sub_agents_room_does_not_depend_on_its_siblings(tmp_path: Path):
     ])
     worker = lambda name: Slot(id=f"w-{name}", function="worker", skill="retrieve", channel_id=name)
     assert engine._reply_room(m, worker("a")) == 300 and engine._reply_room(m, worker("b")) == 3_000
-    assert engine._reply_room(m, worker("d")) == 100  # what came before the split still counts
+    assert engine._reply_room(m, worker("d")) == 0  # nothing of its own yet, and the lead's plan reply is no guide
     # After the split nothing is racing: the lead keeps room for the largest reply of all.
     assert engine._reply_room(m) == 3_000 and engine._reply_room(m, Slot(id="lead-1", function="lead", skill="reason")) == 3_000
 
@@ -562,3 +564,195 @@ def test_replies_are_asked_to_be_brief():
     prompt = system_prompt(_brief())
     assert "evidence (array of strings): at most 5, each a short quote" in prompt
     assert "uncertainty (string): one sentence" in prompt and "Be brief" in prompt
+
+
+def test_a_sub_agent_keeps_room_for_a_sub_agents_reply(tmp_path: Path):
+    """One run stopped 44 tokens over the cap on a call that would have fit: a brief of about 6,036, plus 2,008 kept
+    for the reply, and the 2,008 was the lead's plan reply. A small plan reply kept too little instead."""
+    from taskorg.models import Slot
+
+    class Measured(ModelAdapter):
+        min_reply_tokens = 200
+        part_reply_tokens = 1_500
+
+    engine = Engine(MemoryStore(tmp_path), Measured())
+    m = new_run("room", "g", "p", "d")
+    worker = Slot(id="w-a", function="worker", skill="retrieve", channel_id="a")
+    m.calls.append({"slot": "lead-1", "function": "lead", "completion_tokens": 2_008})
+    assert engine._reply_room(m, worker) == 1_500
+    assert engine._reply_room(m) == 2_008  # the lead's own calls still keep room for the lead's replies
+    m.calls.append({"slot": "w-a", "function": "worker", "completion_tokens": 1_700})
+    assert engine._reply_room(m, worker) == 1_700
+    assert AnthropicAdapter.part_reply_tokens == 1_500 and LiveAdapter.part_reply_tokens == 0
+
+
+def test_a_part_is_judged_by_a_sub_agents_call_and_the_whole_by_the_leads():
+    from taskorg.gates import Subtask, assess
+
+    parts = [Subtask("a", "x"), Subtask("b", "x")]
+    sizes = {"a": {"a.md": 2_000}, "b": {"b.md": 1_000}}
+    judge = lambda **kw: assess(parts, policy="measured", material=lambda s: sizes[s.channel_id], context_limit=4_000, **kw)
+    # The lead's big plan reply leaves it 1,000, and a sub-agent's own call holds the part.
+    assert all(v.legal for v in judge(overhead=3_000, part_overhead=2_000))
+    assert judge(overhead=3_000)[0].refused == "a split does not make the work fit: one sub-task alone needs ~2000 tokens vs 1000 available per call"
+    # A small plan reply leaves the lead plenty, and a sub-agent's call does not hold the part.
+    v = judge(overhead=1_500, part_overhead=2_001)
+    assert not any(a.legal for a in v) and "~2000 tokens vs 1999 available" in v[0].refused
+    assert all(a.legal for a in judge(overhead=1_500, part_overhead=2_000))
+    # Whether the whole fits one call is still the lead's sum: a sub-agent's figure does not change it.
+    assert "fits in one context" in judge(overhead=1_000, part_overhead=9_000)[0].refused
+
+
+def _groups_suite(tmp_path: Path):
+    from taskorg.suite import build_suite, slug
+
+    suite = build_suite(seed=7, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    task = suite.tasks[0]
+    return task, [f"{slug(e)}.md" for e in task.entities], suite.write_corpus(tmp_path / "corpus")
+
+
+def _planner(*plans):
+    """A stand-in that plans as told, in order, writes each plan into the context as a real lead does, and
+    otherwise works as the simulator does."""
+
+    class Planner(SimModel):
+        def __init__(self):
+            super().__init__()
+            self.plans, self.briefs, self.planned = list(plans), [], 0
+
+        def act(self, brief):
+            self.briefs.append(brief)
+            art = super().act(brief)
+            if brief.mode == "plan":
+                self.planned += 1
+                art.requests = self.plans.pop(0) if self.plans else []
+                art.context_update = f"Plan number {self.planned}."
+            return art
+
+    return Planner()
+
+
+def _group(name, files):
+    return f"subtask:{name}@retrieve=figures_get_mixed {' '.join(files)}"
+
+
+def _plans(adapter):
+    return [b for b in adapter.briefs if b.mode == "plan"]
+
+
+def test_a_plan_with_a_part_too_big_gets_a_second_try_told_why(tmp_path: Path):
+    """A lead planned 8, 7 and 5 files at 20 companies. The gates were right to refuse, and working alone it
+    overflowed on its next call, though the refusal said exactly what was wrong."""
+    task, files, root = _groups_suite(tmp_path)
+    adapter = _planner([_group("big", files[:8]), _group("rest", files[8:])],
+                       [_group("left", files[:5]), _group("right", files[5:])])
+    r = run_trial(task, "genet", adapter, root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    first, second = _plans(adapter)
+    assert "REFUSED" not in first.packet
+    assert "YOUR FIRST PLAN WAS REFUSED: a split does not make the work fit: one sub-task alone needs" in second.packet
+    assert "big (8 files, ~" in second.packet and "rest (2 files, ~" in second.packet
+    assert "SIZE." in second.packet and "PLAN" in second.packet.upper()
+    assert r.workers == 2 and r.refused == 0 and r.status == "complete" and r.answer_right
+    # The first plan's parts never got a sub-agent, and the second's did.
+    assert {b.channel_id for b in adapter.briefs if b.slot_function == "worker"} == {"left", "right"}
+    # A plan writes itself into the shared context. The refused one is gone from all that follows.
+    later = adapter.briefs[adapter.briefs.index(second):]
+    assert not any("Plan number 1" in b.context for b in later)
+    assert any("Plan number 2" in b.context for b in later if b.slot_function == "worker")
+
+
+def test_the_second_plan_replaces_the_first_on_the_team_but_not_on_the_record(tmp_path: Path):
+    from taskorg.diagnostics import diagnose
+    from taskorg.review import part_statuses
+
+    engine = Engine(MemoryStore(tmp_path))
+    m = new_run("twice", "g", "p", "d")
+    m._record("gate_overflow", {"proposed": 9, "considered": 6})
+    m._record("gate", {"legal": False, "gate": "should_we", "channel_id": "big", "refused": "too big"})
+    assert engine._cover(m, [], []) != "" and "big" in part_statuses(m)
+    m._record("plan_refused", {"refused": "too big", "parts": "big (8 files, ~6,539 tokens)"})
+    m._record("gate", {"legal": True, "gate": "", "channel_id": "left", "basis": "measured"})
+    m._record("gate", {"legal": False, "gate": "could_we", "channel_id": "past", "refused": "no room"})
+    # The first plan's overflow and its parts are no longer the lead's to cover or the team's to answer for.
+    assert engine._cover(m, [], []) == ""
+    assert "big" not in part_statuses(m) and part_statuses(m)["past"] == "no sub-agent; not covered"
+    # They stay on the record.
+    assert {"gate_overflow", "plan_refused"} <= {e.event for e in m.log}
+    assert any(e.event == "gate" and e.detail["channel_id"] == "big" for e in m.log)
+    assert any(i["event"] == "plan_refused" and i["detail"]["refused"] == "too big" for i in diagnose(m)["interactions"])
+
+
+def test_there_is_no_third_plan(tmp_path: Path):
+    task, files, root = _groups_suite(tmp_path)
+    too_big = [_group("big", files[:8]), _group("rest", files[8:])]
+    adapter = _planner(too_big, too_big, too_big)
+    r = run_trial(task, "genet", adapter, root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    assert len(_plans(adapter)) == 2 and r.workers == 0
+
+
+def test_a_plan_refused_for_another_reason_gets_no_second_try(tmp_path: Path):
+    task, files, root = _groups_suite(tmp_path)
+    adapter = _planner([_group("left", files[:5]), _group("right", files[5:])], ["unused"])
+    r = run_trial(task, "genet", adapter, root, budget=comparison_budget(40, 16_000), tool_rounds=4)
+    assert len(_plans(adapter)) == 1 and r.workers == 0
+
+
+@pytest.mark.parametrize("calls, plans", [(17, 1), (18, 2)])
+def test_a_second_plan_needs_a_split_it_could_still_pay_for(tmp_path: Path, calls, plans):
+    """The plan, two sub-agents of five calls each, a merge of five and the check: 17 after the first plan."""
+    task, files, root = _groups_suite(tmp_path)
+    too_big = [_group("big", files[:8]), _group("rest", files[8:])]
+    adapter = _planner(too_big, too_big)
+    run_trial(task, "genet", adapter, root, budget=comparison_budget(calls, 4_000), tool_rounds=4)
+    assert len(_plans(adapter)) == plans
+
+
+def test_a_tier_that_cannot_split_gets_no_second_plan(tmp_path: Path):
+    task, files, root = _groups_suite(tmp_path)
+    too_big = [_group("big", files[:8]), _group("rest", files[8:])]
+    adapter = _planner(too_big, too_big)
+    budget = comparison_budget(40, 4_000)
+    budget.allow_split = False
+    run_trial(task, "genet", adapter, root, budget=budget, tool_rounds=4)
+    assert len(_plans(adapter)) == 1
+
+
+def test_a_crew_is_never_refused_so_it_never_plans_twice(tmp_path: Path):
+    task, files, root = _groups_suite(tmp_path)
+    adapter = _planner([_group("big", files[:8]), _group("rest", files[8:])], ["unused"])
+    run_trial(task, "always", adapter, root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    assert len(_plans(adapter)) == 1
+
+
+def test_the_gates_count_what_the_size_check_will(tmp_path: Path):
+    """What the gates charge a part before its files is what its sub-agent's call then carries, so a part they
+    pass is not stopped by the size check, on the adapter whose counts the size check uses."""
+    from taskorg.adapters import TOOL_RESULTS
+    from taskorg.gates import Subtask
+    from taskorg.loop import READ_FRAME
+
+    task, files, root = _groups_suite(tmp_path)
+    adapter = AnthropicAdapter("", "claude-haiku-5-5", client=object())
+    toolbox = Toolbox(roots=[root])
+    engine = Engine(MemoryStore(tmp_path / "s"), adapter, budget=comparison_budget(40, 8_000), toolbox=toolbox, max_tool_rounds=4)
+    m = new_run("frame", task.question, PURPOSE, DONE_WHEN)
+    m.budget = engine.budget
+    part = Subtask("left", "figures_get_mixed " + " ".join(files[:5]), skill="retrieve")
+    other = Subtask("right", "figures_get_mixed " + " ".join(files[5:6]), skill="retrieve")
+    slot = engine._worker_slot(part)
+    brief = engine._worker_brief(m, slot, m.state.context, part.named_failure)
+    frame = math.ceil(5 * READ_FRAME * TOKEN_RATIO)
+    want = adapter.estimate_tokens(brief) + frame + AnthropicAdapter.part_reply_tokens
+    assert engine._part_overhead(m, [part, other]) == want
+    # The largest of the plan's parts sets it, and a proposal no sub-agent could take is not measured.
+    bad = Subtask("bad", "x", skill="bogus")
+    assert engine._part_overhead(m, [other, bad, part]) == want
+    assert engine._part_overhead(m, [bad]) is None and engine._part_overhead(m, []) is None
+    # The call after its reads comes to no more than the gates charged, and not far under.
+    results = [toolbox.run(f"read:{f}", set()) for f in files[:5]]
+    read = replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join(results))
+    material = sum(engine._material(part).values())
+    assert adapter.estimate_tokens(brief) + material < adapter.estimate_tokens(read) <= adapter.estimate_tokens(brief) + material + frame
+    # With nothing to judge against, the gates fall back on the lead's figure.
+    m.budget = None
+    assert engine._part_overhead(m, [part]) is None

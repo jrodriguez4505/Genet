@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room (3 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 3 November's as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -367,6 +367,27 @@ After the last run the independent view became the default, and the size note ga
 - **Still no wrong answer got through.** Once that answer is read correctly, every finished run in these 30 is right.
 - **The false failures continue.** 2 of the 15 split runs that reached the right answer had a FAIL on it, and both stopped. Under the independent view that makes 8 of 41 split runs, and 6 stopped. The cause looks the same: the layered pick opens 2 of the files, and the verifier reads the rest as unsupported.
 
+## 3 November 2026: a sub-agent's own room, and a second plan
+
+`bash scripts/team_runs.sh second`, on Haiku 5.5 at effort `low`, on the 6 questions at 20 companies, Genet only, with two fixes: a sub-agent keeps room for a sub-agent's reply, and a plan with a part too big gets a second try. It cost $0.06 with its smoke test, against an estimate of $0.06 and a cap of $0.10.
+
+| 20 companies, 8,000-token cap, 6 questions | Before any fix | v0.9.1 | This run | Told crew |
+|---|---|---|---|---|
+| Leads that split | 6 | 4 | **6** | 6 |
+| Verified | 5 | 3 | 4 | 4 |
+| Right | 5 | 3 | 5 | 6 |
+| Stopped on size | 1 | 3 | **0** | 0 |
+| Stopped by the verifier | 0 | 0 | 1 | 2 |
+| Stopped on a malformed reply | 0 | 0 | 1 | 0 |
+
+- **No run stopped on size.** Each column is one run of each question, and the leads' plans vary from run to run, so this shows what the fixes do to a plan, not a new rate.
+- **The room fix changed one run.** On the code before it, the same tape stops `aggregate-3` on the size check, after 6 or 7 calls: a brief of about 6,083 plus a plan reply of 2,030. The other 5 trials replay the same on both. That trial's answer was right, and the verifier then stopped it, so this did not change the totals.
+- **The second plan did not fire.** All 6 leads planned 4 groups of 5 files on the first try, and none was refused. On v0.9.1 two of the 6 plans were refused. So no real lead has written a second plan yet, and whether it would fit is not shown. Offline, the plans refused on the tapes do reach it, and its brief says what was measured: `group-a (8 files, ~6,539 tokens), group-b (7 files, ~6,168 tokens), group-c (5 files, ~4,110 tokens)`.
+- **1,500 tokens held, with little to spare.** After reading, sub-agents' replies ran to a median of 1,301 and a largest of 1,841, and 5 of 24 passed 1,500. The largest call before its reply was 6,339, and none was cut off. A reply that large on the largest call would be cut off, and its part would go back to the lead.
+- **A new stop: a malformed merge.** `breadth-2`'s lead wrote the right answer twice, in replies that were not JSON: one closed a list with `}`, and the other wrote `\$`. One retry is all a reply gets, so the run stopped with no answer. The fixes did not touch this. On the tapes of 2 and 3 November 8 of 1,428 replies were not JSON as sent, and this stopped 2 of 284 trials, this one and a crew's. This is open.
+- **The false failures continue, and were more common.** 4 of the 5 runs that reached the right answer had a FAIL on it. A rework passed 3, and 1 stopped. The verifier's brief has the same form as before, and it gives the same reason: the layered pick opens 2 of the 20 files, and the verifier reads the rest as unsupported. Under the independent view that makes 12 of 46 split runs, and 7 stopped.
+- **Still no wrong answer got through.** Every finished run was right. The tape replays on this code with no request missing and the same results, twice.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.
@@ -446,4 +467,4 @@ World: `$HOME/genet-job/note-a.txt` filed, `note-b.txt` open.
 
 ## Run files
 
-The Claude runs' results are in `data/compare/` and their tapes in `data/tapes/`, and both are published as releases, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029) and [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), each with a `REPLAY.md` that gives each tape's command. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.
+The Claude runs' results are in `data/compare/` and their tapes in `data/tapes/`, and both are published as releases, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102) and [for 3 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), each with a `REPLAY.md` that gives each tape's command. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.

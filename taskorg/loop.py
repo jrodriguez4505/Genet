@@ -15,7 +15,7 @@ from . import checks, members, situation
 from .budget import Budget
 from .cues import fire_auto_cues
 from .errors import InvariantError
-from .gates import LEAD_COVERS, Assessment, Subtask, assess
+from .gates import LEAD_COVERS, PART_TOO_BIG, Assessment, Subtask, _could_we, assess
 from .memory_store import MemoryStore
 from .run import Run
 from .models import MAX_WORKERS, SKILL_TOOLS, SKILLS, Artifact, Delta, Slot, Status
@@ -162,6 +162,14 @@ GROUP_NOTE = (
     " There can be at most {workers} sub-agents. For a part that reads several files, name each file in "
     "NAMED_FAILURE, for example subtask:north-group@retrieve=regions_get_mixed north.md south.md: the kernel measures "
     "a part by the files it names, and its sub-agent can open only those."
+)
+# Tokens a read adds to a file's text, at four characters a token: its "[read name]" line, the gap before the next
+# result, and JSON's escapes. On the 53 parts of the 2 November check it came to about 18.
+READ_FRAME = 20
+PLAN_REFUSED = (
+    " YOUR FIRST PLAN WAS REFUSED: {reason}. Its parts as measured: {parts}. Plan again so that every part fits, "
+    "dividing the files differently and naming each one. There is no third try: if this plan is refused too, you "
+    "work alone."
 )
 
 
@@ -440,13 +448,17 @@ class Engine:
 
     def _reply_room(self, run: Run, slot: Slot | None = None) -> int:
         """Room a reply needs in the call: the largest reply in this run so far, and at least what the
-        adapter expects before it has replied at all. A sub-agent does not count its siblings' replies:
-        they run in parallel, so which have arrived depends on timing, and the same replies could send a
-        call on one run and stop it on the next."""
-        mine = slot.id if slot and slot.function == "worker" else None
-        seen = max((c.get("completion_tokens") or 0 for c in run.calls if not c.get("failed")
-                    and (mine is None or c.get("function") != "worker" or c.get("slot") == mine)), default=0)
-        return max(seen, getattr(self.adapter, "min_reply_tokens", 0))
+        adapter expects before it has replied at all. A sub-agent counts only its own replies and what the
+        adapter expects of a sub-agent. Its siblings run in parallel, so which have arrived depends on
+        timing, and the same replies could send a call on one run and stop it on the next. The lead's plan
+        reply says little about a sub-agent's: one of 2,008 stopped a call that would have fit."""
+        floor = getattr(self.adapter, "min_reply_tokens", 0)
+        if slot and slot.function == "worker":
+            floor = max(floor, getattr(self.adapter, "part_reply_tokens", 0))
+            mine = [c for c in run.calls if c.get("slot") == slot.id]
+        else:
+            mine = run.calls
+        return max(floor, max((c.get("completion_tokens") or 0 for c in mine if not c.get("failed")), default=0))
 
     def _attempt(self, run: Run, brief: Brief, slot: Slot | None = None) -> Artifact:
         """One budgeted model call. The model runs outside the lock; the board inside it."""
@@ -665,6 +677,22 @@ class Engine:
                 return int(c.get("prompt_tokens") or 0) + max(int(c.get("completion_tokens") or 0), self._reply_room(run))
         return None
 
+    def _part_overhead(self, run: Run, subtasks: list[Subtask]) -> int | None:
+        """What a sub-agent's call costs before any material: its own brief, what reading its files adds to
+        their text, and the room the size check will keep for its reply. So the gates and the size check
+        agree on what a sub-agent can hold."""
+        usable = [s for s in subtasks if not _could_we(s)]
+        if not run.budget or not usable:
+            return None
+
+        def cost(subtask: Subtask) -> int:
+            slot = self._worker_slot(subtask)
+            files = self._material(subtask) or {}
+            return (self.adapter.estimate_tokens(self._worker_brief(run, slot, run.state.context, subtask.named_failure))
+                    + self._model_tokens(READ_FRAME * len(files)) + self._reply_room(run, slot))
+
+        return max(cost(s) for s in usable)
+
     def _assess(self, run: Run, subtasks: list[Subtask], *, declared: bool = False) -> list[Assessment]:
         """declared: the operator named these sub-tasks, so the need is theirs to state."""
         b = run.budget
@@ -695,19 +723,39 @@ class Engine:
             context_limit=b.max_tokens_per_call if b else None,
             fit_fraction=self.fit_fraction,
             overhead=self._overhead(run),
+            part_overhead=self._part_overhead(run, subtasks),
         )
         for v in verdicts:
             run._record("gate", v.as_dict())
         return verdicts
 
+    @staticmethod
+    def _worker_slot(subtask: Subtask) -> Slot:
+        return Slot(id=f"w-{subtask.channel_id}", function="worker", skill=subtask.skill, channel_id=subtask.channel_id)
+
     def _staff(self, run: Run, legal: list[Assessment]) -> list[Slot]:
         lead = run.state.lead_id
         added = []
         for a in legal:
-            worker = Slot(id=f"w-{a.subtask.channel_id}", function="worker", skill=a.subtask.skill, channel_id=a.subtask.channel_id)
+            worker = self._worker_slot(a.subtask)
             run.set_roster(lead, run.state.slots + [worker], gates=a.gates)
             added.append(worker)
         return added
+
+    def _worker_brief(self, run: Run, worker: Slot, split_context: str, note: str) -> Brief:
+        # The files the gates measured for this part. The sub-agent's tools open only these, so it
+        # cannot take on its siblings' material and overrun the call the split was sized for.
+        files = self.toolbox.material(worker.channel_id or "", note) or {}
+        own = sorted(self.toolbox._shown(Path(p)) for p in files)
+        return self._brief(
+            run, "worker",
+            extra=f"channel={worker.channel_id} only. Do not see sibling channels."
+            + (f" Your files: {', '.join(own)}; your tools open only these. Report what they hold for the goal;"
+               " the other parts are other sub-agents', and the lead combines them." if own else "")
+            + (f" Lead's note for this sub-agent: {note}" if note else "")
+            + (REPORT_UP_NOTE if self.report_up else ""),
+            slot=worker, context=split_context, mode="work",
+        )
 
     def _run_workers(self, run: Run, added: list[Slot], split_context: str, notes: dict[str, str] | None = None) -> list[Artifact | None]:
         """Sub-agents work at the same time, each blind to its siblings, then report in sub-task order.
@@ -719,19 +767,8 @@ class Engine:
 
         def one(worker: Slot) -> Artifact:
             note = (notes or {}).get(worker.channel_id or "", "")
-            # The files the gates measured for this part. The sub-agent's tools open only these, so it
-            # cannot take on its siblings' material and overrun the call the split was sized for.
             files = self.toolbox.material(worker.channel_id or "", note) or {}
-            own = sorted(self.toolbox._shown(Path(p)) for p in files)
-            brief = self._brief(
-                run, "worker",
-                extra=f"channel={worker.channel_id} only. Do not see sibling channels."
-                + (f" Your files: {', '.join(own)}; your tools open only these. Report what they hold for the goal;"
-                   " the other parts are other sub-agents', and the lead combines them." if own else "")
-                + (f" Lead's note for this sub-agent: {note}" if note else "")
-                + (REPORT_UP_NOTE if self.report_up else ""),
-                slot=worker, context=split_context, mode="work",
-            )
+            brief = self._worker_brief(run, worker, split_context, note)
             try:
                 return self._act(run, brief, slot=worker, toolbox=self.toolbox.scoped(files) if files else None)
             except InvariantError as e:
@@ -786,7 +823,7 @@ class Engine:
         text naming them."""
         refused = [v.subtask.channel_id for v in verdicts if v.gate in ("should_we", "could_we")]
         # Proposals past the cap were never judged, so they have no verdict; their parts are the lead's too.
-        past = next((e.detail for e in reversed(run.log) if e.event == "gate_overflow"), None)
+        past = next((e.detail for e in reversed(run.since_last_plan()) if e.event == "gate_overflow"), None)
         unjudged = past["proposed"] - past["considered"] if past else 0
         if not refused and not failed and not unjudged and not reported:
             return ""
@@ -882,12 +919,14 @@ class Engine:
             run.halt("verifier did not PASS named success criteria", code="VERIFY")
         return product, verified
 
-    def _propose(self, run: Run) -> list[Subtask]:
-        """The lead reads the context and proposes sub-tasks. Strategies override this."""
+    def _propose(self, run: Run, again: str = "") -> list[Subtask]:
+        """The lead reads the context and proposes sub-tasks. Strategies override this.
+
+        again: why its first plan was refused, for a second try."""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, "reason", "read the context; propose sub-tasks only for independent work")
         base = PLAN_BRIEF.format(skills="|".join(SKILLS)) + self._cards(run)
-        extra = base + self._size_note(run, base)
+        extra = base + self._size_note(run, base) + again
         plan = self._act(run, self._brief(run, "lead", extra=extra, mode="plan"))
         run.accept_artifact(plan)
         return parse_proposals(plan.requests)
@@ -925,6 +964,25 @@ class Engine:
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""
         return self._assess(run, subtasks)
+
+    def _second_plan(self, run: Run, verdicts: list[Assessment], context: str) -> list[Assessment]:
+        """One more plan when a part was too big for a sub-agent. The lead cannot do such work alone, the gates'
+        reason is exact, and a planning call costs far less than the stop that follows. Only when a split could
+        still be paid for after it: the plan, two sub-agents, the merge and the check.
+
+        context: the shared context before the first plan. A plan writes itself there, and a refused one must
+        not stay in front of the next plan, its sub-agents or the verifier."""
+        why = next((v.refused for v in verdicts if v.refused.startswith(PART_TOO_BIG)), "")
+        b = run.budget
+        if not why or not getattr(b, "allow_split", True):
+            return verdicts
+        if self._calls_left(run) < 1 + 2 * self._skill_calls("retrieve") + self._merge_cost() + 1:
+            return verdicts
+        sizes = {v.subtask.channel_id: self._material(v.subtask) or {} for v in verdicts}
+        parts = ", ".join(f"{c} ({len(f)} files, ~{sum(f.values()):,} tokens)" for c, f in sizes.items())
+        run._record("plan_refused", {"refused": why, "parts": parts})
+        run.update_context(run.state.lead_id, context)
+        return self._judge(run, self._propose(run, PLAN_REFUSED.format(reason=why, parts=parts)))
 
     def _single_agent_skill(self, verdicts: list[Assessment]) -> str:
         """A single agent switches to the skill the work needs; with a workspace, that includes reading it."""
@@ -986,7 +1044,7 @@ class Engine:
         run.update_context(lead, context)
         self.store.remember_working(run.id, "context", context)
 
-        verdicts = self._judge(run, self._propose(run))
+        verdicts = self._second_plan(run, self._judge(run, self._propose(run)), context)
         legal = [v for v in verdicts if v.legal]
         split = len(legal) >= self.min_split
         # The sub-agents, the merge and the check; or the work and the check.

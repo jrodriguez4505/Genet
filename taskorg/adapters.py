@@ -36,6 +36,8 @@ class ModelAdapter:
     # Tokens a reply is assumed to need before this adapter has replied in a run. The kernel then uses
     # the largest reply it has seen. 0 for the stand-ins, whose replies are short and known.
     min_reply_tokens = 0
+    # Tokens a sub-agent's reply is assumed to need once it has read. 0 where nothing has measured it.
+    part_reply_tokens = 0
     # The model's tokens per four characters. The kernel scales what it measures in characters, such as a
     # sub-task's files, by this, so the gates and the size check count alike.
     token_ratio = 1.0

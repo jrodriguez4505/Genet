@@ -2,6 +2,19 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.9.2 — November 2026: a sub-agent's own room, and a second plan
+
+**Why.** The check of v0.9.1 stopped three runs at 20 companies. One stopped 44 tokens over the cap, keeping room for the lead's plan reply. Two had plans refused with no way back.
+
+**Fixed.**
+- **A sub-agent's room.** It keeps room for its own replies and for what the adapter expects of a sub-agent, 1,500 tokens on Claude, measured on the tapes. The lead's plan reply no longer counts (`loop.py`, `anthropic_live.py`).
+- **What the gates charge a part.** A part must fit a sub-agent's own call: its brief, what reading adds to its files, and that same room. The gates and the size check now agree, and a large plan reply no longer refuses a part that fits (`gates.py`, `loop.py`).
+- **A second plan.** A plan with a part too big gets one more planning call, told what the gates measured, when a split could still be paid for. There is no third. The first plan stays on the record, and leaves the shared context, where every plan writes itself (`loop.py`, `run.py`).
+
+**What the live run showed** (3 November, Haiku 5.5, $0.06). At 20 companies, no stop on size: all 6 leads split, 5 reached the right answer and 4 were verified. On the code before these fixes the same tape stops one of them on the size check. Every lead's first plan fit, so the second plan did not fire, and no real lead has written one yet. See [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+
+**Left open.** A lead whose merge reply is malformed twice stops the run though both replies held the right answer, and the verifier failed a right answer on 4 of the 5 runs that reached one (questions 10 and 14 in [ARCHITECTURE.md](ARCHITECTURE.md)).
+
 ## v0.9.1 — November 2026: plans that survive a bad file name
 
 **Why.** The side-by-side run lost two plans to a guessed file name, and replays showed a size check that depended on timing.

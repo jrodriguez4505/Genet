@@ -46,10 +46,10 @@ Code decides everything else: who is on the team, which tools run, and what is s
    The lead replies with proposals in `requests`, as `subtask:<channel>@<skill>=<named_failure>`. `subtasks.py` reads them, and at most 16 are considered.
 3. **Judge** (`assess` in `gates.py`, called from `Engine._assess`). The main effort, if the operator named one, is judged first. Each proposal passes three gates in order, and each gate fails closed:
    - **Can someone else:** refused if already covered, already staffed, a repeat, or verification.
-   - **Should we:** needs a named failure plus a measured reason. The reason is either declared isolation, or material that does not fit in one call. `Toolbox.material` measures the material from file sizes.
+   - **Should we:** needs a named failure plus a measured reason. The reason is either declared isolation, or material that does not fit in one call. `Toolbox.material` measures the material from file sizes. A part must fit a sub-agent's own call: `Engine._part_overhead` counts its brief, what reading adds to its files, and the room its reply needs.
    - **Could we:** needs a known skill and a usable channel, a tier that allows a split, a budget for the sub-agents plus merge and verify, and room under the cap of 4.
 
-   Every proposal gets a `GateRecord`, legal or not.
+   Every proposal gets a `GateRecord`, legal or not. A plan refused because a part is too big gets one more planning call, told what was measured (`Engine._second_plan`), when a split could still be paid for. The first plan stays on the record and leaves the shared context.
 4. **Staff and work** (`Engine._staff`, `_run_workers`, `_act`).
    - With two or more legal sub-tasks:
      - `Run.set_roster` adds one sub-agent per gate record (INV-1, INV-8).
@@ -147,8 +147,8 @@ Every model call goes through `Engine._call`:
 
 ## How it is tested
 
-- 1,687 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 272 rules one at a time, and a test catches each.
+- 1,723 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 297 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
@@ -158,7 +158,7 @@ Every model call goes through `Engine._call`:
 3. **Fit judged before the work is unreliable on a real model.** Is re-planning on a measured overflow (design part 4) the answer, or a better estimate in the gate? On the tapes, re-planning reaches more: of the 9 tight-cap failures left once sub-agents were scoped, a better estimate could reach 3, and in 5 the lead never proposed a split for the gate to judge (`docs/LIVE_TESTS.md`). At a 200,000-token cap nothing overflowed, so neither has been needed at a real context size. On 2 November, at an 8,000-token cap, a lead told how to name a group's files split on 8 of 16 trials, and told also what the goal's files come to, on 23 of 26, with no lead proposing a split on the 12 questions that fit. The gates admitted every part of every plan that named its files, and 30 of 31 split runs reached the right answer. A lead that still misjudges, or guesses a file's name, overflows, so re-planning is what would rescue it. A better estimate is not: a scoped sub-agent's largest call ran at most 1.29 times today's estimate, so the 1.7 factor measured on unscoped searches would refuse work that fits.
 4. **Nesting** (design part 3): the same gates at every level, depth 2, and at most 4 direct reports a lead, with a budget reserved from the parent's. Are 4 and 2 the right limits?
 5. **The lead knowing its members** (design part 7, built with `--cards`): a record of each position, kept by the kernel, in the lead's plan brief. Does a track record belong in the brief, in the gates, or nowhere? Two live tests show no sign the cards help, at about 460 tokens a plan call, though past counts have not been tried.
-6. **`loop.py` is about 1,070 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
+6. **`loop.py` is about 1,150 lines.** The `Engine` holds briefs, calls, staffing, merge and verify. Where would you split it?
 7. **Hand-offs lose information.** The always-split crew lost answers as the work grew. What would show where?
 8. **A reviewer of purpose** (design part 10) adds a call before the work, to check the plan against the purpose. Is that worth it, or is checking the product afterwards enough?
 9. **Sequential work** (design part 9). The gate would refuse to split a chain of parts unless a link does not fit. Is a dependency the lead declares enough to find chains, or should the kernel find them?
@@ -167,8 +167,9 @@ Every model call goes through `Engine._call`:
 
 11. **Should the gates count what a split leaves for the lead?** They admit up to 4 sub-agents and hand the rest to the lead. A lead that plans one part per file at 20 companies then cannot fit the other 16 in its merge call. Haiku grouped its files and got by, but nothing makes a lead do that.
 
-12. **What should a sub-agent's call keep room for?** The gates and the size check both count the lead's plan reply, though a plan reply says little about a sub-agent's. On the side-by-side and check runs a plan reply ran from 234 to 2,008 tokens, with a median of 718, and no sub-agent's reply passed 1,793. A plan reply of 2,008 stopped one run 44 tokens over the cap, on a call that would have fit, and a small one keeps too little. A sub-agent's own figure would be steadier, but nothing has measured it on another model.
-13. **Should a refused plan get a second try?** A lead whose groups were too big, 8 and 7 files, was refused correctly, and then had to do the work alone, which could not fit. The refusal's reason is exact, and one more planning call costs about $0.001. A second plan might fit, or might only delay the same stop.
+12. **Should the room a sub-agent keeps be measured for each model?** A sub-agent's call now keeps 1,500 tokens for its reply, or its own largest so far, and no longer counts the lead's plan reply. The figure comes from Haiku 5.5, whose replies after reading had a 90th percentile of 1,352 to 1,609 at every cap. On the 3 November run 5 of 24 such replies passed 1,500, with the largest at 1,841, and none was cut off, because no call came near the cap. Sonnet 5.5's ran far lower, with a 90th percentile of 614, and nothing has measured another model.
+13. **Does a second plan work on a real model?** A plan with a part too big now gets one more try, told what the gates measured. It costs about $0.001, and on the tapes it reaches the plans that needed it. On the only live run since, all 6 leads planned parts that fit, so no real lead has written a second plan yet.
+14. **What should a malformed merge do?** A lead's merge reply was malformed twice, and the run stopped, though both replies held the right answer. One closed a list with `}` and the other wrote `\$`. On the tapes of 2 and 3 November 8 of 1,428 replies were not JSON as sent, and this stopped 2 of 284 trials. Accepting the common slips, or asking the API for structured output, would each change what a reply may be, so neither is built.
 
 ## Not built yet
 
