@@ -86,6 +86,8 @@ def refuse_could_we_first() -> None:
 LEAD_COVERS = "one open sub-task: the lead covers it without a second agent"
 # The refusal for a part the gates cannot measure, in a plan whose other parts they can.
 UNMEASURED = "its material is unknown: it names no file the workspace holds, so the lead covers it"
+# The refusal for a plan with a part one call cannot hold. The engine reads it to give the lead a second try.
+PART_TOO_BIG = "a split does not make the work fit"
 
 # Channel ids the kernel uses for its own traffic. A sub-agent may not take one.
 RESERVED_CHANNELS = {"lead", "lead-plan", "lead-merge", "verify", "merge", "escalate", "report", "peer"}
@@ -144,7 +146,7 @@ SPLIT_POLICIES = ("measured", "stated")
 
 
 def _need(open_: list[Assessment], policy: str, declared: bool, material, context_limit: int | None,
-          fit_fraction: float, overhead: int | None = None) -> str:
+          fit_fraction: float, overhead: int | None = None, part_overhead: int | None = None) -> str:
     """The team's "should we": the basis for a fan-out, or "refuse:<reason>".
 
     material(subtask) maps the files a sub-task needs to estimated tokens. One agent
@@ -154,7 +156,8 @@ def _need(open_: list[Assessment], policy: str, declared: bool, material, contex
 
     The room in one call is the context limit less overhead, what a call already
     costs before any material (brief and reply). Without a measured overhead it is
-    fit_fraction of the limit.
+    fit_fraction of the limit. part_overhead is the same cost for a sub-agent's call,
+    whose brief and reply are its own; without one, a part gets the same room.
     """
     if declared:
         return "declared"
@@ -172,8 +175,9 @@ def _need(open_: list[Assessment], policy: str, declared: bool, material, contex
     if total <= room:
         return f"refuse:fits in one context: ~{total} tokens of material vs {room} available per call{after}"
     biggest = max(sum(share.values()) for share in shares)
-    if biggest > room:
-        return f"refuse:a split does not make the work fit: one sub-task alone needs ~{biggest} tokens vs {room} available per call"
+    part_room = room if part_overhead is None else max(0, context_limit - part_overhead)
+    if biggest > part_room:
+        return f"refuse:{PART_TOO_BIG}: one sub-task alone needs ~{biggest} tokens vs {part_room} available per call"
     return "measured"
 
 
@@ -204,6 +208,7 @@ def assess(
     context_limit: int | None = None,
     fit_fraction: float = 0.5,
     overhead: int | None = None,
+    part_overhead: int | None = None,
 ) -> list[Assessment]:
     """
     Judge a proposed task organization, gate by gate, in order. Fails closed.
@@ -221,7 +226,8 @@ def assess(
                            in one call and a split shrinks what each call carries.
                            The room is context_limit less overhead (the measured cost
                            of a call before material), or fit_fraction of context_limit
-                           when no overhead is measured.
+                           when no overhead is measured. A part must fit a sub-agent's
+                           call, less part_overhead when that is known.
                            Material that cannot be measured is not a reason: a part
                            with none goes to the lead, and the others are judged alone.
                            Under policy="stated", the named failures are enough.
@@ -261,7 +267,7 @@ def assess(
     if len(open_) == 1:
         open_[0].refuse("can_someone_else", LEAD_COVERS)
     elif len(open_) >= 2:
-        need = _need(open_, policy, declared, material, context_limit, fit_fraction, overhead)
+        need = _need(open_, policy, declared, material, context_limit, fit_fraction, overhead, part_overhead)
         for a in open_:
             if need.startswith("refuse:"):
                 a.refuse("should_we", need[len("refuse:"):])

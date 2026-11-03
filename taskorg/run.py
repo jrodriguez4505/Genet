@@ -121,6 +121,12 @@ class Run:
     def _record(self, event: str, detail: dict) -> None:
         self.log.append(LogEntry(event, detail))
 
+    def since_last_plan(self) -> list[LogEntry]:
+        """The log since a plan the gates refused and the lead replaced: the first plan's parts are not parts of
+        the team, though it stays on the record."""
+        last = max((i for i, e in enumerate(self.log) if e.event == "plan_refused"), default=-1)
+        return self.log[last + 1:]
+
     def _assert_open(self) -> None:
         """A completed or aborted board is a record. Nothing on it changes."""
         if self.status in (Status.COMPLETE, Status.ABORT):

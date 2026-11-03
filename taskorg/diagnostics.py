@@ -244,6 +244,7 @@ def _kind(event: str) -> str | None:
         "complete": "run",
         "cue_mint": "trigger",
         "gate": "roster",
+        "plan_refused": "roster",
         "tool": "act",
     }
     return mapping.get(event)

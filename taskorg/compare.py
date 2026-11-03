@@ -86,7 +86,7 @@ def task_context(task: Task) -> str:
 class SingleAgent(Engine):
     """Baseline: one agent, no planning call, never splits."""
 
-    def _propose(self, run: Run) -> list[Subtask]:
+    def _propose(self, run: Run, again: str = "") -> list[Subtask]:
         return []
 
 
@@ -95,7 +95,7 @@ class AlwaysSplit(Engine):
 
     min_split = 1
 
-    def _propose(self, run: Run) -> list[Subtask]:
+    def _propose(self, run: Run, again: str = "") -> list[Subtask]:
         lead = run.state.lead_id
         run.switch_skill(lead, lead, "reason", "decompose into sub-tasks for the crew")
         plan = self._act(run, self._brief(run, "lead", extra=self._plan_brief(run), mode="plan"))
@@ -224,8 +224,8 @@ def run_trial(
         prompt_tokens=prompt, completion_tokens=completion,
         tokens_estimated=any(c.get("tokens_estimated") for c in run.calls),
         latency_s=round(latency, 3), workers=run.state.worker_count(),
-        proposed=sum(e.event == "gate" for e in run.log),
-        refused=sum(e.event == "gate" and not e.detail.get("legal") for e in run.log),
+        proposed=sum(e.event == "gate" for e in run.since_last_plan()),
+        refused=sum(e.event == "gate" and not e.detail.get("legal") for e in run.since_last_plan()),
         covered=sum(e.event in ("part_failed", "part_reported") for e in run.log),
     )
 

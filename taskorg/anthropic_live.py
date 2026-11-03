@@ -49,6 +49,9 @@ class AnthropicAdapter(LiveAdapter):
 
     name = "anthropic"
     token_ratio = TOKEN_RATIO
+    # A sub-agent's reply after reading, on Haiku 5.5 at effort low: the 90th percentile ran 1,352 to 1,609 at
+    # caps from 4,000 to 200,000 tokens, so it does not follow the cap (docs/LIVE_TESTS.md).
+    part_reply_tokens = 1_500
 
     def __init__(self, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None,
                  effort: str | None = None, base_url: str = BASE_URL, client=None):
