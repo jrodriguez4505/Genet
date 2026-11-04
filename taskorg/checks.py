@@ -66,6 +66,9 @@ HEADING_RULE = (
 # What the verifier is told after the source rule unless a run names another. On five seeds no tape had used, right
 # answers failed fell from 69 of 220 to 6, and wrong answers caught went from 36 of 39 to 37 (docs/LIVE_TESTS.md).
 VERIFY_RULE = SAMPLE_RULE + HEADING_RULE
+# What the lead and sub-agents can be told about an undated line (--author-rule). Off until a run shows it pays: on the
+# held-out seeds, 23 of 33 wrong answers were an author refusing a figure its file holds, on a line with no year.
+AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip()}
 
 _READ_HEAD = re.compile(r"\[read ([^\]\n]+)\](?:\n| already in full above)")
 _MATCH_LINE = re.compile(r"^([^\[\n:][^\n:]*):\d+: ", re.MULTILINE)

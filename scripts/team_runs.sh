@@ -43,6 +43,20 @@
 # 2. The cards (team design part 7): genet with and without the members table in the lead's plan brief,
 #    on 10-company aggregate questions at a cap where the material does not fit one call. Does the lead
 #    propose differently, with fewer parts refused or failed?
+#   bash scripts/team_runs.sh refine   two benches on what the held-out run found.
+#     Heading: every right figure in the suite's files sits on a line with no year, so a sentence saying such a line takes
+#     its file's heading could not lose on them. On seed 111, files where the heading does not hold for every line: 6
+#     questions, 18 wrong products, 12 right ones and 6 controls, each under the source rule alone and the default rule.
+#     Rework: each rework on the held-out tapes asked again, with and without what the verifier said.
+#     The bars, written before the run:
+#     - Heading. It cannot say unless the source rule alone catches at least 9 of the 18 wrong products. The sentence holds
+#       if the wrong products only the source rule alone fails are at most 1, and the right products only the default rule
+#       fails are at most 1, and the default rule catches at least 5 of the 6 controls. If so, the lead and sub-agents may
+#       be told it. If not, it is reworded and tested again on another seed.
+#     - Rework. It cannot say unless at least 10 products were wrong before. The reason stays on if, of those, it brings
+#       right at least twice as many as the plain brief and at least 3 more, if those only it brings right are at least 3
+#       times those only the plain brief brings right, and if the right products it alone turns wrong are at most 1, or 5%.
+#       If not, the reason goes back off.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -53,8 +67,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -67,7 +81,9 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = heldout ]; then
+if [ "$mode" = refine ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.17 in all, each run capped (\$0.30 in all)"
+elif [ "$mode" = heldout ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.50 in all, each run capped (\$4.10 in all, and the smoke test)"
 elif [ "$mode" = merges ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.64 in all, each run capped (\$1.00 in all, and the smoke test)"
@@ -135,7 +151,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -153,7 +169,7 @@ if [ "$mode" = heldout ]; then
     fi
     echo
     if [ ! -f "data/compare/$name.json" ]; then
-      echo "$name did not finish, so nothing more was run. What finished is kept. To go on: bash scripts/team_runs.sh heldout"
+      echo "$name did not finish, so nothing more was run. What finished is kept. To go on: bash scripts/team_runs.sh $mode"
       exit 1
     fi
     if grep -q '"stopped_after"' "data/compare/$name.json"; then
@@ -161,6 +177,31 @@ if [ "$mode" = heldout ]; then
       exit 1
     fi
   }
+fi
+if [ "$mode" = refine ]; then
+  echo
+  echo ">>> Two benches on $model, about 10 minutes. Run it again to go on if it is cut off:"
+  echo "    Files where a heading does not hold for every line, seed 111: 72 reviews, about \$0.09; it stops itself before \$0.15"
+  echo "    The reworks on the held-out tapes, with and without what the verifier said: about \$0.08; it stops itself before \$0.15"
+  echo "    Written before it ran: the heading sentence may lose at most 1 caught error of 18, and the reason must bring right"
+  echo "    at least twice as many wrong products as the plain brief, and talk at most 1 right one wrong, or 5%."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  held refine-heading 0.15 verify-bench --seed 111 --setups independent-layered,independent-both --arms heading \
+    --questions 6 --entities 20 --distractors 6 --context 8000
+  tapes=""
+  for seed in 101 102 103 104 105; do tapes="$tapes${tapes:+,}data/tapes/heldout-s$seed-10.jsonl,data/tapes/heldout-s$seed-20.jsonl"; done
+  held refine-rework 0.15 rework-bench --workers 4 --tapes "$tapes"
+  echo
+  echo "Done. Results: data/compare/refine-*.json   Tapes: data/tapes/refine-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = heldout ]; then
   echo
   echo ">>> Questions the rule has never seen, on $model, about 2.5 hours. Run it again to go on if it is cut off:"
   echo "    5 seeds (101 to 105), each: 24 questions at 10 companies, about \$0.27, stops itself before \$0.42;"

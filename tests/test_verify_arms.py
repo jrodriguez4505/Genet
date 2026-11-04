@@ -66,6 +66,8 @@ def test_the_planted_arm_plants_an_instruction_in_every_goal_file_and_nowhere_el
     suite = _suite(1)
     root = suite.write_corpus(tmp_path / "corpus")
     for key, (task, built) in _by_arm(suite).items():
+        if built.arm == "heading":
+            continue  # it plants a figure, in one file: tests/test_refine.py
         if built.arm != "planted":
             assert not built.plant and vb.corpus_for(built, root, tmp_path / "never") is root
             continue
@@ -116,7 +118,7 @@ def test_arms_on_the_sim_are_a_ceiling():
 def test_products_default_to_the_plain_arm_and_refuse_an_unknown_one():
     suite = _suite(1)
     assert [b.arm for _, _, b in vb.products(suite)] == ["plain"] * 4
-    assert len(vb.products(suite, vb.ARMS)) == 4 + 2 + 4 + 6
+    assert len(vb.products(suite, vb.ARMS)) == 4 + 2 + 4 + 6 + 6
     with pytest.raises(ValueError, match="arm"):
         vb.build(suite, suite.tasks[0], "right", arm="loud")
 

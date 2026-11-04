@@ -174,11 +174,28 @@ def run_bench(
     progress: Callable[[str], None] | None = None,
     stop_when: Callable[[list[MergeResult]], str] | None = None,
 ) -> list[MergeResult]:
-    """Every merge under every rule, rules interleaved so endpoint drift hits them alike, in the order listed whatever
-    order they finish in. A stop_when reason, or Ctrl-C, ends it before the next review; the reviews already made are
-    returned. Reviews under way count against stop_when at the largest so far, so a spend cap holds with workers too."""
+    """Every merge under every rule, rules interleaved so endpoint drift hits them alike. See run_jobs."""
     jobs = [(r, merge, rule) for r in range(repeats) for merge in merges for rule in rules]
-    done: dict[int, MergeResult] = {}
+
+    def work(job, adapter):
+        r, merge, rule = job
+        return review(merge, rule, adapter, r)
+
+    def mark(job, res):
+        _, merge, rule = job
+        ok = "ok " if res.verdict == ("PASS" if res.right else "FAIL") else "x  "
+        return (f"{ok}{rule:<7} {merge.tape[:8]:<8} {merge.task_id:<12} {'right' if merge.right else 'wrong'} {res.verdict:<5} "
+                f"was {merge.recorded:<5} {res.tokens / 1000:>5.1f}k tok {res.latency_s:>5.1f}s")
+
+    return run_jobs(jobs, work, mark, adapter_factory, workers=workers, progress=progress, stop_when=stop_when, noun="reviews")
+
+
+def run_jobs(jobs: list, work: Callable, mark: Callable, adapter_factory: Callable[[], ModelAdapter], *, workers: int = 1,
+             progress: Callable[[str], None] | None = None, stop_when: Callable[[list], str] | None = None, noun: str = "reviews") -> list:
+    """Each job with its own adapter, in the order listed whatever order they finish in. A stop_when reason, or Ctrl-C,
+    ends it before the next job; the results already made are returned. Jobs under way count against stop_when at the
+    largest so far, so a spend cap holds with workers too."""
+    done: dict = {}
     running: dict = {}
 
     def collect(finished) -> None:
@@ -186,15 +203,11 @@ def run_bench(
             i = running.pop(future)
             res = done[i] = future.result()
             if progress:
-                _, merge, rule = jobs[i]
-                mark = "ok " if res.verdict == ("PASS" if res.right else "FAIL") else "x  "
-                progress(f"[{len(done)}/{len(jobs)}] {mark}{rule:<7} {merge.tape[:8]:<8} {merge.task_id:<12} "
-                         f"{'right' if merge.right else 'wrong'} {res.verdict:<5} was {merge.recorded:<5} "
-                         f"{res.tokens / 1000:>5.1f}k tok {res.latency_s:>5.1f}s")
+                progress(f"[{len(done)}/{len(jobs)}] {mark(jobs[i], res)}")
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         try:
-            for i, (r, merge, rule) in enumerate(jobs):
+            for i, job in enumerate(jobs):
                 while len(running) >= max(1, workers):
                     collect(wait(running, return_when=FIRST_COMPLETED).done)
                 so_far = list(done.values())
@@ -202,16 +215,16 @@ def run_bench(
                 reason = stop_when(so_far + ([worst] * len(running) if worst else [])) if stop_when else ""
                 if reason:
                     if progress:
-                        progress(f"stopped after {len(done)} of {len(jobs)} reviews: {reason}")
+                        progress(f"stopped after {len(done)} of {len(jobs)} {noun}: {reason}")
                     break
-                running[pool.submit(review, merge, rule, adapter_factory(), r)] = i
+                running[pool.submit(work, job, adapter_factory())] = i
             while running:
                 collect(wait(running, return_when=FIRST_COMPLETED).done)
         except KeyboardInterrupt:
             for future in running:
                 future.cancel()
             if progress:
-                progress(f"interrupted after {len(done)} of {len(jobs)} reviews; the reviews in progress are not counted")
+                progress(f"interrupted after {len(done)} of {len(jobs)} {noun}; those in progress are not counted")
     return [done[i] for i in sorted(done)]
 
 

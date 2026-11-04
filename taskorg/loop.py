@@ -132,6 +132,11 @@ RETRY_NOTE = ("\nRETRY. Your last reply was not the JSON object the schema asks 
 MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
 MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
 REPORT_REASON_CHARS = 200
+REWORK_REASON_CHARS = 1200  # of what the verifier said, in the lead's rework brief
+REWORK_HEAD = "REWORK. The verifier failed the last product. "
+# What a call is told when a round of tools returned more than it can carry.
+ROUND_CUT = ("[{n} more tool requests not run: this call has no room for what they return. Work from what is above, "
+             "and name anything still missing rather than guess.]")
 
 # Reported up (team design part 8): with report_up on, a sub-agent may hand its part back with this request.
 REPLAN_REQUEST = "replan:"
@@ -240,6 +245,12 @@ def _aborts_on_error(method):
     return wrapper
 
 
+def rework_said(claim: str) -> str:
+    """What the lead's rework brief says of the verifier's reply. It names the fact and the file, which is what a
+    rework needs. Model output, so bounded, like everything a reply can put in a brief."""
+    return f"It said: {claim[:REWORK_REASON_CHARS]} "
+
+
 class Engine:
     """Graph owns authority. Adapter only fills artifacts.
 
@@ -269,6 +280,8 @@ class Engine:
         verify_sources: str = "layered",
         verify_sample: int = checks.SAMPLE,
         verify_note: str = checks.VERIFY_RULE,
+        rework_reason: bool = True,
+        author_note: str = "",
         report_up: bool = False,
         cards: bool = False,
     ):
@@ -295,6 +308,8 @@ class Engine:
         self.verify_sources = verify_sources
         self.verify_sample = max(0, int(verify_sample))
         self.verify_note = verify_note  # words after the source rule: checks.VERIFY_RULE, unless a bench or --verify-rule names others
+        self.rework_reason = rework_reason  # the lead's rework brief says why the verifier failed the product
+        self.author_note = author_note  # words for the lead's and sub-agents' briefs: checks.AUTHOR_RULES
         # A sub-agent may hand its part back when the plan is wrong for it. Off by default: it changes the sub-agent brief.
         self.report_up = report_up
         # The lead's plan brief carries a card for each position it can staff (part 7). Off by default: it
@@ -417,6 +432,8 @@ class Engine:
                 if context is None:
                     given = self.store.working_facts(run.id).get("context")
                     context = given if isinstance(given, str) and given else run.state.context
+        elif self.author_note and mode != "plan":
+            extra = f"{extra}\n{self.author_note}" if extra else self.author_note
         packet = self.store.scoped_brief(run.id, extra, channel_id=slot.channel_id, keep=keep)
         return Brief(
             slot_function=slot.function,
@@ -579,10 +596,19 @@ class Engine:
             if len(wanted) > MAX_TOOL_REQUESTS:
                 results.append(f"[{len(wanted) - MAX_TOOL_REQUESTS} more tool requests not run: at most {MAX_TOOL_REQUESTS} per round]")
                 wanted = wanted[:MAX_TOOL_REQUESTS]
-            for req in wanted:
+            for i, req in enumerate(wanted):
                 with self._lock:
                     run.assert_running()
+                held = set(have)
                 out = toolbox.run(req, have)
+                if self._round_overflows(run, brief, [*results, out], slot):
+                    # The call never sees this result, so nothing it holds or has read changes on its account.
+                    have.intersection_update(held)
+                    results.append(ROUND_CUT.format(n=len(wanted) - i))
+                    with self._lock:
+                        run._record("tool_round_cut", {"slot": slot.id if slot else brief.slot_function,
+                                                       "channel": brief.channel_id, "not_run": [str(r)[:200] for r in wanted[i:]]})
+                    break
                 results.append(out)
                 with self._lock:
                     run._record("tool", {
@@ -599,6 +625,17 @@ class Engine:
             with self._lock:
                 run._record("tool_rounds_exhausted", {"slot": slot.id if slot else brief.slot_function})
         return art
+
+    def _round_overflows(self, run: Run, brief: Brief, results: list[str], slot: Slot | None) -> bool:
+        """Would the next call, carrying these results and the note a cut leaves, pass the per-call cap? A round may
+        return more than one call can carry, and a run should go on with what fits rather than stop on what it asked for."""
+        if not run.budget:
+            return False
+        note = ROUND_CUT.format(n=MAX_TOOL_REQUESTS)
+        sized = replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join([*results, note]))
+        size = self.adapter.estimate_tokens(sized)
+        with self._lock:
+            return size + self._reply_room(run, slot) > run.budget.max_tokens_per_call
 
     def _current(self, run: Run, brief: Brief, slot: Slot | None) -> Brief:
         """Kept current (part 8): a member's next call carries the situation as it stands now, as the record
@@ -921,8 +958,8 @@ class Engine:
             product = self._act(run, self._brief(
                 run, "lead",
                 extra=(
-                    "REWORK. The verifier failed the last product. "
-                    f"Misses: {', '.join(misses) or 'none named'}. Last product: {product.claim[:400]}"
+                    REWORK_HEAD + (rework_said(check.claim) if self.rework_reason else "")
+                    + f"Misses: {', '.join(misses) or 'none named'}. Last product: {product.claim[:400]}"
                 ),
                 mode="rework",
             ), reserve=1)

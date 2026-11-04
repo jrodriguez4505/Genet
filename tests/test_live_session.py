@@ -151,6 +151,30 @@ def test_the_held_out_run_is_the_plan_it_shows(tmp_path: Path):
     assert all(c.endswith(f"key={KEY}") and KEY not in c.split(" key=")[0] for c in calls)
 
 
+def test_the_refine_run_is_the_plan_it_shows(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "refine")
+    calls = _calls(log)
+    assert len(calls) == 2 and "about $0.17" in out and "Done." in out and KEY not in out
+    heading, rework = calls
+    assert "verify-bench" in heading and "--seed 111 " in heading and "--arms heading" in heading and "independent-layered,independent-both" in heading
+    assert "--questions 6" in heading and "--entities 20" in heading and "--max-spend 0.15" in heading and "--record data/tapes/refine-heading.jsonl" in heading
+    assert "rework-bench" in rework and "--max-spend 0.15" in rework and "--record data/tapes/refine-rework.jsonl" in rework
+    assert ",".join(f"data/tapes/{name}.jsonl" for name in HELD) in rework
+    assert all(c.endswith(f"key={KEY}") and KEY not in c.split(" key=")[0] for c in calls)
+
+
+def test_the_refine_run_needs_a_y_and_goes_on_from_what_finished(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "refine") and _calls(log) == []
+    (tmp_path / "t").mkdir()
+    log, env = _held_tree(tmp_path / "t", STUB_DIES="refine-rework")
+    out = _session(tmp_path / "t", env, f"{KEY}\ny\n", "refine")
+    assert "refine-rework did not finish" in out and "scripts/team_runs.sh refine" in out and len(_calls(log)) == 2
+    out = _session(tmp_path / "t", env | {"STUB_DIES": "none"}, f"{KEY}\ny\n", "refine")
+    assert "refine-heading: already done" in out and "Done." in out and len(_calls(log)) == 3
+
+
 def test_the_held_out_run_needs_a_y(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     assert "Not run." in _held(tmp_path, env, f"{KEY}\nn\n") and _calls(log) == []

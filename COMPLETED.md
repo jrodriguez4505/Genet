@@ -2,6 +2,22 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.11.0 — November 2026: a lead told why, and rounds that fit
+
+**Why.** The run of 3 November left four things to try. Nobody had tested the heading sentence on files where a heading does not hold. The lead's rework brief never said what the verifier objected to, in 0 of 32 requests. A lead's own reads could overflow its next call and stop the run. And most wrong answers were an author refusing a figure that is in the file.
+
+**Built.**
+- **The verifier's reason in the rework brief** (`loop.py`), up to 1,200 characters. `--no-rework-reason` leaves it out, as tapes before this version recorded it.
+- **Rounds that fit.** A round's tool requests run one at a time, and the round stops when what it returned would not fit the next call, telling the lead how many did not run (`loop.py`).
+- **`--author-rule headed`** tells the lead and sub-agents the heading sentence. It is off by default until a whole run measures it.
+- **`rework-bench`** (`taskorg/rework_bench.py`). The tapes' reworks asked again, with and without the reason, product by product.
+- **The verify bench's `heading` arm.** Wrong figures from a section, a paragraph or a whole file that a heading does not cover, with the company's file always open.
+- **`scripts/team_runs.sh refine`.** Both benches, with their bars written before the run.
+
+**What the live run showed** (4 November, Haiku 5.5, $0.14). The heading sentence held: the default rule caught 24 of 24 wrong products against 23 of 24 for the source rule alone, and failed none of 12 right ones. Told the reason, leads put right 11 of 22 wrong products, against 3 for the same brief without it, and talked none of 8 right ones wrong. The same plain brief got 7 of 22 on the tapes, so the gain is likely smaller than that. See [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+
+**Left open.** Whether the further calls after a cut round reach right answers, and whether the sentence helps an author, wait for a whole run (questions 16 and 17 in [ARCHITECTURE.md](ARCHITECTURE.md)). Of the 11 reworks still wrong, 10 decline or leave out one company.
+
 ## v0.10.0 — November 2026: the verifier told what its sources are
 
 **Why.** On real merges the verifier failed about 1 right answer in 3. Two sentences nearly stopped that on the tapes that suggested one of them, so they waited for new questions.

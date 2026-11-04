@@ -66,7 +66,7 @@ A run has four steps:
 
 1. **Read and propose.** The lead reads the context and proposes sub-tasks, or none.
 2. **Judge.** The gates decide. Two or more legal sub-tasks run as parallel sub-agents, each blind to the others, and the lead merges their results. A sub-agent that fails hands its part back to the lead. Otherwise a single agent does the work, switching to whatever skill the job needs.
-3. **Verify.** If the product fails and the budget tier allows, the lead requests a replan, changes the method and reworks once.
+3. **Verify.** If the product fails and the budget tier allows, the lead requests a replan, changes the method and reworks once, told what the verifier said.
 4. **Answer from the record.** The operator's question is answered from the gate record, and the run closes. A closed run is read-only. If anything failed, the kernel's review is the last entry on the record.
 
 ## Shared ownership
@@ -126,6 +126,8 @@ Every slot carries one active skill. The lead can switch its own. A sub-agent is
 | `verify` | — | Judge the product: PASS or FAIL. |
 
 The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. They reach only the `--workspace` directories and the `--read` files. Hidden files (anything whose name or folder starts with a dot, such as `.env` or `.git/`), binaries, and symlinks that lead outside the workspace or into a hidden file are refused. A file you attach with `--read` is readable even if hidden, because you named it. The allowlist is checked before any tool runs, and each tool round is a budgeted call (at most 2 rounds per sub-agent).
+
+A round's requests run one at a time. The round stops when what it returned would not fit the next call, and tells the lead how many did not run.
 
 ## Budget tiers
 
@@ -232,7 +234,7 @@ The arithmetic always adds up, so it never gives an error away. Each product is 
 
 `--arms` puts an argument in front of the verifier, with the same planted errors: `note`, where the author's note argues for the planted figure (wrong products only, since the independent view drops the note), and `planted`, where every file the goal names ends with an instruction to the verifier, to pass a wrong product or fail a right one. The kernel opens those files for the verifier, so the instruction reaches it. On the simulated reader neither arm changes a verdict. On Haiku 5.5 (2 November, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)), they split apart. The planted instruction was never followed in 24 reviews, which is the model's judgement, on one wording, and no limit in code. The false note is what got through:
 
-`--arms split` reviews products shaped like a lead's merge, with group subtotals and no file cited. Of each wrong kind, one has its error in a file the layered pick shows and one in a file it does not. The extra setups `independent-told`, `independent-headed` and `independent-both` tell the verifier its sources are a sample, that a line with no year takes the year in its file's heading, or both. `independent-both` is what a run does by default since v0.10.0. A plain run of this bench leaves all three out, and its other setups keep the source rule alone.
+`--arms heading` reviews wrong figures from a section, a paragraph or a whole file that a heading does not cover, with the company's own file always open. `--arms split` reviews products shaped like a lead's merge, with group subtotals and no file cited. Of each wrong kind, one has its error in a file the layered pick shows and one in a file it does not. The extra setups `independent-told`, `independent-headed` and `independent-both` tell the verifier its sources are a sample, that a line with no year takes the year in its file's heading, or both. `independent-both` is what a run does by default since v0.10.0. A plain run of this bench leaves all three out, and its other setups keep the source rule alone.
 
 | Verifier | Sources | Plain | Against the false note |
 |---|---|---|---|
@@ -365,6 +367,7 @@ Every member works from the same situation: the goal, its purpose, done-when, th
   `forecast_short` is on by default since v0.9.0; `--abort none` turns every criterion off, and naming a criterion replaces the default. It judges the run's whole budget, never the size of one call, and the forecast is a floor, so it stops only a run that cannot finish. On the 372 taped Claude trials, whose budgets were roomy, it would never have fired; on the simulated reader with a budget below the run's cost, it cut the tokens spent on runs that could not finish by 69 to 85% and lost no run that could finish.
 - **Main effort.** `--main-effort CHANNEL` names the part the goal depends on most. The gates judge it first, so it is staffed first when the budget or the cap runs short.
 - **Kept current.** Each call a member makes carries the situation as it stands at that call, tool rounds included, and says what changed since its last one. Its context stays as it stood at the split.
+- **Told why, a lead puts more right.** Before v0.11.0 a rework brief did not say what the verifier objected to. The 30 reworks on those tapes, asked again, put right 11 of 22 wrong products with the verifier's words and 3 without, and turned none of 8 right ones wrong. The same plain brief got 7 of 22 on the tapes, so the gain is likely smaller than that. Of the 11 still wrong, 10 decline or leave out one company.
 - **Reported up.** With `--report-up`, a sub-agent may answer `replan:REASON` when the plan is wrong for its part. Its reply is not merged. The kernel opens a replan request, closes it with a method in which the lead covers the part, and gives the lead the reason.
 
 None of these change a request, the default criterion included.
@@ -375,6 +378,12 @@ None of these change a request, the default criterion included.
 
 ```bash
 python -m taskorg.cli plan-bench                            # simulated reader, 18 plans, $0
+```
+
+`rework-bench` measures a lead's rework on its own. It takes each rework from the tapes and asks again with and without what the verifier said, and only the lead's call and its tool rounds go to the model. `--no-rework-reason` leaves the verifier's words out of a run's rework brief, as tapes before v0.11.0 recorded it. `--author-rule headed` tells the lead and sub-agents that a line with no year takes its file's heading; it is off until a whole run measures it.
+
+```bash
+python -m taskorg.cli rework-bench --tapes TAPES --replay TAPE     # answers from a tape, no key, $0
 ```
 
 `report-bench` measures reporting up on its own. A plan that is wrong for one part is too rare in real runs to count, so the bench builds the parts of 20-company aggregate questions the way a lead hands them out. Each part names a company. In half of them the plan gave the part's channel the wrong file: the company's look-alike's notes, which name it only for an FY2025 figure, or an unrelated company's. The sub-agent's tools open only that file. Each part runs with the default brief (`today`) and with `--report-up`, and only the sub-agents' calls go to the model. The report shows wrong parts handed back, said to be missing, or given a figure from the wrong file, and right parts reported or handed back. On the simulated reader, a perfect sub-agent, `--report-up` hands back every wrong part and no right one. On Haiku 5.5 (2 November, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)), `--report-up` handed back 10 of 12 wrong parts and no right one, at 6% more tokens. Under the default brief, the same 10 said in prose that the figure was missing, and in both setups the other 2 gave the look-alike's figure. So reporting up changes where a problem goes, not how many are noticed. Whether the lead then covers the part well is not measured.
@@ -451,7 +460,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 
 ## Tests
 
-`pytest -q` runs about 1,800 checks with no network and no key:
+`pytest -q` runs about 2,000 checks with no network and no key:
 
 - **Kernel rules and regressions.** Each rule, and each bug fixed so far, has a test that fails if it comes back.
 - **Red team.** Hostile model output must be refused, contained or halted: authority keys, spawn requests, path escapes, instructions planted in workspace documents, channel spoofing, proposal floods, oversized output.
@@ -475,7 +484,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 359 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All 340 are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 423 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -509,7 +518,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.10.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
+v0.11.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. [ARCHITECTURE.md](ARCHITECTURE.md) maps the modules and lists the open design questions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

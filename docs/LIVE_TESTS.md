@@ -487,6 +487,62 @@ One right answer has no verdict under today's rule: its reply did not parse.
 
 All 590 reviews, and 449 of the 450 trials, replay with the same results. The other, the told crew on `aggregate-1` of seed 103, stops on size each time, after 6 or 8 calls against the 7 recorded. The likely cause is timing, since its sub-agents run in parallel. Its result does not change.
 
+## 4 November 2026: files a heading does not cover, and what the verifier said
+
+`bash scripts/team_runs.sh refine`, on Haiku 5.5 at effort `low`. Two benches on what the run of 3 November left open. It cost $0.14, against an estimate of $0.17 and a cap of $0.30, and neither bench reached its cap. Each bar was written at the top of the script before the run.
+
+### Does the heading sentence mislead where a heading does not hold?
+
+`verify-bench --arms heading`, on seed 111 with 20 companies: 36 built products, each reviewed under the source rule alone and under the default rule, 72 reviews, $0.08. Each wrong product takes a figure from a line its file's heading does not cover. The company's own file was open in every review.
+
+| The bar | Needed | Result |
+|---|---|---|
+| The source rule alone catches enough to tell | at least 9 of 18 | 17 |
+| Wrong products only the source rule alone fails | at most 1 | **0** |
+| Right products only the default rule fails | at most 1 | **0** |
+| Controls the default rule catches | at least 5 of 6 | **6** |
+
+| Product | Source rule alone | Default rule |
+|---|---|---|
+| A sub-heading says FY2025, caught | 6 of 6 | 6 of 6 |
+| A paragraph says last year, caught | 6 of 6 | 6 of 6 |
+| The file is headed FY2025, caught | 5 of 6 | 6 of 6 |
+| The line says FY2025 (the control), caught | 6 of 6 | 6 of 6 |
+| Right, failed | 0 of 12 | 0 of 12 |
+
+- **The sentence held.** It lost no catch, and failed no right product. The one difference runs the other way: a sum in a file headed FY2025, which the source rule alone passed.
+- **The catches name the line.** One reads "the 49.5 figure is from the '## FY2025 comparatives' section". Under the default rule 23 of 24 named the planted error, and the other failed its product over a different company's line.
+- **What this does not show.** The verifier read built products, on one seed, once each. Right products passed under both rules here, so this bench cannot show what the sentence is for, which the run of 3 November showed on real merges. It says nothing of how a lead or sub-agent reads the sentence.
+
+### Told why the verifier failed its product, does a lead put it right?
+
+`rework-bench`: all 30 reworks on the tapes of 3 November, each asked again with and without what the verifier said, 60 trials, $0.06. Before this, the brief said only "Misses: claim is not PASS". Only the lead's call and its tool rounds go to the model. Of the products, 22 were wrong before the rework and 8 right.
+
+| The bar | Needed | Result |
+|---|---|---|
+| Products wrong before, enough to tell | at least 10 | 22 |
+| Wrong products brought right, the reason against the plain brief | at least twice, and 3 more | **11 against 3** |
+| Those only the reason brings right, against only the plain brief | at least 3 times | **8 against 0** |
+| Right products only the reason turns wrong | at most 1, or 5% | **0 of 8** |
+
+| Brief | Wrong before, right after | Right before, still right | Tokens a rework |
+|---|---|---|---|
+| Plain, on the tapes | 7 of 22 | 7 of 8 | |
+| Plain, asked again | 3 of 22 | 8 of 8 | 4,352 |
+| **With the reason** | **11 of 22** | **8 of 8** | 4,459 |
+
+- **The reason cleared its bar.** Product by product it put 8 right that the plain brief did not, and the plain brief none that it did not (sign test, p about 0.008). It talked no right product wrong, though 8 is few.
+- **The same brief got 7 on the tape and 3 here, so the gain is likely smaller than 11 against 3.** All 30 first calls of the plain arm are the requests on the tape, byte for byte, with the same system prompt, effort and token limit. The difference is the model's answers varying. Together the two give 5 of 22. Against the tape alone, 11 to 7 would miss the "twice" part of the bar, though all 7 right on the tape are right with the reason too.
+- **What stays wrong is mostly a figure left out.** Of the 11 still wrong, 10 decline or leave out one company, such as "not determinable (nine-company sum 531.9 excludes Halvorsen Freight)". One gives a wrong figure. Being told why did not get those leads to take the figure.
+- **What this does not show.** No verifier saw these answers, so this is not how many would pass. Each arm asked once, on one model.
+
+### Built, with no paid test yet
+
+- **A round of reads fits the call that carries it.** A round's requests run one at a time, and the round stops when what it returned would not fit the next call, telling the lead how many did not run. Replayed on the tapes of 3 November, all 9 size stops of the told crew and Genet now send a further call that fits, about 5,400 to 6,200 tokens, and the single agent's 90 size stops all go on as well. The other 351 trials replay the same. A tape cannot say whether those further calls reach right answers.
+- **`--author-rule headed`** tells the lead and sub-agents the heading sentence, for the leads above who will not take a figure. The verifier's result above allows it, but cannot show it helps an author, so it is off until a whole run measures it.
+
+All 72 reviews and all 60 reworks replay with the same results.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.
