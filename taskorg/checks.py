@@ -52,6 +52,17 @@ SOURCE_RULE = (
     "of them covers, that file must support it for the same subject and period. If one does not, FAIL and "
     "name the fact and the file."
 )
+# The verifier told what a layered pick is. Off by default: the verify bench measures what it saves and costs.
+SAMPLE_RULE = (
+    " These files are a sample: the kernel opened only some of what the product draws on. A fact that no file "
+    "here covers is not a fault, so do not FAIL a product because a figure could not be confirmed or a file was "
+    "not opened. FAIL for a fact a file here contradicts, or a product that does not answer the goal."
+)
+# How to read a source's undated line. Off by default, for the same benches: half the failures of right merges cite one.
+HEADING_RULE = (
+    " A file's heading applies to its lines: a line that gives no year takes the year in the heading, unless it "
+    "says otherwise."
+)
 
 _READ_HEAD = re.compile(r"\[read ([^\]\n]+)\](?:\n| already in full above)")
 _MATCH_LINE = re.compile(r"^([^\[\n:][^\n:]*):\d+: ", re.MULTILINE)

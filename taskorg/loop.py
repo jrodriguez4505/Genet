@@ -268,6 +268,7 @@ class Engine:
         verify_view: str = "independent",
         verify_sources: str = "layered",
         verify_sample: int = checks.SAMPLE,
+        verify_note: str = "",
         report_up: bool = False,
         cards: bool = False,
     ):
@@ -293,6 +294,7 @@ class Engine:
         self.verify_view = verify_view
         self.verify_sources = verify_sources
         self.verify_sample = max(0, int(verify_sample))
+        self.verify_note = verify_note  # words after the source rule, for the benches: checks.SAMPLE_RULE, HEADING_RULE
         # A sub-agent may hand its part back when the plan is wrong for it. Off by default: it changes the sub-agent brief.
         self.report_up = report_up
         # The lead's plan brief carries a card for each position it can staff (part 7). Off by default: it
@@ -817,6 +819,17 @@ class Engine:
             self.store.remember_working(run.id, f"channel:{worker.channel_id}", art.claim)
         return arts
 
+    def _left_out(self, run: Run, verdicts: list[Assessment]) -> list[str]:
+        """Files the goal names that no part names: one lead's second plan named 15 of 20, and left out the one with
+        the right answer. Nothing when a sub-agent's files are unknown, for it can open any."""
+        covered: set[str] = set()
+        for v in verdicts:
+            files = self._material(v.subtask)
+            if files is None and v.legal:
+                return []
+            covered |= {self.toolbox._shown(Path(p)) for p in files or {}}
+        return [n for n in checks.named_in(run.state.goal, self.toolbox.shown_files()) if n not in covered]
+
     def _cover(self, run: Run, verdicts: list[Assessment], failed: list[str], reported: dict[str, str] | None = None) -> str:
         """Parts the lead covers in the merge: refused for capacity or a malformed proposal, or whose
         sub-agent failed or handed it back. Gives the lead a skill that can read, and returns the brief
@@ -825,7 +838,10 @@ class Engine:
         # Proposals past the cap were never judged, so they have no verdict; their parts are the lead's too.
         past = next((e.detail for e in reversed(run.since_last_plan()) if e.event == "gate_overflow"), None)
         unjudged = past["proposed"] - past["considered"] if past else 0
-        if not refused and not failed and not unjudged and not reported:
+        left = self._left_out(run, verdicts)
+        if left:
+            run._record("files_left_out", {"files": left})
+        if not refused and not failed and not unjudged and not reported and not left:
             return ""
         lead = run.state.lead_id
         run.switch_skill(lead, lead, self._single_agent_skill([]), "merge and cover parts no sub-agent finished")
@@ -839,6 +855,10 @@ class Engine:
                      + "; ".join(f"{ch} (its reason: {why})" for ch, why in reported.items()) + ".")
         if unjudged:
             text += f" {unjudged} more proposed part(s) came past the cap of {MAX_PROPOSALS} and are yours to cover too."
+        if left:
+            # In its own words, not an order to read: a figure already filed in the context needs no second reading.
+            text += (" The goal names these files and no part covers them, so they are yours to cover, unless the "
+                     f"context already gives what they hold: {', '.join(left)}.")
         return text
 
     def _calls_left(self, run: Run) -> int:
@@ -864,7 +884,7 @@ class Engine:
         def with_sources(kept: list[str]) -> str:
             more = len(blocks) - len(kept)
             note = f"\n[{more} more source(s) not shown: over the per-call limit]" if more else ""
-            return extra + f"\n{checks.SOURCES_HEAD}\n" + "\n\n".join(kept) + note + f"\n{checks.SOURCE_RULE}"
+            return extra + f"\n{checks.SOURCES_HEAD}\n" + "\n\n".join(kept) + note + f"\n{checks.SOURCE_RULE}{self.verify_note}"
 
         shown: list[str] = []
         for block in blocks:

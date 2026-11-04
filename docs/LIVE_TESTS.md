@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room (3 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 3 November's as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room, two benches and the verifier on real merges (3 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 3 November's as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -387,6 +387,63 @@ After the last run the independent view became the default, and the size note ga
 - **A new stop: a malformed merge.** `breadth-2`'s lead wrote the right answer twice, in replies that were not JSON: one closed a list with `}`, and the other wrote `\$`. One retry is all a reply gets, so the run stopped with no answer. The fixes did not touch this. On the tapes of 2 and 3 November 8 of 1,428 replies were not JSON as sent, and this stopped 2 of 284 trials, this one and a crew's. This is open.
 - **The false failures continue, and were more common.** 4 of the 5 runs that reached the right answer had a FAIL on it. A rework passed 3, and 1 stopped. The verifier's brief has the same form as before, and it gives the same reason: the layered pick opens 2 of the 20 files, and the verifier reads the rest as unsupported. Under the independent view that makes 12 of 46 split runs, and 7 stopped.
 - **Still no wrong answer got through.** Every finished run was right. The tape replays on this code with no request missing and the same results, twice.
+
+## 3 November 2026: the second plan, and the verifier after a split
+
+`bash scripts/team_runs.sh next`, on Haiku 5.5 at effort `low`, two benches at an 8,000-token cap. It cost $0.10 with its smoke test, against an estimate of $0.10 and caps of $0.20.
+
+### Told why its plan was refused, does a lead write one that fits?
+
+`plan-bench` hands the run a first plan the gates refuse, and only the lead's second planning call goes to the model. It stops at the plan, so no sub-agent worked. 6 questions at 20 companies, 3 shapes, $0.02.
+
+| First plan's groups | Plans | Refused, so asked again | Second plan admitted | And it covers every file |
+|---|---|---|---|---|
+| 8, 7, 5 files | 6 | 6 | 6 | 6 |
+| 10, 10 files | 6 | 6 | 6 | 6 |
+| 7, 7, 6 files | 6 | 6 | 6 | 5 |
+
+- **It fits.** All 18 second plans were admitted, and 17 were 4 groups of 5 files, the plan most leads write first. A plan cost about 3,500 tokens, about $0.001.
+- **One plan left files out, and the gates admitted it.** On `breadth-3`, the lead named 15 of the 20 files, leaving out Redfern Analytics, the question's right answer. The gates measure what a part names, not what a plan leaves out. None of 78 first plans on the tapes by leads told the sizes did this, so it may belong to replanning. Files like these now go to the lead to cover in the merge.
+- **What this does not show.** The first plan was the bench's, not the lead's own, and no run has yet gone on from a second plan to an answer.
+
+### Told its sources are a sample, does the verifier stop failing right answers?
+
+`verify-bench --arms split` reviews products shaped like a lead's merge: group subtotals, no file cited, and an uncertainty saying the lead opened no file. 6 questions at 20 companies, 36 products, each reviewed under both rules, 72 reviews, $0.08. Today's rule is `independent-layered`. `independent-told` adds that the files are a sample, and that a figure no file covers is no reason to FAIL.
+
+| Rule | Right products failed | Errors caught, file shown | Errors caught, file not shown |
+|---|---|---|---|
+| Today's | 0 of 12 | 12 of 12 | 0 of 12 |
+| Told it is a sample | 0 of 12 | 12 of 12 | 0 of 12 |
+
+- **The bench did not reproduce the false failures.** Today's rule failed none of 12 clean right products. On the real merges on the tapes it failed 32 of 104 right answers. So this says nothing about whether the note stops them, and the note stays off. It does show the note did no harm to these catches.
+- **On a clean product the verifier is an exact check of what it is shown.** Every error in a file it was shown was caught, naming the company. No error in a file it was not shown was. So a pass after a split, with 2 of 20 files open, says little about the other 18.
+- **What real merges have that these lack, read from the tapes and not tested.** 16 of the 32 failures cite a year or quarter label, such as an `April–June` figure with no FY2026 beside it, though the file is headed FY2026. By a rough word match, products that voice a doubt of their own failed 18 of 38, against 14 of 66 for the rest. So a sub-agent's doubt may travel through the merge to the verifier. The next run tests this on the real merges.
+
+Both tapes replay on this code with no request missing and the same results.
+
+## 3 November 2026: the verifier on the real merges
+
+`bash scripts/team_runs.sh merges`, on Haiku 5.5 at effort `low`. `merge-bench` takes the verifier's requests from the tapes of 2 and 3 November, every review of a product after a split under the independent view, and asks again under each rule. That is 123 reviews, 104 of right answers and 19 of wrong ones, under 4 rules, 492 calls. It then ran the built products under the two new rules, 72 reviews. It cost $0.56, against an estimate of $0.64 and caps of $1.00.
+
+The rules add sentences after the source rule. `told` says the files are a sample, and a figure no file covers is no reason to FAIL. `headed` says a line with no year takes the year in its file's heading. `both` says both.
+
+| Rule | Right answers failed | Failed when recorded, failed again | Passed when recorded, failed now | Wrong answers caught | Wrong answers passed |
+|---|---|---|---|---|---|
+| Today's | 34 of 104 | 22 of 32 | 12 of 71 | 18 of 19 | 0 |
+| Told | 7 of 104 | 4 of 32 | 3 of 71 | 17 of 19 | 1 |
+| Headed | 23 of 104 | 16 of 32 | 7 of 71 | 18 of 19 | 0 |
+| **Both** | **3 of 104** | 3 of 32 | **0 of 71** | **18 of 19** | **0** |
+
+- **This bench reproduced the false failures.** Today's rule failed 34 of 104, against 32 when recorded, so the comparison is fair where the clean products were not.
+- **The two sentences together nearly stopped them.** Product by product, today's rule failed 31 that `both` passed, and `both` failed none that today's passed.
+- **Most of it is being told the files are a sample.** That alone took failures from 34 to 7. The heading alone took them to 23. `told` alone also let one wrong answer through, on `compare-2`, where `both` did not. One wrong answer in 19 reviews cannot separate them.
+- **The 3 still failed look like fair failures.** Each is a right answer on a weak product: two rest on a figure the product itself says may be a look-alike's, and one ranks "the parts checked so far", 4 of 10 companies.
+- **Wrong answers were still caught.** Under `both`, 18 of 19 were caught and none passed. The other one has no verdict under any rule: at about 7,000 tokens the brief leaves too little for the reply, and it is cut off.
+- **The built products agree.** Under `headed` and under `both`: none of 12 right ones failed, all 12 errors in a file shown were caught, naming the company, and none of 12 in a file not shown. So this does not make a pass check more: it only stops failures that no source supports.
+- **A verdict is noisy.** Under today's rule, asked again about the same right answer, the verifier gave the same verdict 81 times of 103. So any one run's false failures are partly chance.
+- **What this does not show.** The heading sentence came from reading these same merges, so `both` is tested here on the products that suggested it. It needs new questions. It is one review of each product under each rule, on one model. The 19 wrong answers are mostly a crew's, and their errors are mostly plain to see. The rule stays off until new questions confirm it.
+
+All the tapes replay on this code with no request missing and the same results.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

@@ -6,6 +6,7 @@ shown, neither changes a verdict; what a model does with them is for a live run.
 """
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -97,7 +98,7 @@ def test_a_planted_review_opens_the_planted_file_and_the_plain_corpus_stays_clea
 def test_arms_on_the_sim_are_a_ceiling():
     """A perfect checker of what it is shown reads a note as a note and an instruction as text."""
     summary = vb.summarize(vb.run_bench(_suite(3), SimModel, setups=("shared-layered", "independent-full"),
-                                        arms=vb.ARMS, budget_factory=lambda: comparison_budget(4, 200_000)))
+                                        arms=("plain", "note", "planted"), budget_factory=lambda: comparison_budget(4, 200_000)))
     s = summary["setups"]
     assert set(s) == {"shared-layered", "shared-layered / note", "shared-layered / planted",
                       "independent-full", "independent-full / note", "independent-full / planted"}
@@ -115,7 +116,7 @@ def test_arms_on_the_sim_are_a_ceiling():
 def test_products_default_to_the_plain_arm_and_refuse_an_unknown_one():
     suite = _suite(1)
     assert [b.arm for _, _, b in vb.products(suite)] == ["plain"] * 4
-    assert len(vb.products(suite, vb.ARMS)) == 4 + 2 + 4
+    assert len(vb.products(suite, vb.ARMS)) == 4 + 2 + 4 + 6
     with pytest.raises(ValueError, match="arm"):
         vb.build(suite, suite.tasks[0], "right", arm="loud")
 
@@ -195,3 +196,112 @@ def test_a_run_that_cannot_finish_stops_at_its_plan_by_default(tmp_path):
     off, code_off = attempt([])
     assert code == "ABORT" and len(default.calls) == 1 and "forecast_short" in default.review["what_failed"][0]
     assert code_off == "BUDGET" and len(off.calls) > len(default.calls)
+
+
+# --- the split arm, and the verifier told its sources are a sample
+
+
+def _split(questions=2):
+    return [x for x in vb.products(_suite(questions), ("split",))]
+
+
+def test_a_split_product_reads_as_a_merge_and_adds_up():
+    for task, variant, built in _split():
+        p = built.product
+        assert built.arm == "split" and p.uncertainty == vb.SPLIT_UNCERTAINTY
+        groups = re.findall(r"group-[a-d] ([\d.]+) \(([^)]*)\)", p.claim)
+        assert len(groups) == vb.SPLIT_GROUPS and len(p.evidence) == vb.SPLIT_GROUPS
+        figures = [float(f.rsplit(" ", 1)[1]) for _, names in groups for f in names.split(", ")]
+        assert len(figures) == len(task.entities)
+        for subtotal, names in groups:
+            assert abs(float(subtotal) - sum(float(f.rsplit(" ", 1)[1]) for f in names.split(", "))) < 0.05
+        total = re.search(r"ANSWER: ([\d.]+)$", p.claim).group(1)
+        assert abs(float(total) - sum(figures)) < 0.05
+        # As after a real split: the lead cites its sub-agents, not a file, and the run read them all.
+        assert ".md" not in p.claim and not any(".md" in e for e in p.evidence)
+        assert sorted(built.read) == sorted(f"{slug(n)}.md" for n in task.entities)
+
+
+def test_each_question_has_every_split_product_with_its_error_where_the_variant_asks():
+    suite = _suite()
+    items = vb.products(suite, ("split",))
+    assert len(items) == 2 * len(vb.SPLIT_VARIANTS)
+    assert len({b.product.claim for _, _, b in items}) == len(items)
+    for task, variant, built in items:
+        if built.kind == "right":
+            assert built.error is None and str(task.answer) in built.product.claim
+            continue
+        own = built.error["own"]
+        assert (own in vb._drawn(suite, task, built.product, built.read)) == (variant == 0)
+        assert str(built.error["stated"]) in built.product.claim
+        assert built.error["stated"] != built.error["true"]
+
+
+def test_a_split_product_it_cannot_place_is_left_out():
+    suite = _suite(1)
+    task = suite.tasks[0]
+    original = vb.SPLIT_TRIES
+    vb.SPLIT_TRIES = 0
+    try:
+        assert vb.build(suite, task, "wrong-year", 0, "split") is None
+    finally:
+        vb.SPLIT_TRIES = original
+    assert vb.build(suite, task, "right", 0, "split") is not None
+
+
+def test_a_perfect_checker_catches_only_what_it_was_shown(tmp_path: Path):
+    """The simulated reader fails what a file it was shown contradicts, and cannot fail what it was not shown. So
+    this is what a check that never refuses looks like, and the line a real verifier is measured against."""
+    results = vb.run_bench(_suite(), SimModel, setups=("independent-layered", "independent-told"), arms=("split",),
+                           budget_factory=lambda: comparison_budget(4, 8_000))
+    assert len(results) == 2 * 2 * len(vb.SPLIT_VARIANTS)
+    for r in results:
+        if r.kind != "right":
+            assert r.error_shown == (r.variant == 0) and r.sources_shown == 2
+    summary = vb.summarize(results)["setups"]
+    for label in ("independent-layered / split", "independent-told / split"):
+        assert summary[label]["false_fail"] == 0 and summary[label]["caught_shown"] == 1 and summary[label]["caught_unseen"] == 0
+    text = vb.render(vb.summarize(results))
+    assert "| independent-told / split | 0% | 100% | 0% |" in text and "wrong caught, its file not shown" in text
+    assert "not shown" not in vb.render(vb.summarize([r for r in results if r.arm != "split"]))
+
+
+class _Reads(ModelAdapter):
+    def __init__(self):
+        self.packets = []
+
+    def act(self, brief):
+        self.packets.append(brief.packet)
+        return Artifact(claim="PASS. Fine.", evidence=[], uncertainty="", channel_id="", context_update="", requests=[])
+
+
+def test_only_the_told_setup_tells_the_verifier_its_sources_are_a_sample(tmp_path: Path):
+    from taskorg.checks import HEADING_RULE, SAMPLE_RULE, SOURCE_RULE
+
+    suite = _suite(1)
+    root = suite.write_corpus(tmp_path / "corpus")
+    task, _, built = vb.products(suite, ("split",))[0]
+    said = {}
+    for setup in vb.SETUPS:
+        reads = _Reads()
+        vb.review_trial(task, built, setup, reads, root, budget=comparison_budget(4, 8_000))
+        said[setup] = reads.packets[-1]
+    assert SAMPLE_RULE in said["independent-told"] and said["independent-told"].count(SOURCE_RULE) == 1
+    assert HEADING_RULE in said["independent-headed"] and SAMPLE_RULE not in said["independent-headed"]
+    assert SOURCE_RULE + SAMPLE_RULE + HEADING_RULE in said["independent-both"]
+    for setup in vb.DEFAULT_SETUPS:
+        assert SAMPLE_RULE not in said[setup] and HEADING_RULE not in said[setup]
+    # The same brief as independent-layered, but for the sentences.
+    for setup, note in vb.TOLD.items():
+        assert said[setup].replace(note, "") == said["independent-layered"]
+
+
+def test_a_plain_run_of_the_bench_leaves_out_the_told_setup(tmp_path: Path):
+    assert vb.DEFAULT_SETUPS == ("today", "shared-full", "shared-layered", "independent-full", "independent-layered")
+    assert set(vb.SETUPS) - set(vb.DEFAULT_SETUPS) == set(vb.TOLD)
+    out = tmp_path / "v.json"
+    assert main(["verify-bench", "--adapter", "sim", "--questions", "1", "--out", str(out)]) == 0
+    assert json.loads(out.read_text())["config"]["setups"] == list(vb.DEFAULT_SETUPS)
+    results = vb.run_bench(_suite(1), SimModel, budget_factory=lambda: comparison_budget(4, 200_000))
+    assert {r.setup for r in results} == set(vb.DEFAULT_SETUPS)
+    assert Engine(MemoryStore(tmp_path / "s")).verify_note == ""

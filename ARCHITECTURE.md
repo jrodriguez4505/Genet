@@ -49,7 +49,7 @@ Code decides everything else: who is on the team, which tools run, and what is s
    - **Should we:** needs a named failure plus a measured reason. The reason is either declared isolation, or material that does not fit in one call. `Toolbox.material` measures the material from file sizes. A part must fit a sub-agent's own call: `Engine._part_overhead` counts its brief, what reading adds to its files, and the room its reply needs.
    - **Could we:** needs a known skill and a usable channel, a tier that allows a split, a budget for the sub-agents plus merge and verify, and room under the cap of 4.
 
-   Every proposal gets a `GateRecord`, legal or not. A plan refused because a part is too big gets one more planning call, told what was measured (`Engine._second_plan`), when a split could still be paid for. The first plan stays on the record and leaves the shared context.
+   Every proposal gets a `GateRecord`, legal or not. A plan refused because a part is too big gets one more planning call, told what was measured (`Engine._second_plan`), when a split could still be paid for. The first plan stays on the record and leaves the shared context. Files the goal names that no part names go to the lead in the merge (`Engine._left_out`).
 4. **Staff and work** (`Engine._staff`, `_run_workers`, `_act`).
    - With two or more legal sub-tasks:
      - `Run.set_roster` adds one sub-agent per gate record (INV-1, INV-8).
@@ -103,8 +103,10 @@ Every model call goes through `Engine._call`:
 | | `tape.py` | Records every live exchange and replays it with no key and no spend. |
 | Measurement | `compare.py` | A single agent, an always-split crew and Genet side by side, graded against ground truth. |
 | | `suite.py` | The seeded synthetic task suite. |
-| | `verify_bench.py` | The verifier on its own: planted errors under five setups. |
+| | `verify_bench.py` | The verifier on its own: planted errors under eight setups. |
 | | `report_bench.py` | A sub-agent on its own: parts with a planted plan error, with `--report-up` and without. |
+| | `plan_bench.py` | A lead's second plan on its own: first plans the gates refuse, and the lead's next. |
+| | `merge_bench.py` | The verifier on the tapes' real merges, under each rule. |
 | | `bench.py`, `diagnostics.py` | Fixtures scored on the run's graph; health and audit of a run. |
 | Operator | `cli.py`, `persist.py`, `atomic.py` | Commands; saving and loading runs, older formats included; writes that land whole. |
 | Experiment, not used in runs | `policy.py`, `imitate.py`, `rl.py`, `finetune.py` | A socket for a learned policy head that could propose in place of the lead, and experiments to train one. It has no path to the roster. |
@@ -147,8 +149,8 @@ Every model call goes through `Engine._call`:
 
 ## How it is tested
 
-- 1,723 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 297 rules one at a time, and a test catches each.
+- 1,800 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- `scripts/mutation_check.py` breaks 340 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
@@ -168,8 +170,9 @@ Every model call goes through `Engine._call`:
 11. **Should the gates count what a split leaves for the lead?** They admit up to 4 sub-agents and hand the rest to the lead. A lead that plans one part per file at 20 companies then cannot fit the other 16 in its merge call. Haiku grouped its files and got by, but nothing makes a lead do that.
 
 12. **Should the room a sub-agent keeps be measured for each model?** A sub-agent's call now keeps 1,500 tokens for its reply, or its own largest so far, and no longer counts the lead's plan reply. The figure comes from Haiku 5.5, whose replies after reading had a 90th percentile of 1,352 to 1,609 at every cap. On the 3 November run 5 of 24 such replies passed 1,500, with the largest at 1,841, and none was cut off, because no call came near the cap. Sonnet 5.5's ran far lower, with a 90th percentile of 614, and nothing has measured another model.
-13. **Does a second plan work on a real model?** A plan with a part too big now gets one more try, told what the gates measured. It costs about $0.001, and on the tapes it reaches the plans that needed it. On the only live run since, all 6 leads planned parts that fit, so no real lead has written a second plan yet.
+13. **Does a second plan hold up in a run?** On a bench, Haiku's lead, handed first plans the gates refuse, wrote 18 second plans, and the gates admitted all 18. The bench stops at the plan, and no lead's own first plan in a run has needed a second yet.
 14. **What should a malformed merge do?** A lead's merge reply was malformed twice, and the run stopped, though both replies held the right answer. One closed a list with `}` and the other wrote `\$`. On the tapes of 2 and 3 November 8 of 1,428 replies were not JSON as sent, and this stopped 2 of 284 trials. Accepting the common slips, or asking the API for structured output, would each change what a reply may be, so neither is built.
+15. **Should the verifier be told what its sources are?** On the real merges on the tapes, under today's rule it failed 34 of 104 right answers and caught 18 of 19 wrong ones. Told that its files are a sample, and that a line with no year takes its file's heading, it failed 3 and caught the same 18, and it passed no wrong answer. A pass still checks only the files opened: an error in a file not shown got through under every rule. One of those sentences came from reading these same merges, so it needs new questions before it becomes the default. Is that the right test, and is a verifier that passes what it cannot check what you would want after a split?
 
 ## Not built yet
 

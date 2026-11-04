@@ -19,7 +19,9 @@ from .situation import DEFAULT_ABORT, parse_abort
 from .subtasks import parse_subtasks
 from .tools import Toolbox
 from .report_bench import SETUPS as REPORT_SETUPS
-from .verify_bench import ARMS as VERIFY_ARMS, SETUPS as VERIFY_SETUPS
+from .merge_bench import RULES as MERGE_RULES
+from .plan_bench import SHAPES as PLAN_SHAPES
+from .verify_bench import ARMS as VERIFY_ARMS, DEFAULT_SETUPS as VERIFY_DEFAULT_SETUPS, SETUPS as VERIFY_SETUPS
 
 
 DEFAULT_GUIDELINES = """# Genet guidelines (v1)
@@ -412,10 +414,11 @@ def main(argv: list[str] | None = None) -> int:
     p_v = sub.add_parser("verify-bench", help="does the verifier catch a wrong product? products with planted errors")
     p_v.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
                      help="sim: a perfect checker of what it is shown, at $0; live or anthropic: a real model")
-    p_v.add_argument("--setups", default=",".join(VERIFY_SETUPS), help=f"from {', '.join(VERIFY_SETUPS)}")
+    p_v.add_argument("--setups", default=",".join(VERIFY_DEFAULT_SETUPS),
+                     help=f"from {', '.join(VERIFY_SETUPS)}; default {', '.join(VERIFY_DEFAULT_SETUPS)}")
     p_v.add_argument("--arms", default="plain", help=f"from {', '.join(VERIFY_ARMS)}: plain; note, where the author's note "
                      "argues for the planted figure (wrong products only); planted, where every file the goal names "
-                     "carries an instruction to the verifier")
+                     "carries an instruction to the verifier; split, products shaped like a lead's merge")
     p_v.add_argument("--questions", type=_whole(1), default=6, help="aggregate questions; four products each, two wrong")
     p_v.add_argument("--entities", type=_whole(2), default=20, help="companies per question")
     p_v.add_argument("--distractors", type=_whole(0), default=6, help="extra wrong-year figures per company")
@@ -433,6 +436,45 @@ def main(argv: list[str] | None = None) -> int:
     p_v.add_argument("--out", default=None, help="results JSON (default data/compare/verify-<time>.json)")
     p_v.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
     p_v.set_defaults(func=cmd_verify_bench)
+
+    p_m = sub.add_parser("merge-bench", help="does the verifier fail a real merge? the tapes' merges, reviewed under each rule")
+    p_m.add_argument("--tapes", required=True, help="the tapes to take merges from, comma separated")
+    p_m.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
+                     help="sim: at $0; live or anthropic: a real verifier")
+    p_m.add_argument("--rules", default=",".join(MERGE_RULES), help=f"from {', '.join(MERGE_RULES)}")
+    p_m.add_argument("--repeat", type=_whole(1), default=1)
+    p_m.add_argument("--workers", type=_whole(1), default=1, help="reviews at the same time")
+    p_m.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens")
+    p_m.add_argument("--price-out", type=_finite(0, strict=False), default=None, help="$ per 1M output tokens")
+    p_m.add_argument("--max-spend", type=_finite(0, strict=True), default=None,
+                     help="$ cap: stop before a review that could pass it (needs --price-in and --price-out)")
+    p_m.add_argument("--record", default=None, help="save every model exchange to this tape")
+    p_m.add_argument("--replay", default=None, help="answer from this tape: no key, no spend")
+    p_m.add_argument("--out", default=None, help="results JSON (default data/compare/merges-<time>.json)")
+    p_m.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
+    p_m.set_defaults(func=cmd_merge_bench)
+
+    p_p = sub.add_parser("plan-bench", help="does a second plan fit? first plans the gates refuse, and the lead's next")
+    p_p.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
+                     help="sim: at $0; live or anthropic: a real lead")
+    p_p.add_argument("--shapes", default=",".join(PLAN_SHAPES), help=f"first plans, from {', '.join(PLAN_SHAPES)}")
+    p_p.add_argument("--questions", type=_whole(1), default=3, help="questions of each family, aggregate and breadth")
+    p_p.add_argument("--distractors", type=_whole(0), default=6, help="extra wrong-year figures per company")
+    p_p.add_argument("--repeat", type=_whole(1), default=1)
+    p_p.add_argument("--seed", type=int, default=7)
+    p_p.add_argument("--max-calls", type=_whole(1), default=40, help="per-trial call cap, as a run's")
+    p_p.add_argument("--context", type=_whole(1), default=8_000, help="per-call token cap")
+    p_p.add_argument("--tool-rounds", type=_whole(0), default=4, help="tool rounds a sub-agent would get")
+    p_p.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens")
+    p_p.add_argument("--price-out", type=_finite(0, strict=False), default=None, help="$ per 1M output tokens")
+    p_p.add_argument("--max-spend", type=_finite(0, strict=True), default=None,
+                     help="$ cap: stop before a plan that could pass it (needs --price-in and --price-out)")
+    p_p.add_argument("--record", default=None, help="save every model exchange to this tape")
+    p_p.add_argument("--replay", default=None, help="answer from this tape: no key, no spend")
+    p_p.add_argument("--corpus", default=None, help="also write the corpus here, to read it")
+    p_p.add_argument("--out", default=None, help="results JSON (default data/compare/plan-<time>.json)")
+    p_p.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
+    p_p.set_defaults(func=cmd_plan_bench)
 
     p_r = sub.add_parser("report-bench", help="does a sub-agent hand back a part the plan got wrong? parts with planted errors")
     p_r.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
@@ -664,6 +706,130 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
         if recorder:
             recorder.close()
     if len(results) < reviews:
+        config["stopped_after"] = len(results)
+    summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
+    save(out, config=config, results=results, summary=summary)
+    print(render(summary))
+    if player:
+        print(f"replay: {player.served} replies served ({player.repeated} repeated), "
+              f"{player.misses} requests the tape does not have")
+    if recorder:
+        print(f"tape: {recorder.count} exchanges saved to {args.record}")
+    print(f"saved {out}")
+    return 0
+
+
+def cmd_merge_bench(args: argparse.Namespace) -> int:
+    import time
+
+    from .compare import spend_cap, stderr
+    from .merge_bench import merges_from, render, run_bench, save, summarize
+
+    rules = tuple(dict.fromkeys(r.strip() for r in args.rules.split(",") if r.strip()))
+    bad = set(rules) - set(MERGE_RULES)
+    if not rules or bad:
+        raise InvariantError("MERGE_BENCH", f"name rules from {list(MERGE_RULES)}" + (f"; unknown: {sorted(bad)}" if bad else ""))
+    if (args.price_in is None) != (args.price_out is None):
+        raise InvariantError("MERGE_BENCH", "give both --price-in and --price-out, or neither")
+    if args.max_spend is not None and args.price_in is None:
+        raise InvariantError("MERGE_BENCH", "--max-spend needs --price-in and --price-out")
+    if args.record and args.replay:
+        raise InvariantError("MERGE_BENCH", "--record or --replay, not both")
+    tapes = [t.strip() for t in args.tapes.split(",") if t.strip()]
+    missing = [t for t in tapes if not Path(t).is_file()]
+    if not tapes or missing:
+        raise InvariantError("MERGE_BENCH", f"--tapes names no tape it can read: {missing or 'none given'}")
+    merges = [m for t in tapes for m in merges_from(Path(t))]
+    if not merges:
+        raise InvariantError("MERGE_BENCH", "those tapes hold no merge reviewed under the independent view with sources")
+    reviews = len(merges) * len(rules) * args.repeat
+    out = _out_path(args.out, Path(f"data/compare/merges-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    config = {
+        "adapter": "replay" if args.replay else args.adapter, "rules": list(rules), "tapes": [Path(t).name for t in tapes],
+        "merges": len(merges), "right": sum(m.right for m in merges), "recorded_fail": sum(m.right and m.recorded == "FAIL" for m in merges),
+        "repeat": args.repeat, "reviews": reviews,
+    }
+    if args.price_in is not None:
+        config |= {"price_in": args.price_in, "price_out": args.price_out}
+    if args.max_spend is not None:
+        config["max_spend"] = args.max_spend
+    if args.dry_run:
+        print(json.dumps(config, indent=2))
+        return 0
+    factory, player, recorder = _model_source(args, config, "merge_bench", "MERGE_BENCH", ("rules", "tapes", "repeat"))
+    try:
+        results = run_bench(merges, factory, rules=rules, repeats=args.repeat, workers=args.workers, progress=stderr,
+                            stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None)
+    finally:
+        if recorder:
+            recorder.close()
+    if len(results) < reviews:
+        config["stopped_after"] = len(results)
+    summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
+    save(out, config=config, results=results, summary=summary)
+    print(render(summary))
+    if player:
+        print(f"replay: {player.served} replies served ({player.repeated} repeated), "
+              f"{player.misses} requests the tape does not have")
+    if recorder:
+        print(f"tape: {recorder.count} exchanges saved to {args.record}")
+    print(f"saved {out}")
+    return 0
+
+
+def cmd_plan_bench(args: argparse.Namespace) -> int:
+    import time
+
+    from .compare import comparison_budget, spend_cap, stderr
+    from .plan_bench import ENTITIES, render, run_bench, save, summarize
+    from .suite import build_suite
+
+    shapes = tuple(dict.fromkeys(s.strip() for s in args.shapes.split(",") if s.strip()))
+    bad = set(shapes) - set(PLAN_SHAPES)
+    if not shapes or bad:
+        raise InvariantError("PLAN_BENCH", f"name shapes from {list(PLAN_SHAPES)}" + (f"; unknown: {sorted(bad)}" if bad else ""))
+    if (args.price_in is None) != (args.price_out is None):
+        raise InvariantError("PLAN_BENCH", "give both --price-in and --price-out, or neither")
+    if args.max_spend is not None and args.price_in is None:
+        raise InvariantError("PLAN_BENCH", "--max-spend needs --price-in and --price-out")
+    if args.record and args.replay:
+        raise InvariantError("PLAN_BENCH", "--record or --replay, not both")
+    try:
+        suite = build_suite(seed=args.seed, per_family=args.questions, families=("aggregate", "breadth"),
+                            entities=ENTITIES, distractors=args.distractors)
+    except ValueError as e:
+        raise InvariantError("PLAN_BENCH", str(e)) from None
+    plans = len(suite.tasks) * len(shapes) * args.repeat
+    out = _out_path(args.out, Path(f"data/compare/plan-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    config = {
+        "adapter": "replay" if args.replay else args.adapter, "shapes": list(shapes), "questions": args.questions,
+        "entities": ENTITIES, "distractors": args.distractors, "repeat": args.repeat, "seed": args.seed,
+        "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds, "plans": plans,
+    }
+    if args.price_in is not None:
+        config |= {"price_in": args.price_in, "price_out": args.price_out}
+    if args.max_spend is not None:
+        config["max_spend"] = args.max_spend
+    if args.dry_run:
+        print(json.dumps(config, indent=2))
+        return 0
+    factory, player, recorder = _model_source(
+        args, config, "plan_bench", "PLAN_BENCH",
+        ("shapes", "questions", "entities", "distractors", "repeat", "seed", "max_calls_per_trial", "context_tokens", "tool_rounds"),
+    )
+    if args.corpus:
+        suite.write_corpus(args.corpus)
+    try:
+        results = run_bench(
+            suite, factory, shapes=shapes, repeats=args.repeat,
+            budget_factory=lambda: comparison_budget(args.max_calls, args.context), tool_rounds=args.tool_rounds,
+            corpus_dir=Path(args.corpus) if args.corpus else None, progress=stderr,
+            stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
+        )
+    finally:
+        if recorder:
+            recorder.close()
+    if len(results) < plans:
         config["stopped_after"] = len(results)
     summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
     save(out, config=config, results=results, summary=summary)
