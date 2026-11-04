@@ -2,6 +2,22 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.9.3 — November 2026: files a plan leaves out, and benches for the second plan and the verifier
+
+**Why.** The check of v0.9.2 left two questions a run could not answer. Every lead's first plan fit, so no real lead had written a second. And the verifier failed a right answer on 4 of 5 split runs.
+
+**Built.**
+- **Files a plan leaves out.** Files the goal names that no part names go to the lead to cover in the merge, unless the context already gives what they hold (`loop.py`).
+- **`merge-bench`** (`taskorg/merge_bench.py`). The verifier's requests from the tapes, reviewed again under each rule, product by product.
+- **`scripts/live_session.sh`.** The key is entered once for a sitting and kept in that window's memory, and each run still waits for its own `y`.
+- **`plan-bench`** (`taskorg/plan_bench.py`). The run is handed a first plan the gates refuse, in one of three shapes, and only the lead's second planning call goes to the model.
+- **The verify bench's `split` arm.** Products shaped like a lead's merge, with group subtotals and no file cited. Of each wrong kind, one has its error in a file the layered pick shows, and one in a file it does not.
+- **The setups `independent-told`, `-headed` and `-both`.** The verifier is told its sources are a sample, that a line with no year takes its file's heading, or both. They are off everywhere else, and a plain run of the bench leaves them out, so the 29 October tape still replays.
+
+**What the live run showed** (3 November, Haiku 5.5, $0.10). All 18 second plans were admitted, and 17 covered every file. One left out 5 files, among them the one with the right answer. The clean merges did not reproduce the false failures: under either rule the verifier failed none of 12 right products, caught all 12 errors in a file it was shown, and none of 12 in a file it was not. So those products cannot separate the rules. On the real merges they can: today's rule failed 34 of 104 right answers, and told both sentences the verifier failed 3, with 18 of 19 wrong answers caught and none passed ($0.56). See [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+
+**Left open.** The two sentences are off until new questions confirm them, because one came from reading these same merges (question 15 in [ARCHITECTURE.md](ARCHITECTURE.md)).
+
 ## v0.9.2 — November 2026: a sub-agent's own room, and a second plan
 
 **Why.** The check of v0.9.1 stopped three runs at 20 companies. One stopped 44 tokens over the cap, keeping room for the lead's plan reply. Two had plans refused with no way back.

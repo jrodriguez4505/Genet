@@ -20,6 +20,12 @@
 #     a plan and a sub-agent's room no longer depends on its siblings: does it recover the answers it lost?
 #   bash scripts/team_runs.sh second   genet on the 20-company questions, now that a sub-agent keeps room for a
 #     sub-agent's reply and a plan with a part too big gets a second try: do the three runs that stopped get through?
+#   bash scripts/team_runs.sh next   two benches. Told why its first plan was refused, does a lead write one that fits?
+#     And told its sources are a sample, does the verifier stop failing right answers after a split, and does it still
+#     catch an error in a file it was shown?
+#   bash scripts/team_runs.sh merges   the real merges on the tapes, reviewed under today's rule and three others, and
+#     the two new rules on the built products, whose errors sit in files shown or not. Which rule stops the verifier
+#     failing right answers, and does it still catch wrong ones?
 #
 # 1. The report bench (team design part 8): 24 sub-agent parts of 20-company aggregate questions, 12 with
 #    the plan wrong for them (their files are a look-alike's or an unrelated company's), each run with the
@@ -33,12 +39,13 @@
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
 #
 # The key lives only in this process and the Python it starts: not in shell history, not on any command
-# line, not in a log, a tape or a results file.
+# line, not in a log, a tape or a results file. For several runs in a sitting, scripts/live_session.sh takes the key
+# once and hands it to each run you approve.
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -51,7 +58,11 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = second ]; then
+if [ "$mode" = merges ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.64 in all, each run capped (\$1.00 in all, and the smoke test)"
+elif [ "$mode" = next ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.10 in all, each run capped (\$0.20 in all, and the smoke test)"
+elif [ "$mode" = second ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.06, capped at \$0.10, and the smoke test"
 elif [ "$mode" = fixes ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.17 in all, each run capped (\$0.32 in all, and the smoke test)"
@@ -66,27 +77,37 @@ elif [ "$mode" = followup ]; then
 else
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.12 in all, each run capped (\$0.37 in all)"
 fi
-pick=""
-while [ -z "$pick" ]; do
-  read -r -p "Model, type 1: " pick
-done
-case "$pick" in
-  1) model=claude-haiku-5-5; pin=0.10; pout=0.50 ;;
-  *) echo "Only Haiku runs from this script. Nothing was run."; exit 1 ;;
-esac
-read -r -s -p "Anthropic API key (typing is hidden; paste and press Enter): " key
-echo
-if [ -z "$key" ]; then
-  echo "No key entered. Nothing was run."
-  exit 1
+if [ -n "${GENET_LIVE_SESSION:-}" ] && [ -n "${TASKORG_ANTHROPIC_KEY:-}" ]; then
+  # scripts/live_session.sh holds the key for a sitting. With no smoke test, nothing is spent before this run's y.
+  session=1
+  model=claude-haiku-5-5; pin=0.10; pout=0.50
+  echo "Using the key this window holds, on $model. No smoke test: nothing is spent before your y."
+else
+  session=""
+  pick=""
+  while [ -z "$pick" ]; do
+    read -r -p "Model, type 1: " pick
+  done
+  case "$pick" in
+    1) model=claude-haiku-5-5; pin=0.10; pout=0.50 ;;
+    *) echo "Only Haiku runs from this script. Nothing was run."; exit 1 ;;
+  esac
+  read -r -s -p "Anthropic API key (typing is hidden; paste and press Enter): " key
+  echo
+  if [ -z "$key" ]; then
+    echo "No key entered. Nothing was run."
+    exit 1
+  fi
+  export TASKORG_ANTHROPIC_KEY="$key"
+  unset key
+  echo "Key received (${#TASKORG_ANTHROPIC_KEY} characters, not shown)."
 fi
-export TASKORG_ANTHROPIC_KEY="$key" TASKORG_MODEL_NAME="$model" TASKORG_MODEL_EFFORT=low
-unset key
-echo "Key received (${#TASKORG_ANTHROPIC_KEY} characters, not shown)."
+export TASKORG_MODEL_NAME="$model" TASKORG_MODEL_EFFORT=low
 
 stamp=$(date +%Y%m%d-%H%M%S)
 mkdir -p data/compare data/tapes
 
+if [ -z "$session" ]; then
 echo
 echo "== Smoke test: one lookup task, single agent (capped at \$0.05)"
 "$PY" -m taskorg.cli compare --adapter anthropic --price-in "$pin" --price-out "$pout" --per-family 1 --families lookup \
@@ -101,6 +122,61 @@ print(f"smoke: {r['status']}, answer {r['answer']!r} (expected {r['expected']!r}
 if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
     sys.exit("the smoke test did not get the right answer")
 EOF
+fi
+
+if [ "$mode" = merges ]; then
+  T=data/tapes
+  tapes="$T/indep-20261102-104941.jsonl,$T/size-20261102-111758.jsonl,$T/fixes10-20261102-151115.jsonl,$T/fixes20-20261102-151115.jsonl,$T/second20-20261103-143113.jsonl,$T/wide10-20261102-114919.jsonl,$T/wide20-20261102-114919.jsonl,$T/crew10-20261102-125135.jsonl,$T/crew20-20261102-125135.jsonl"
+  echo
+  echo ">>> Two runs on $model, about 25 minutes:"
+  echo "    The real merges: 123 reviews from the tapes, under 4 rules, 492 calls, 4 at a time, about \$0.56; it stops itself before \$0.85"
+  echo "    The built products: 36, under the 2 new rules, 72 calls, about \$0.08; it stops itself before \$0.15"
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  echo
+  echo "== the real merges, under each rule"
+  "$PY" -m taskorg.cli merge-bench --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.85 --workers 4 --tapes "$tapes" \
+    --record "data/tapes/merges-$stamp.jsonl" --out "data/compare/merges-$stamp.json" 2>&1 \
+    | tee "data/compare/merges-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^|---"
+  echo
+  echo "== the built products, under the two new rules"
+  "$PY" -m taskorg.cli verify-bench --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.15 \
+    --setups independent-headed,independent-both --arms split --questions 6 --entities 20 --distractors 6 --context 8000 \
+    --record "data/tapes/split-rules-$stamp.jsonl" --out "data/compare/split-rules-$stamp.json" 2>&1 \
+    | tee "data/compare/split-rules-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^|---"
+  echo
+  echo "Done. Results: data/compare/merges-$stamp.json and split-rules-$stamp.json   Tapes: data/tapes/merges-$stamp.jsonl and split-rules-$stamp.jsonl"
+  exit 0
+fi
+
+if [ "$mode" = next ]; then
+  echo
+  echo ">>> Two runs on $model, about 12 minutes:"
+  echo "    The second plan: 18 first plans the gates refuse, and the lead's next, about \$0.02; it stops itself before \$0.05"
+  echo "    The verifier: 72 reviews of products shaped like a merge, with and without the note, about \$0.08; it stops itself before \$0.15"
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  echo
+  echo "== the second plan"
+  "$PY" -m taskorg.cli plan-bench --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.05 \
+    --record "data/tapes/plan-$stamp.jsonl" --out "data/compare/plan-$stamp.json" 2>&1 \
+    | tee "data/compare/plan-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^|---"
+  echo
+  echo "== the verifier on split-shaped products, told and not told its sources are a sample"
+  "$PY" -m taskorg.cli verify-bench --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend 0.15 \
+    --setups independent-layered,independent-told --arms split --questions 6 --entities 20 --distractors 6 --context 8000 \
+    --record "data/tapes/split-verify-$stamp.jsonl" --out "data/compare/split-verify-$stamp.json" 2>&1 \
+    | tee "data/compare/split-verify-$stamp.log" | grep --line-buffered -E "^\[|^\| |^- |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^|---"
+  echo
+  echo "Done. Results: data/compare/plan-$stamp.json and split-verify-$stamp.json   Tapes: data/tapes/plan-$stamp.jsonl and split-verify-$stamp.jsonl"
+  exit 0
+fi
 
 if [ "$mode" = second ]; then
   echo

@@ -756,3 +756,58 @@ def test_the_gates_count_what_the_size_check_will(tmp_path: Path):
     # With nothing to judge against, the gates fall back on the lead's figure.
     m.budget = None
     assert engine._part_overhead(m, [part]) is None
+
+
+def test_files_a_plan_leaves_out_are_the_leads_to_cover(tmp_path: Path):
+    """One lead's second plan named 15 of 20 files and left out the one with the right answer. The gates measure what a
+    part names, and admitted it. The kernel knows what the goal names, so what no part names goes to the lead."""
+    task, files, root = _groups_suite(tmp_path)
+    adapter = _planner([_group("left", files[:4]), _group("right", files[4:8])])
+    r = run_trial(task, "genet", adapter, root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    merge = next(b for b in adapter.briefs if b.mode == "integrate")
+    missing = ", ".join(sorted(files[8:], key=lambda f: task.question.lower().index(f[:-3].replace("-", " "))))
+    assert f"The goal names these files and no part covers them, so they are yours to cover, unless the context already gives what they hold: {missing}." in merge.packet
+    # The lead can open them: it gets a skill with tools, as for a refused part.
+    assert merge.skill == "retrieve" and "read" in (merge.tools or [])
+    assert r.workers == 2
+
+
+def test_a_plan_that_names_every_file_changes_nothing(tmp_path: Path):
+    task, files, root = _groups_suite(tmp_path)
+    adapter = _planner([_group("left", files[:5]), _group("right", files[5:])])
+    run_trial(task, "genet", adapter, root, budget=comparison_budget(40, 4_000), tool_rounds=4)
+    merge = next(b for b in adapter.briefs if b.mode == "integrate")
+    assert "no part covers" not in merge.packet
+
+
+def test_what_counts_as_left_out(tmp_path: Path):
+    from taskorg.gates import Subtask, assess
+
+    task, files, root = _groups_suite(tmp_path)
+    engine = Engine(MemoryStore(tmp_path / "s"), toolbox=Toolbox(roots=[root]))
+    m = new_run("left", task.question, "p", "d")
+    named = lambda s: {f: 100 for f in s.named_failure.split() if f.endswith(".md")} or None
+    judged = lambda parts: assess(parts, policy="stated", material=named, context_limit=8_000)
+    both = [Subtask("a", "x " + " ".join(files[:5]), skill="retrieve"), Subtask("b", "x " + " ".join(files[5:8]), skill="retrieve")]
+    assert sorted(engine._left_out(m, judged(both))) == sorted(files[8:])
+    # A sub-agent whose files are unknown can open any of them, so nothing is known to be left out.
+    assert engine._left_out(m, judged(both + [Subtask("c", "x", skill="retrieve")])) == []
+    # A refused part is the lead's by its channel already, so its files are not named twice.
+    refused = both + [Subtask("verify-it", "x " + " ".join(files[8:]), skill="verify")]
+    assert engine._left_out(m, judged(refused)) == []
+    # Only what the goal names: a goal naming no file leaves nothing out.
+    assert engine._left_out(new_run("none", "How are you?", "p", "d"), judged(both)) == []
+
+
+def test_files_left_out_go_on_the_record(tmp_path: Path):
+    task, files, root = _groups_suite(tmp_path)
+    engine = Engine(MemoryStore(tmp_path / "s"), toolbox=Toolbox(roots=[root]))
+    m = new_run("left", task.question, "p", "d")
+    from taskorg.gates import Subtask, assess
+
+    named = lambda s: {f: 100 for f in s.named_failure.split() if f.endswith(".md")} or None
+    parts = [Subtask("a", "x " + " ".join(files[:5]), skill="retrieve"), Subtask("b", "x " + " ".join(files[5:9]), skill="retrieve")]
+    verdicts = assess(parts, policy="stated", material=named, context_limit=8_000)
+    assert files[9] in engine._cover(m, verdicts, [])
+    assert [e.detail["files"] for e in m.log if e.event == "files_left_out"] == [[files[9]]]
+
