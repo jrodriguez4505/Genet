@@ -3,10 +3,15 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from taskorg.adapters import StubAdapter
+from taskorg.checks import HEADING_RULE, SAMPLE_RULE, SOURCE_RULE
 from taskorg.cli import main
 from taskorg.compare import comparison_budget, render, run_comparison, run_trial, summarize
+from taskorg.merge_bench import RULES
 from taskorg.models import Artifact
+from taskorg.sim import SimModel
 from taskorg.suite import FAMILIES, QUARTER_WORDS, build_suite, extract_answer, grade, slug
 
 
@@ -191,3 +196,67 @@ def test_lead_covers_parts_past_the_worker_cap(tmp_path: Path):
     fifth = slug(suite.tasks[0].entities[4])
     assert f"yours to cover: {fifth}" in merge_call["packet"]
     assert m.state.slot("lead-1").skill == "retrieve"
+
+
+class _VerifierSees(SimModel):
+    """The sim's answers, keeping what the verifier was sent."""
+
+    def __init__(self):
+        self.packets = []
+
+    def act(self, brief):
+        if brief.slot_function == "verifier":
+            self.packets.append(brief.packet)
+        return super().act(brief)
+
+
+def test_the_rule_reaches_the_verifier_under_every_strategy_and_only_when_asked(tmp_path: Path):
+    suite = build_suite(seed=101, per_family=1, families=("aggregate",), entities=10, distractors=6)
+    corpus = suite.write_corpus(tmp_path / "corpus")
+    note = RULES["both"]
+    for strategy in ("single", "always-told", "genet"):
+        told, plain = _VerifierSees(), _VerifierSees()
+        run_trial(suite.tasks[0], strategy, told, corpus, budget=comparison_budget(40, 8_000), verify={"verify_note": note})
+        run_trial(suite.tasks[0], strategy, plain, corpus, budget=comparison_budget(40, 8_000))
+        assert told.packets and all(SOURCE_RULE + note in p for p in told.packets), strategy
+        assert plain.packets and not any(note in p or SAMPLE_RULE in p or HEADING_RULE in p for p in plain.packets), strategy
+
+
+def test_the_cli_asks_for_the_rule_and_keeps_it_on_the_record(tmp_path: Path, monkeypatch, capsys):
+    import taskorg.compare as compare_module
+
+    seen = []
+    real = compare_module.run_comparison
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs["verify"])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(compare_module, "run_comparison", spy)
+    base = ["compare", "--adapter", "sim", "--per-family", "1", "--families", "lookup", "--strategies", "single"]
+    plain, ruled = tmp_path / "plain.json", tmp_path / "ruled.json"
+    assert main([*base, "--out", str(plain)]) == 0
+    assert main([*base, "--verify-rule", "both", "--out", str(ruled)]) == 0
+    assert seen[0]["verify_note"] == "" and seen[1]["verify_note"] == RULES["both"]
+    assert json.loads(plain.read_text())["config"]["verify_rule"] == "today"
+    assert json.loads(ruled.read_text())["config"]["verify_rule"] == "both"
+    capsys.readouterr()
+    with pytest.raises(SystemExit):
+        main([*base, "--verify-rule", "loud"])
+
+
+def test_replaying_a_tape_under_another_rule_says_so(tmp_path: Path, capsys):
+    tape = tmp_path / "t.jsonl"
+    settings = {"strategies": ["single"], "families": ["lookup"], "per_family": 1, "repeat": 1, "seed": 7, "entities": None,
+                "distractors": 0, "filed": 0, "max_calls_per_trial": 40, "context_tokens": 16_000, "tool_rounds": 3,
+                "verify_view": "independent", "verify_sources": "layered"}
+    base = ["compare", "--replay", str(tape), "--per-family", "1", "--families", "lookup", "--strategies", "single"]
+    # A tape from before the switch says nothing about a rule, and today's is what it was recorded under.
+    tape.write_text(json.dumps({"tape": 1, "adapter": "anthropic", "model": "m", "models": {}, "compare": settings}) + "\n")
+    assert main([*base, "--out", str(tmp_path / "a.json")]) == 0
+    assert "verify_rule" not in capsys.readouterr().err
+    tape.write_text(json.dumps({"tape": 1, "adapter": "anthropic", "model": "m", "models": {}, "compare": settings | {"verify_rule": "both"}}) + "\n")
+    assert main([*base, "--out", str(tmp_path / "b.json")]) == 0
+    assert "different verify_rule" in capsys.readouterr().err
+    assert main([*base, "--verify-rule", "both", "--out", str(tmp_path / "c.json")]) == 0
+    assert "verify_rule" not in capsys.readouterr().err

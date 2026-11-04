@@ -408,6 +408,9 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                      help="sources the kernel opens for the verifier: layered (default), full, or none "
                           "(the brief before v0.7.0, which older tapes replay)")
+    p_c.add_argument("--verify-rule", default="today", choices=list(MERGE_RULES),
+                     help="words after the verifier's source rule, with sources open: today (none, the default), told, "
+                          "headed or both. merge-bench says what each is")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
 
@@ -600,7 +603,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         "per_family": args.per_family, "repeat": args.repeat, "seed": args.seed,
         "entities": args.entities, "distractors": args.distractors, "filed": args.filed,
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
-        "verify_view": args.verify_view, "verify_sources": args.verify_sources,
+        "verify_view": args.verify_view, "verify_sources": args.verify_sources, "verify_rule": args.verify_rule,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
     if args.price_in is not None:
@@ -613,7 +616,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
     factory, player, recorder = _model_source(
         args, config, "compare", "COMPARE",
         ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors", "filed",
-         "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources"),
+         "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources", "verify_rule"),
     )
     if args.corpus:
         suite.write_corpus(args.corpus)
@@ -628,7 +631,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
             corpus_dir=Path(args.corpus) if args.corpus else None,
             progress=stderr,
             stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
-            verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources},
+            verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
+                    "verify_note": MERGE_RULES[args.verify_rule]},
         )
     finally:
         if recorder:

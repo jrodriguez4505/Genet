@@ -445,6 +445,48 @@ The rules add sentences after the source rule. `told` says the files are a sampl
 
 All the tapes replay on this code with no request missing and the same results.
 
+## 3 November 2026: the verifier's rule on new questions
+
+`bash scripts/team_runs.sh heldout`, on Haiku 5.5 at effort `low`. Five seeds no tape had used, 101 to 105, with `both` on in every run: 24 questions at 10 companies and 6 at 20, under single, the told crew and Genet, 450 trials. Then every review after a split on those tapes was asked again under today's rule and `both`, 259 products and 518 reviews. Then the built products on seed 101, 72 reviews. It cost $2.40, against an estimate of $2.50 and a cap of $4.10, and no run reached its cap.
+
+The bar was written at the top of the script before the run. Both parts had to hold for the rule to become the default.
+
+| The bar | Needed | Result |
+|---|---|---|
+| Today's rule fails enough right answers to tell | at least 10 | 69 |
+| Right answers `both` fails | at most half of today's | **6 against 69** |
+| Products only today's rule fails, against only `both` | at least 3 times | **64 against 1** |
+| Wrong answers only today's rule fails | at most 1 of 39 | **1** |
+
+| Rule | Right answers failed | Failed when recorded, failed again | Passed when recorded, failed now | Wrong answers caught | Wrong answers passed |
+|---|---|---|---|---|---|
+| Today's | 69 of 220 | 4 of 9 | 64 of 210 | 36 of 39 | 3 |
+| **Both** | **6 of 220** | 3 of 9 | **3 of 210** | **37 of 39** | **2** |
+
+One right answer has no verdict under today's rule: its reply did not parse.
+
+| Right answers | Single | Told crew | Genet |
+|---|---|---|---|
+| Lookup and compare, 10 companies, of 60 | 57 | 51 | 58 |
+| Aggregate and breadth, 10 companies, of 60 | 0 | 56 | 56 |
+| Aggregate and breadth, 20 companies, of 30 | 0 | 27 | 22 |
+| All, of 150 | 57 | 134 | 136 |
+| Verified, of 150 | 57 | 132 | 136 |
+| Each seed, of 30 | 10 to 12 | 24 to 29 | 24 to 29 |
+| Tokens a task | 5,833 | 28,283 | 25,561 |
+| Cost per right answer | $0.0031 | $0.0064 | $0.0057 |
+
+- **The rule cleared its bar, and the earlier result held.** Today's rule failed 31% of right answers here and 33% on seed 7. `both` failed 3% in each. Every seed shows it: 11, 16, 12, 18 and 12 failed under today's rule, against 0, 3, 1, 1 and 1.
+- **The wrong-answer part cleared with nothing to spare.** One wrong answer only today's rule failed, and 1 was the limit. It failed that product on the form of its answer, `ANSWER: unknown` not being a number, and called its substance accurate. So it did not see the error either. `both` caught 2 that today's rule passed, each by naming the line.
+- **What got through was a missing answer, not a false one.** In the runs, 7 of 450 trials finished with a wrong answer, and none gave a wrong figure. Two named the right company with a hedge on the answer line. Five, on 3 questions of seed 102, said a figure was not in a file that holds it.
+- **The test files helped cause those five.** Their sentences are shuffled, so "The churn rate for Q3 settled at 6.4%." follows a sentence about FY2025, and one figure follows "Quillon Biologics is a separate company". The file's heading makes the answer key right, but a careful reader can carry the other sentence over. `both` caught some of these and passed others.
+- **Genet and the told crew are level overall.** Question by question, only Genet was right on 11 and only the crew on 9. At 10 companies Genet leads 9 to 2, and at 20 the crew leads 7 to 2. Those splits were looked at after the run, and neither is settled (p about 0.07 and 0.18).
+- **Genet stopped on size at 20 companies 7 times in 30, the crew 2.** Each stop came on the lead's own call, after a part the gates refused (3), a part a sub-agent failed or handed back (2), or with no sub-agent at all (2). Its brief came to about 7,000 to 12,000 tokens, which with room for the reply is over the 8,000 cap. On the 4 read closely, the lead had just made at least six reads or searches, and the run stopped there rather than trim what they returned.
+- **The built products agree.** `both` failed 0 of 12 right ones, and today's rule 1 of 12. Errors in a file shown were caught 12 of 12 under each, and errors in a file not shown 0 of 12 under each. A pass still checks only the files opened.
+- **What this does not show.** These are the same kind of files with new figures, so this cannot show whether the heading sentence misleads where a heading does not apply to a file's lines. It is one review of each product under each rule, on one model. All 39 wrong answers are products after a split. No run went without the rule on these seeds, so the comparison is of reviews, not of whole runs. The rule stays off by default until that is decided.
+
+All 590 reviews, and 449 of the 450 trials, replay with the same results. The other, the told crew on `aggregate-1` of seed 103, stops on size each time, after 6 or 8 calls against the 7 recorded. The likely cause is timing, since its sub-agents run in parallel. Its result does not change.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.

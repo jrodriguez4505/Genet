@@ -5,6 +5,7 @@ What a real verifier does with each rule is for a live run.
 """
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -194,3 +195,59 @@ def test_the_cli_reviews_and_refuses_what_it_cannot_do(tmp_path: Path, capsys):
                 ["--tapes", str(path), "--max-spend", "1"], ["--tapes", str(path), "--record", "a", "--replay", "b"]):
         assert main(["merge-bench", *bad, "--out", str(tmp_path / "x.json")]) == 1
         assert json.loads(capsys.readouterr().out)["code"] == "MERGE_BENCH"
+
+
+def test_every_rule_is_the_same_brief_whichever_rule_a_tape_was_recorded_under(tmp_path: Path):
+    """The held-out runs record under the rule. Today's rule must then be today's, with no sentence left or said twice."""
+    m = mb.merges_from(_tape(tmp_path)[0])[0]
+    plain = {rule: mb.with_rule(m.brief, rule).packet for rule in mb.RULES}
+    for recorded in mb.RULES:
+        brief = mb.with_rule(m.brief, recorded)
+        assert {rule: mb.with_rule(brief, rule).packet for rule in mb.RULES} == plain
+    assert checks.SAMPLE_RULE not in plain["today"] and checks.HEADING_RULE not in plain["today"]
+    assert plain["both"].count(checks.SAMPLE_RULE) == 1 and plain["both"].count(checks.HEADING_RULE) == 1
+    # A packet with no source rule goes as it came.
+    bare = replace(m.brief, packet="no rule here")
+    assert mb.with_rule(bare, "both").packet == "no rule here"
+
+
+def test_a_tape_recorded_under_the_rule_still_gives_its_merges(tmp_path: Path):
+    path, a, b = _tape(tmp_path, SETTINGS | {"verify_rule": "both"}, "both.jsonl")
+    lines = path.read_text().splitlines()
+    said = checks.SOURCE_RULE + checks.SAMPLE_RULE + checks.HEADING_RULE
+    path.write_text("\n".join(line.replace(json.dumps(checks.SOURCE_RULE)[1:-1], json.dumps(said)[1:-1]) for line in lines) + "\n")
+    merges = mb.merges_from(path)
+    assert [(m.task_id, m.right, m.recorded) for m in merges] == [(a.id, True, "PASS"), (a.id, False, "FAIL"), (b.id, True, "FAIL"), (b.id, True, "OTHER")]
+    assert all(said in m.brief.packet for m in merges)
+    adapter = Says()
+    mb.review(merges[0], "today", adapter)
+    assert checks.SAMPLE_RULE not in adapter.briefs[0].packet and checks.HEADING_RULE not in adapter.briefs[0].packet
+
+
+def test_the_summary_counts_where_two_rules_part(tmp_path: Path):
+    merges = mb.merges_from(_tape(tmp_path)[0])  # right: The total, unconfirmed, Cut off. Wrong: Another
+    # Today fails the doubted right answer and the wrong one. The rule passes the doubted one, fails the first right
+    # one, and has no verdict on the last.
+    def word(brief):
+        if checks.SAMPLE_RULE in brief.packet:
+            return ("FAIL" if "The total" in brief.packet or "Another" in brief.packet else
+                    "Perhaps" if "Cut off" in brief.packet else "PASS")
+        return "FAIL" if "unconfirmed" in brief.packet or "Another" in brief.packet else "PASS"
+
+    results = mb.run_bench(merges, lambda: Says(word), rules=("today", "both"))
+    summary = mb.summarize(results)
+    assert summary["paired"] == {"both": {
+        "right": {"first_failed_only": 1, "rule_failed_only": 1, "both_failed": 0, "both_passed": 0},
+        "wrong": {"first_failed_only": 0, "rule_failed_only": 0, "both_failed": 1, "both_passed": 0},
+    }}
+    text = mb.render(summary)
+    assert "Right answers, today against both: today alone failed 1, both alone failed 1, both failed 0, both passed 0." in text
+    assert "Wrong answers, today against both: today alone failed 0, both alone failed 0, both failed 1, both passed 0." in text
+    # Only a right answer today alone fails, and a wrong one the rule alone passes, in each direction.
+    results = mb.run_bench(merges[:2], lambda: Says(lambda b: "PASS" if checks.SAMPLE_RULE in b.packet else "FAIL"), rules=("today", "both"))
+    paired = mb.summarize(results)["paired"]["both"]
+    assert paired["right"]["first_failed_only"] == 1 and paired["wrong"]["first_failed_only"] == 1 and paired["right"]["both_passed"] == 0
+    # One rule has nothing to set against, and repeats pair with their own repeat.
+    assert mb.summarize(mb.run_bench(merges[:1], Says, rules=("today",)))["paired"] == {}
+    twice = mb.run_bench(merges[:1], lambda: Says(), rules=("today", "both"), repeats=2)
+    assert mb.summarize(twice)["paired"]["both"]["right"]["both_passed"] == 2

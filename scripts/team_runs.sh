@@ -26,6 +26,14 @@
 #   bash scripts/team_runs.sh merges   the real merges on the tapes, reviewed under today's rule and three others, and
 #     the two new rules on the built products, whose errors sit in files shown or not. Which rule stops the verifier
 #     failing right answers, and does it still catch wrong ones?
+#   bash scripts/team_runs.sh heldout   the rule from the merges run, on questions it has never seen: 5 seeds no tape has
+#     used, single, the told crew and genet, all with --verify-rule both. Then each new merge reviewed under today's rule
+#     and both, and the built products on a new seed. Stops at the first run that stops; run it again to go on, and
+#     what finished is kept. The bar, written before any of it ran:
+#     - Fewer false failures: of right answers, both fails at most half as many as today's rule, and the products only
+#       today's rule fails are at least 3 times those only both fails. Today's rule must fail at least 10, or it cannot say.
+#     - Errors still caught: of wrong answers, those only today's rule fails are no more than 1, or 5% if that is more.
+#     Both must hold for the rule to become the default.
 #
 # 1. The report bench (team design part 8): 24 sub-agent parts of 20-company aggregate questions, 12 with
 #    the plan wrong for them (their files are a look-alike's or an unrelated company's), each run with the
@@ -44,8 +52,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -58,7 +66,9 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = merges ]; then
+if [ "$mode" = heldout ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.50 in all, each run capped (\$4.10 in all, and the smoke test)"
+elif [ "$mode" = merges ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.64 in all, each run capped (\$1.00 in all, and the smoke test)"
 elif [ "$mode" = next ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.10 in all, each run capped (\$0.20 in all, and the smoke test)"
@@ -122,6 +132,63 @@ print(f"smoke: {r['status']}, answer {r['answer']!r} (expected {r['expected']!r}
 if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
     sys.exit("the smoke test did not get the right answer")
 EOF
+fi
+
+if [ "$mode" = heldout ]; then
+  # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
+  held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
+    local name=$1 cap=$2 sub=$3
+    shift 3
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      # A tape is the record of what was spent, so one a cut-off run left is kept, under a name of its own.
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name"
+      "$PY" -m taskorg.cli "$sub" --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend "$cap" "$@" \
+        --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\[|^\| |^- |^(Right|Wrong) |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+    fi
+    echo
+    if [ ! -f "data/compare/$name.json" ]; then
+      echo "$name did not finish, so nothing more was run. What finished is kept. To go on: bash scripts/team_runs.sh heldout"
+      exit 1
+    fi
+    if grep -q '"stopped_after"' "data/compare/$name.json"; then
+      echo "$name stopped early, at its cap or by you, so nothing more was run. What finished is kept. To run it again, move its results out of data/compare."
+      exit 1
+    fi
+  }
+  echo
+  echo ">>> Questions the rule has never seen, on $model, about 2.5 hours. Run it again to go on if it is cut off:"
+  echo "    5 seeds (101 to 105), each: 24 questions at 10 companies, about \$0.27, stops itself before \$0.42;"
+  echo "      and 6 at 20 companies, about \$0.12, stops itself before \$0.20. Single, the told crew and genet, the rule on."
+  echo "    Every new merge reviewed under today's rule and the rule, about \$0.50; it stops itself before \$0.85"
+  echo "    The built products on seed 101, under today's rule and the rule, about \$0.08; it stops itself before \$0.15"
+  echo "    Written before it ran: the rule must fail at most half as many right answers, and lose at most 1 caught error"
+  echo "    or 5%, whichever is more. The full bar is at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  # Hours long: keep the machine from idling to sleep for as long as this script runs, and no longer.
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  tapes=""
+  for seed in 101 102 103 104 105; do
+    held "heldout-s$seed-10" 0.42 compare --seed "$seed" --per-family 6 --entities 10 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --verify-rule both
+    held "heldout-s$seed-20" 0.20 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --verify-rule both
+    tapes="$tapes${tapes:+,}data/tapes/heldout-s$seed-10.jsonl,data/tapes/heldout-s$seed-20.jsonl"
+  done
+  held heldout-merges 0.85 merge-bench --workers 4 --rules today,both --tapes "$tapes"
+  held heldout-built 0.15 verify-bench --seed 101 --setups independent-layered,independent-both --arms split \
+    --questions 6 --entities 20 --distractors 6 --context 8000
+  echo
+  echo "Done. Results: data/compare/heldout-*.json   Tapes: data/tapes/heldout-*.jsonl"
+  exit 0
 fi
 
 if [ "$mode" = merges ]; then

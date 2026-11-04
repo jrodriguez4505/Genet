@@ -136,8 +136,13 @@ def merges_from(path: Path) -> list[Merge]:
 
 
 def with_rule(brief: Brief, rule: str) -> Brief:
-    """The same brief, with the rule's words after the source rule."""
-    return replace(brief, packet=brief.packet.replace(checks.SOURCE_RULE, checks.SOURCE_RULE + RULES[rule], 1))
+    """The same brief, with the rule's words after the source rule in place of any it was recorded with, so today's
+    rule is today's on a tape recorded under another. Longest first, or both would lose only one of its sentences."""
+    for recorded in sorted(RULES.values(), key=len, reverse=True):
+        said = checks.SOURCE_RULE + recorded
+        if said in brief.packet:
+            return replace(brief, packet=brief.packet.replace(said, checks.SOURCE_RULE + RULES[rule], 1))
+    return brief
 
 
 def review(merge: Merge, rule: str, adapter: ModelAdapter, repeat: int = 0) -> MergeResult:
@@ -235,7 +240,26 @@ def summarize(results: list[MergeResult], *, price_in: float | None = None, pric
         if price_in is not None and price_out is not None:
             block["cost_total"] = round(sum(trial_cost(r, price_in, price_out) for r in rows), 4)
         out[rule] = block
-    return {"rules": out}
+    return {"rules": out, "paired": _paired(results)}
+
+
+def _paired(results: list[MergeResult]) -> dict:
+    """The first rule against each other, product by product. Where two rules part is what a rule changes, and a
+    product with no verdict under either says nothing about it, so it is left out."""
+    rules = list(dict.fromkeys(r.rule for r in results))
+    first = {(r.tape, r.row, r.repeat): r.verdict for r in results if r.rule == rules[0]} if rules else {}
+    out = {}
+    for rule in rules[1:]:
+        block = {kind: {"first_failed_only": 0, "rule_failed_only": 0, "both_failed": 0, "both_passed": 0} for kind in ("right", "wrong")}
+        for r in results:
+            was = first.get((r.tape, r.row, r.repeat))
+            if r.rule != rule or was not in ("PASS", "FAIL") or r.verdict not in ("PASS", "FAIL"):
+                continue
+            key = {("FAIL", "PASS"): "first_failed_only", ("PASS", "FAIL"): "rule_failed_only",
+                   ("FAIL", "FAIL"): "both_failed", ("PASS", "PASS"): "both_passed"}[(was, r.verdict)]
+            block["right" if r.right else "wrong"][key] += 1
+        out[rule] = block
+    return out
 
 
 def _of(pair: list[int]) -> str:
@@ -255,6 +279,11 @@ def render(summary: dict) -> str:
         if has_cost:
             row += f" ${v.get('cost_total', 0):.4f} |"
         lines.append(row)
+    first = next(iter(blocks), "")
+    for rule, block in (summary.get("paired") or {}).items():
+        for kind, n in block.items():
+            lines += ["", f"{kind.capitalize()} answers, {first} against {rule}: {first} alone failed {n['first_failed_only']}, "
+                          f"{rule} alone failed {n['rule_failed_only']}, both failed {n['both_failed']}, both passed {n['both_passed']}."]
     if any(v.get("tokens_estimated") for v in blocks.values()):
         lines += ["", "Token counts are estimated (the adapter reported no usage)."]
     return "\n".join(lines) + "\n"

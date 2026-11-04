@@ -104,3 +104,78 @@ def test_outside_a_session_the_key_in_the_environment_is_not_enough(tmp_path: Pa
     assert "Key received" in done.stdout and "Smoke test" in done.stdout
     calls = _calls(log)
     assert any("--families lookup" in c and c.endswith(f"key={KEY}") for c in calls)
+
+
+HELD = ["heldout-s%d-%d" % (seed, size) for seed in (101, 102, 103, 104, 105) for size in (10, 20)]
+
+
+def _held_tree(tmp_path: Path, **stub_env) -> tuple[Path, dict]:
+    """A stand-in for Python that writes the results a run would, and whatever the test says it should."""
+    log, env = _tree(tmp_path)
+    stub = tmp_path / "python"
+    stub.write_text(f'''#!/bin/bash
+echo "args=$* key=${{TASKORG_ANTHROPIC_KEY:-none}}" >> "{log}"
+out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done
+case "$out" in
+  "") ;;
+  *"${{STUB_DIES:-none}}.json") echo "crashed" ;;
+  *"${{STUB_STOPS:-none}}.json") echo \'{{"config": {{"stopped_after": 3}}}}\' > "$out" ;;
+  *) echo \'{{"config": {{}}}}\' > "$out" ;;
+esac
+''')
+    return log, env | stub_env
+
+
+def _held(tmp_path: Path, env: dict, answers: str = f"{KEY}\ny\n") -> str:
+    return _session(tmp_path, env, answers, "heldout")
+
+
+def test_the_held_out_run_is_the_plan_it_shows(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _held(tmp_path, env)
+    calls = _calls(log)
+    assert len(calls) == 12 and "about $2.50" in out and "Done." in out and KEY not in out
+    # Every seed at both sizes, all three strategies, the rule on, capped and taped.
+    for name, call in zip(HELD, calls):
+        seed, size = name.split("-s")[1].split("-")
+        assert f"--seed {seed} " in call and f"--entities {size} " in call and "--verify-rule both" in call
+        assert "--strategies single,always-told,genet" in call and "--context 8000" in call and "--tool-rounds 4" in call
+        assert f"--max-spend {'0.42' if size == '10' else '0.20'} " in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        assert ("--per-family 6" if size == "10" else "--families aggregate,breadth --per-family 3") in call
+    merges, built = calls[10], calls[11]
+    assert "merge-bench" in merges and "--rules today,both" in merges and "--max-spend 0.85" in merges
+    assert ",".join(f"data/tapes/{name}.jsonl" for name in HELD) in merges
+    assert "verify-bench" in built and "--seed 101 " in built and "independent-layered,independent-both" in built and "--max-spend 0.15" in built
+    # The run has the key in its environment, and nowhere else.
+    assert all(c.endswith(f"key={KEY}") and KEY not in c.split(" key=")[0] for c in calls)
+
+
+def test_the_held_out_run_needs_a_y(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _held(tmp_path, env, f"{KEY}\nn\n") and _calls(log) == []
+
+
+def test_the_held_out_run_stops_at_the_first_run_that_stops_and_goes_on_from_there(tmp_path: Path):
+    for stub in ({"STUB_STOPS": "heldout-s102-10"}, {"STUB_DIES": "heldout-s102-10"}):
+        (tmp_path / "t").mkdir()
+        log, env = _held_tree(tmp_path / "t", **stub)
+        out = _held(tmp_path / "t", env)
+        assert len(_calls(log)) == 3 and "Done." not in out
+        if "STUB_STOPS" in stub:
+            # A run that stopped itself is not run again, whatever it was stopped by, and it stops the rest.
+            assert "heldout-s102-10 stopped early" in out
+            again = _held(tmp_path / "t", env)
+            assert again.count("already done") == 3 and "heldout-s102-10 stopped early" in again and len(_calls(log)) == 3
+        else:
+            assert "heldout-s102-10 did not finish" in out
+            # A run that left nothing is run again, and what finished is not. The tape it left is kept.
+            tape = tmp_path / "t" / "data" / "tapes" / "heldout-s102-10.jsonl"
+            tape.write_text("what it spent\n")
+            out = _held(tmp_path / "t", env | {"STUB_DIES": "none"})
+            calls = _calls(log)
+            assert len(calls) == 13 and "Done." in out and out.count("already done") == 2
+            assert "heldout-s102-10" in calls[3] and "heldout-s101" not in calls[3]
+            kept = list((tmp_path / "t" / "data" / "tapes").glob("heldout-s102-10-cut-*.jsonl"))
+            assert len(kept) == 1 and kept[0].read_text() == "what it spent\n" and not tape.exists()
+        shutil.rmtree(tmp_path / "t")

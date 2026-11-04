@@ -294,7 +294,7 @@ class Engine:
         self.verify_view = verify_view
         self.verify_sources = verify_sources
         self.verify_sample = max(0, int(verify_sample))
-        self.verify_note = verify_note  # words after the source rule, for the benches: checks.SAMPLE_RULE, HEADING_RULE
+        self.verify_note = verify_note  # words after the source rule, for the benches and compare's --verify-rule: checks.SAMPLE_RULE, HEADING_RULE
         # A sub-agent may hand its part back when the plan is wrong for it. Off by default: it changes the sub-agent brief.
         self.report_up = report_up
         # The lead's plan brief carries a card for each position it can staff (part 7). Off by default: it
