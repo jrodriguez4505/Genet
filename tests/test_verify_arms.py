@@ -304,4 +304,5 @@ def test_a_plain_run_of_the_bench_leaves_out_the_told_setup(tmp_path: Path):
     assert json.loads(out.read_text())["config"]["setups"] == list(vb.DEFAULT_SETUPS)
     results = vb.run_bench(_suite(1), SimModel, budget_factory=lambda: comparison_budget(4, 200_000))
     assert {r.setup for r in results} == set(vb.DEFAULT_SETUPS)
-    assert Engine(MemoryStore(tmp_path / "s")).verify_note == ""
+    from taskorg.checks import VERIFY_RULE
+    assert Engine(MemoryStore(tmp_path / "s")).verify_note == VERIFY_RULE

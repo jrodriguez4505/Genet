@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "taskorg"
-version = "0.9.3"
+version = "0.10.0"
 description = "Genet: policy-governed agent runtime. Models propose; code decides what runs."
 readme = "README.md"
 license = { text = "Apache-2.0" }

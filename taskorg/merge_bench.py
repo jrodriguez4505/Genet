@@ -5,7 +5,7 @@ like a merge. The runs' own merges fail far more often. So this bench takes the 
 the product and sources as they were sent after a real split, and asks again under each rule. Only the verifier's
 call goes to the model, and the same brief goes under each rule, so the rules compare product by product.
 
-  today   the source rule as it stands
+  none    the source rule alone, the default before v0.10.0
   told    plus: the files are a sample, and a figure no file covers is no reason to FAIL
   headed  plus: a line that gives no year takes the year in its file's heading
   both    plus both
@@ -33,10 +33,10 @@ from .errors import InvariantError
 from .suite import build_suite, extract_answer, grade
 
 RULES: dict[str, str] = {
-    "today": "",
+    "none": "",
     "told": checks.SAMPLE_RULE,
     "headed": checks.HEADING_RULE,
-    "both": checks.SAMPLE_RULE + checks.HEADING_RULE,
+    "both": checks.VERIFY_RULE,
 }
 _PRODUCT = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)(?:\nEVIDENCE GIVEN WITH IT\n|\n" + re.escape(checks.SOURCES_HEAD) + ")", re.S)
 _BODY = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)\n" + re.escape(checks.SOURCES_HEAD), re.S)
@@ -136,8 +136,8 @@ def merges_from(path: Path) -> list[Merge]:
 
 
 def with_rule(brief: Brief, rule: str) -> Brief:
-    """The same brief, with the rule's words after the source rule in place of any it was recorded with, so today's
-    rule is today's on a tape recorded under another. Longest first, or both would lose only one of its sentences."""
+    """The same brief, with the rule's words after the source rule in place of any it was recorded with, so none
+    means none on a tape recorded under another. Longest first, or both would lose only one of its sentences."""
     for recorded in sorted(RULES.values(), key=len, reverse=True):
         said = checks.SOURCE_RULE + recorded
         if said in brief.packet:

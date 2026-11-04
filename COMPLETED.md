@@ -2,6 +2,20 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.10.0 — November 2026: the verifier told what its sources are
+
+**Why.** On real merges the verifier failed about 1 right answer in 3. Two sentences nearly stopped that on the tapes that suggested one of them, so they waited for new questions.
+
+**Built.**
+- **The rule is the default.** After the source rule, the verifier is told its files are a sample, so a figure no file covers is no reason to FAIL, and that a line with no year takes its file's heading (`checks.VERIFY_RULE`, `loop.py`).
+- **`--verify-rule`** on `compare` and every run command: `both` (the default), `told`, `headed` or `none`. `none` is the brief before this version, which older tapes replay, and replaying one without it gets a note.
+- **`merge-bench`** replaces whatever rule a tape was recorded under, so `none` means none on a tape recorded under another, and reports each rule against the first, product by product. Its first rule was called `today`.
+- **`scripts/team_runs.sh heldout`.** Five seeds no tape had used, resumable, with its bar written before the run.
+
+**What the live run showed** (3 November, Haiku 5.5, $2.40). The rule cleared its bar. Of 220 right answers, the source rule alone failed 69 and the rule 6, and 64 to 1 product by product. Of 39 wrong answers it caught 37, against 36. The single agent got 57 of 150, the told crew 134 and Genet 136. Full results are in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+
+**Left open.** A pass still checks only the files opened. These seeds are the same kind of files with new figures, so nothing yet shows whether the heading sentence misleads where a heading does not apply (question 15 in [ARCHITECTURE.md](ARCHITECTURE.md)). The run found two new problems: a lead's own reads overflowing its next call at 20 companies, and answers of "not found" that finish as complete (questions 16 and 17).
+
 ## v0.9.3 — November 2026: files a plan leaves out, and benches for the second plan and the verifier
 
 **Why.** The check of v0.9.2 left two questions a run could not answer. Every lead's first plan fit, so no real lead had written a second. And the verifier failed a right answer on 4 of 5 split runs.

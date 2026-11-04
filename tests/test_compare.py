@@ -210,14 +210,14 @@ class _VerifierSees(SimModel):
         return super().act(brief)
 
 
-def test_the_rule_reaches_the_verifier_under_every_strategy_and_only_when_asked(tmp_path: Path):
+def test_the_rule_reaches_the_verifier_under_every_strategy_unless_a_run_says_none(tmp_path: Path):
     suite = build_suite(seed=101, per_family=1, families=("aggregate",), entities=10, distractors=6)
     corpus = suite.write_corpus(tmp_path / "corpus")
     note = RULES["both"]
     for strategy in ("single", "always-told", "genet"):
         told, plain = _VerifierSees(), _VerifierSees()
-        run_trial(suite.tasks[0], strategy, told, corpus, budget=comparison_budget(40, 8_000), verify={"verify_note": note})
-        run_trial(suite.tasks[0], strategy, plain, corpus, budget=comparison_budget(40, 8_000))
+        run_trial(suite.tasks[0], strategy, told, corpus, budget=comparison_budget(40, 8_000))
+        run_trial(suite.tasks[0], strategy, plain, corpus, budget=comparison_budget(40, 8_000), verify={"verify_note": ""})
         assert told.packets and all(SOURCE_RULE + note in p for p in told.packets), strategy
         assert plain.packets and not any(note in p or SAMPLE_RULE in p or HEADING_RULE in p for p in plain.packets), strategy
 
@@ -235,11 +235,11 @@ def test_the_cli_asks_for_the_rule_and_keeps_it_on_the_record(tmp_path: Path, mo
     monkeypatch.setattr(compare_module, "run_comparison", spy)
     base = ["compare", "--adapter", "sim", "--per-family", "1", "--families", "lookup", "--strategies", "single"]
     plain, ruled = tmp_path / "plain.json", tmp_path / "ruled.json"
-    assert main([*base, "--out", str(plain)]) == 0
-    assert main([*base, "--verify-rule", "both", "--out", str(ruled)]) == 0
-    assert seen[0]["verify_note"] == "" and seen[1]["verify_note"] == RULES["both"]
-    assert json.loads(plain.read_text())["config"]["verify_rule"] == "today"
+    assert main([*base, "--out", str(ruled)]) == 0
+    assert main([*base, "--verify-rule", "none", "--out", str(plain)]) == 0
+    assert seen[0]["verify_note"] == RULES["both"] and seen[1]["verify_note"] == ""
     assert json.loads(ruled.read_text())["config"]["verify_rule"] == "both"
+    assert json.loads(plain.read_text())["config"]["verify_rule"] == "none"
     capsys.readouterr()
     with pytest.raises(SystemExit):
         main([*base, "--verify-rule", "loud"])
@@ -251,12 +251,36 @@ def test_replaying_a_tape_under_another_rule_says_so(tmp_path: Path, capsys):
                 "distractors": 0, "filed": 0, "max_calls_per_trial": 40, "context_tokens": 16_000, "tool_rounds": 3,
                 "verify_view": "independent", "verify_sources": "layered"}
     base = ["compare", "--replay", str(tape), "--per-family", "1", "--families", "lookup", "--strategies", "single"]
-    # A tape from before the switch says nothing about a rule, and today's is what it was recorded under.
+    # A tape from before the switch says nothing about a rule, and none is what it was recorded under.
     tape.write_text(json.dumps({"tape": 1, "adapter": "anthropic", "model": "m", "models": {}, "compare": settings}) + "\n")
     assert main([*base, "--out", str(tmp_path / "a.json")]) == 0
+    assert "different verify_rule" in capsys.readouterr().err
+    assert main([*base, "--verify-rule", "none", "--out", str(tmp_path / "b.json")]) == 0
     assert "verify_rule" not in capsys.readouterr().err
     tape.write_text(json.dumps({"tape": 1, "adapter": "anthropic", "model": "m", "models": {}, "compare": settings | {"verify_rule": "both"}}) + "\n")
-    assert main([*base, "--out", str(tmp_path / "b.json")]) == 0
-    assert "different verify_rule" in capsys.readouterr().err
-    assert main([*base, "--verify-rule", "both", "--out", str(tmp_path / "c.json")]) == 0
+    assert main([*base, "--out", str(tmp_path / "c.json")]) == 0
     assert "verify_rule" not in capsys.readouterr().err
+    assert main([*base, "--verify-rule", "none", "--out", str(tmp_path / "d.json")]) == 0
+    assert "different verify_rule" in capsys.readouterr().err
+
+
+def test_the_rule_is_the_default_for_an_engine_and_a_run(tmp_path: Path, monkeypatch):
+    from taskorg import cli
+    from taskorg.checks import VERIFY_RULE
+    from taskorg.loop import Engine
+    from taskorg.memory_store import MemoryStore
+
+    assert VERIFY_RULE == SAMPLE_RULE + HEADING_RULE and RULES["both"] == VERIFY_RULE
+    assert Engine(MemoryStore(tmp_path)).verify_note == VERIFY_RULE
+    given = []
+    real = cli.Engine
+
+    def spy(*args, **kwargs):
+        given.append(kwargs["verify_note"])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "Engine", spy)
+    base = ["run", "--store", str(tmp_path / "s"), "--out", str(tmp_path / "o.json")]
+    assert main(base) == 0
+    assert main([*base, "--verify-rule", "none"]) == 0
+    assert given == [VERIFY_RULE, ""]

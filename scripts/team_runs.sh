@@ -30,6 +30,7 @@
 #     used, single, the told crew and genet, all with --verify-rule both. Then each new merge reviewed under today's rule
 #     and both, and the built products on a new seed. Stops at the first run that stops; run it again to go on, and
 #     what finished is kept. The bar, written before any of it ran:
+#   (today's rule, as this was written: the source rule alone, which merge-bench now calls none.)
 #     - Fewer false failures: of right answers, both fails at most half as many as today's rule, and the products only
 #       today's rule fails are at least 3 times those only both fails. Today's rule must fail at least 10, or it cannot say.
 #     - Errors still caught: of wrong answers, those only today's rule fails are no more than 1, or 5% if that is more.
@@ -164,8 +165,8 @@ if [ "$mode" = heldout ]; then
   echo ">>> Questions the rule has never seen, on $model, about 2.5 hours. Run it again to go on if it is cut off:"
   echo "    5 seeds (101 to 105), each: 24 questions at 10 companies, about \$0.27, stops itself before \$0.42;"
   echo "      and 6 at 20 companies, about \$0.12, stops itself before \$0.20. Single, the told crew and genet, the rule on."
-  echo "    Every new merge reviewed under today's rule and the rule, about \$0.50; it stops itself before \$0.85"
-  echo "    The built products on seed 101, under today's rule and the rule, about \$0.08; it stops itself before \$0.15"
+  echo "    Every new merge reviewed under the source rule alone and the rule, about \$0.50; it stops itself before \$0.85"
+  echo "    The built products on seed 101, under the source rule alone and the rule, about \$0.08; it stops itself before \$0.15"
   echo "    Written before it ran: the rule must fail at most half as many right answers, and lose at most 1 caught error"
   echo "    or 5%, whichever is more. The full bar is at the top of this script."
   read -r -p "Run them now? [y/N]: " go
@@ -183,7 +184,7 @@ if [ "$mode" = heldout ]; then
       --strategies single,always-told,genet --context 8000 --tool-rounds 4 --verify-rule both
     tapes="$tapes${tapes:+,}data/tapes/heldout-s$seed-10.jsonl,data/tapes/heldout-s$seed-20.jsonl"
   done
-  held heldout-merges 0.85 merge-bench --workers 4 --rules today,both --tapes "$tapes"
+  held heldout-merges 0.85 merge-bench --workers 4 --rules none,both --tapes "$tapes"
   held heldout-built 0.15 verify-bench --seed 101 --setups independent-layered,independent-both --arms split \
     --questions 6 --entities 20 --distractors 6 --context 8000
   echo

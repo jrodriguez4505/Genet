@@ -144,7 +144,7 @@ def test_the_held_out_run_is_the_plan_it_shows(tmp_path: Path):
         assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
         assert ("--per-family 6" if size == "10" else "--families aggregate,breadth --per-family 3") in call
     merges, built = calls[10], calls[11]
-    assert "merge-bench" in merges and "--rules today,both" in merges and "--max-spend 0.85" in merges
+    assert "merge-bench" in merges and "--rules none,both" in merges and "--max-spend 0.85" in merges
     assert ",".join(f"data/tapes/{name}.jsonl" for name in HELD) in merges
     assert "verify-bench" in built and "--seed 101 " in built and "independent-layered,independent-both" in built and "--max-spend 0.15" in built
     # The run has the key in its environment, and nowhere else.

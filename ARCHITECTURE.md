@@ -150,7 +150,7 @@ Every model call goes through `Engine._call`:
 ## How it is tested
 
 - 1,800 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
-- `scripts/mutation_check.py` breaks 340 rules one at a time, and a test catches each.
+- `scripts/mutation_check.py` breaks 359 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
 ## Open questions for a reviewer
@@ -165,14 +165,16 @@ Every model call goes through `Engine._call`:
 8. **A reviewer of purpose** (design part 10) adds a call before the work, to check the plan against the purpose. Is that worth it, or is checking the product afterwards enough?
 9. **Sequential work** (design part 9). The gate would refuse to split a chain of parts unless a link does not fit. Is a dependency the lead declares enough to find chains, or should the kernel find them?
 
-10. **What should the verifier be shown of a split's work?** The independent view is the default, because with every source open a false note got 5 of 6 look-alike errors past the shared view and none past it. It also leaves out the sub-agents' reports, and under either view the layered pick opens 2 of the files after a split, so a pass checks little, and a verifier sometimes fails a right answer for what it cannot see.
+10. **What should the verifier be shown of a split's work?** The independent view is the default, because with every source open a false note got 5 of 6 look-alike errors past the shared view and none past it. It also leaves out the sub-agents' reports, and under either view the layered pick opens 2 of the files after a split, so a pass checks little: in the built products, errors in a file not shown got through 12 times in 12.
 
 11. **Should the gates count what a split leaves for the lead?** They admit up to 4 sub-agents and hand the rest to the lead. A lead that plans one part per file at 20 companies then cannot fit the other 16 in its merge call. Haiku grouped its files and got by, but nothing makes a lead do that.
 
 12. **Should the room a sub-agent keeps be measured for each model?** A sub-agent's call now keeps 1,500 tokens for its reply, or its own largest so far, and no longer counts the lead's plan reply. The figure comes from Haiku 5.5, whose replies after reading had a 90th percentile of 1,352 to 1,609 at every cap. On the 3 November run 5 of 24 such replies passed 1,500, with the largest at 1,841, and none was cut off, because no call came near the cap. Sonnet 5.5's ran far lower, with a 90th percentile of 614, and nothing has measured another model.
 13. **Does a second plan hold up in a run?** On a bench, Haiku's lead, handed first plans the gates refuse, wrote 18 second plans, and the gates admitted all 18. The bench stops at the plan, and no lead's own first plan in a run has needed a second yet.
 14. **What should a malformed merge do?** A lead's merge reply was malformed twice, and the run stopped, though both replies held the right answer. One closed a list with `}` and the other wrote `\$`. On the tapes of 2 and 3 November 8 of 1,428 replies were not JSON as sent, and this stopped 2 of 284 trials. Accepting the common slips, or asking the API for structured output, would each change what a reply may be, so neither is built.
-15. **Should the verifier be told what its sources are?** On the real merges on the tapes, under today's rule it failed 34 of 104 right answers and caught 18 of 19 wrong ones. Told that its files are a sample, and that a line with no year takes its file's heading, it failed 3 and caught the same 18, and it passed no wrong answer. A pass still checks only the files opened: an error in a file not shown got through under every rule. One of those sentences came from reading these same merges, so it needs new questions before it becomes the default. Is that the right test, and is a verifier that passes what it cannot check what you would want after a split?
+15. **Is a verifier that passes what it cannot check what you would want after a split?** Since v0.10.0 it is told that its files are a sample, and that a line with no year takes its file's heading. On real merges from five seeds no tape had used, that took right answers failed from 69 of 220 to 6, and wrong answers caught from 36 of 39 to 37, clearing a bar written before the run. A pass still checks only the files opened: an error in a file not shown got through under every rule. Those seeds are the same kind of files with new figures, so nothing yet shows whether the heading sentence misleads where a heading does not apply to a file's lines.
+16. **What should keep a lead's own reads from overflowing its next call?** On those seeds at 20 companies, Genet stopped on size 7 times in 30, and the told crew 2. Each of Genet's stops came on the lead's own call, after a part the gates refused, a part a sub-agent failed or handed back, or with no sub-agent at all. A round may run 8 tool requests, and nothing sizes what they return against the call that must carry it, so the run halts rather than send less.
+17. **Should a run that finds no figure count as complete?** Five of 450 trials finished saying a figure was not in a file that holds it, each on a line right after a sentence about another year or company. The verifier caught some of these and passed others. No trial finished with a wrong figure. A missing answer is more honest than a wrong one, but the run still reports it as complete.
 
 ## Not built yet
 

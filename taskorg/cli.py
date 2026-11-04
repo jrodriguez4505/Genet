@@ -99,6 +99,9 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
                         "(the brief before v0.7.0, which older tapes replay)")
+    p.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
+                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, "
+                        "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p.add_argument("--abort", action="append", default=[], metavar="CRITERION",
                    help="stop at a decision point when this is met: forecast_short (the budget cannot finish the "
                         f"work; the default), parts_failed:N (N parts' sub-agents failed), or none. "
@@ -151,7 +154,8 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
     toolbox = Toolbox(roots=args.workspace, files=args.read)
     return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
                   split_policy=args.split_policy, isolation_required=args.isolate, lessons=not args.no_lessons,
-                  verify_view=args.verify_view, verify_sources=args.verify_sources, report_up=args.report_up,
+                  verify_view=args.verify_view, verify_sources=args.verify_sources, verify_note=MERGE_RULES[args.verify_rule],
+                  report_up=args.report_up,
                   cards=args.cards)
 
 
@@ -408,9 +412,9 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                      help="sources the kernel opens for the verifier: layered (default), full, or none "
                           "(the brief before v0.7.0, which older tapes replay)")
-    p_c.add_argument("--verify-rule", default="today", choices=list(MERGE_RULES),
-                     help="words after the verifier's source rule, with sources open: today (none, the default), told, "
-                          "headed or both. merge-bench says what each is")
+    p_c.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
+                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, "
+                          "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
 
@@ -545,6 +549,8 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
         player = Player(Path(args.replay))
         recorded = player.header.get(header_key)
         recorded = recorded if isinstance(recorded, dict) else {}
+        if recorded:  # A tape from before the switch names no rule, and was recorded under none.
+            recorded = {"verify_rule": "none"} | recorded
         differ = [k for k in keys if k in recorded and recorded[k] != config.get(k)]
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
