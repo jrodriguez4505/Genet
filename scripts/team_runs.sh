@@ -76,6 +76,12 @@
 #     - Right answers. At least 277 of 300, a quarter fewer wrong. Below 270 the changes are tested apart before Sonnet.
 #     These are other questions than the reference's, so a few answers either way is noise, and with the changes on together
 #     the run cannot say which did what. Reported with no bar: how many wrong products a rework puts right, against 7 of 22.
+#   bash scripts/team_runs.sh rerun   the whole run again, now that a round leaves a lead 3,000 tokens to reply in. The run
+#     above was stopped on 4 November after seed 106: at 20 companies all 14 of a lead's cut-off replies came right after a
+#     cut round, so size stops had become stops on a malformed reply. Seeds 107 to 110 at 10 and 20 companies, and seed 112
+#     at 20 in place of 106, which the fix was read from. Seed 106 at 10 companies counts as it ran: no round there was cut.
+#     The bars are those above, unchanged but for one thing: in the rounds bar, a stop on a malformed reply counts as a size
+#     stop, so the same failure cannot pass under another name. Reported with no bar: sub-agents' replies cut off.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -86,8 +92,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -100,7 +106,9 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = whole ]; then
+if [ "$mode" = rerun ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.82 in all, each run capped (\$3.00 in all)"
+elif [ "$mode" = whole ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.05 in all, each run capped (\$3.35 in all)"
 elif [ "$mode" = refine ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.17 in all, each run capped (\$0.30 in all)"
@@ -172,7 +180,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -198,6 +206,40 @@ if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ]; then
       exit 1
     fi
   }
+fi
+if [ "$mode" = rerun ]; then
+  echo
+  echo ">>> Whole runs again, now that a round leaves a lead 3,000 tokens to reply in, on $model, about 3 hours."
+  echo "    Run it again to go on if it is cut off. Keep the lid open: a sleeping Mac stalls it."
+  echo "    Seeds 107 to 110: 24 questions at 10 companies, the told crew and genet, about \$0.23; it stops itself before \$0.35."
+  echo "    Seeds 107 to 110 and 112: 6 at 20 companies, the told crew, genet and single, about \$0.18; it stops itself before \$0.32."
+  echo "    On in every run: the verifier's reason in the rework brief, rounds that fit and the heading sentence for authors."
+  echo "    Written before it ran, against the held-out run on other questions, told crew and genet, 300 trials,"
+  echo "    with seed 106 at 10 companies counted as it ran:"
+  echo "      at most 2 finish with a wrong figure or name (it had 0), at most 15% more tokens a task;"
+  echo "      size stops and stops on a malformed reply at 20 companies at most 2 of 60 (it had 9),"
+  echo "      and genet right on at least 24 of 30 there (it had 22);"
+  echo "      answers that decline or leave out a figure at most 9 (it had 19); at least 277 right (it had 270)."
+  echo "      Single at 20 companies finishes with a wrong figure or name at most 3 of 30."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  # Hours long: keep the machine from idling to sleep for as long as this script runs, and no longer.
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 107 108 109 110 112; do
+    if [ "$seed" != 112 ]; then
+      held "rerun-s$seed-10" 0.35 compare --seed "$seed" --per-family 6 --entities 10 --distractors 6 \
+        --strategies always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+    fi
+    held "rerun-s$seed-20" 0.32 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+  done
+  echo
+  echo "Done. Results: data/compare/rerun-*.json   Tapes: data/tapes/rerun-*.jsonl"
+  exit 0
 fi
 if [ "$mode" = whole ]; then
   echo

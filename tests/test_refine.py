@@ -8,21 +8,25 @@ line, and the tapes' reworks asked again. What a real model does with any of thi
 import json
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from taskorg import checks, rework_bench as rb, verify_bench as vb
 from taskorg.adapters import TOOL_RESULTS, ModelAdapter
+from taskorg.anthropic_live import AnthropicAdapter
 from taskorg.budget import Budget
 from taskorg.cli import main
 from taskorg.compare import comparison_budget, run_trial
 from taskorg.errors import InvariantError
 from taskorg.factory import new_run
+from taskorg.live import LiveAdapter
 from taskorg.loop import MAX_TOOL_REQUESTS, REWORK_HEAD, REWORK_REASON_CHARS, ROUND_CUT, Engine, rework_said
 from taskorg.memory_store import MemoryStore
 from taskorg.models import Artifact
 from taskorg.sim import SimModel
 from taskorg.suite import build_suite, slug
+from taskorg.tape import Player, replay_adapter
 from taskorg.tools import Toolbox
 
 
@@ -116,6 +120,136 @@ def test_a_file_cut_from_one_round_is_not_counted_as_held_in_the_next(tmp_path: 
     # The search finds b.md, which the first round cut: its result is no room again or the line, never "read in full above".
     assert "read in full above" not in adapter.briefs[2].packet
     assert "already in full above" not in adapter.briefs[2].packet
+
+
+class RoomyRound(Scripted):
+    """An adapter that has measured what a lead's reply needs after a round."""
+
+    round_reply_tokens = 300
+
+
+def _script():
+    return _art("reading", ["read:a.md", "read:b.md", "read:c.md", "read:d.md"]), _art("ANSWER: 2")
+
+
+def test_a_cut_round_gives_back_reads_until_a_lead_has_room_to_reply(tmp_path: Path):
+    """On the tapes a call that merely fit left 700 tokens after a cut, and thinking took them all: an empty reply."""
+    root = _files(tmp_path, a=1_200, b=1_200, c=1_200, d=1_200)
+    (tmp_path / "p").mkdir()
+    (tmp_path / "r").mkdir()
+    plain, roomy = Scripted(*_script()), RoomyRound(*_script())
+    _act(tmp_path / "p", plain, root, cap=800)
+    run, product = _act(tmp_path / "r", roomy, root, cap=800)
+    assert product.claim == "ANSWER: 2"
+    assert plain.briefs[1].packet.count("[read ") == 2
+    sent = roomy.briefs[1].packet
+    assert "[read a.md]" in sent and "[read b.md]" not in sent and ROUND_CUT.format(n=3) in sent
+    assert roomy.estimate_tokens(roomy.briefs[1]) + roomy.round_reply_tokens <= 800
+    # The record says what the call saw and what it did not: a read given back is not a read.
+    assert [e.detail["request"] for e in run.log if e.event == "tool"] == ["read:a.md"]
+    cut = [e.detail for e in run.log if e.event == "tool_round_cut"]
+    assert len(cut) == 1 and cut[0]["not_run"] == ["read:b.md", "read:c.md", "read:d.md"]
+
+
+def test_a_round_that_fits_keeps_every_read_whatever_a_cut_would_leave(tmp_path: Path):
+    """The room is for a lead told of a cut. On the tapes a lead told of none rarely ran out with far less."""
+    root = _files(tmp_path, a=800, b=800)
+    adapter = RoomyRound(_art("reading", ["read:a.md", "read:b.md"]), _art("ANSWER: 2"))
+    adapter.round_reply_tokens = 700
+    run, _ = _act(tmp_path, adapter, root, cap=800)
+    assert "no room" not in adapter.briefs[1].packet and not [e for e in run.log if e.event == "tool_round_cut"]
+    assert [e.detail["request"] for e in run.log if e.event == "tool"] == ["read:a.md", "read:b.md"]
+
+
+def test_a_read_given_back_is_not_held_in_the_next_round(tmp_path: Path):
+    """A file read in full is not searched again: true only of a file the call was shown."""
+    root = _files(tmp_path, a=1_200, b=1_200, c=1_200, d=1_200)
+    (root / "b.md").write_text("needle " + "x" * 1_200)
+    adapter = RoomyRound(_art("reading", ["read:a.md", "read:b.md", "read:c.md", "read:d.md"]), _art("searching", ["retrieve:needle"]), _art("ANSWER: 2"))
+    run, _ = _act(tmp_path, adapter, root, cap=800)
+    assert "[read b.md]" not in adapter.briefs[1].packet
+    # The search leaves out what the call was shown, a.md, and only that.
+    assert "1 file(s) read in full above" in adapter.briefs[2].packet
+
+
+def test_a_cut_round_with_nothing_to_give_back_still_goes_on(tmp_path: Path):
+    root = _files(tmp_path, a=3_900)
+    adapter = RoomyRound(_art("reading", ["read:a.md"]), _art("ANSWER: 2"))
+    _, product = _act(tmp_path, adapter, root, cap=500)
+    assert product.claim == "ANSWER: 2" and ROUND_CUT.format(n=1) in adapter.briefs[1].packet
+
+
+def _overflow_edge(tmp_path: Path, slack: int):
+    """A run and a brief whose next call, carrying one result, has `slack` tokens of room under the cap."""
+    (tmp_path / "s0").mkdir()
+    probe = Engine(MemoryStore(tmp_path / "s0"), adapter=RoomyRound(), budget=Budget(max_tokens_per_call=8_000), toolbox=Toolbox(roots=[tmp_path]))
+    run = _run()
+    probe._arm(run)
+    brief = _lead_reads(probe, run)
+    note = ROUND_CUT.format(n=MAX_TOOL_REQUESTS)
+    size = probe.adapter.estimate_tokens(replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join(["r", note])))
+    run = _run()
+    engine = Engine(MemoryStore(tmp_path / "s1"), adapter=RoomyRound(), budget=Budget(max_tokens_per_call=size + slack), toolbox=Toolbox(roots=[tmp_path]))
+    engine._arm(run)
+    return engine, run, _lead_reads(engine, run)
+
+
+def test_a_leads_round_keeps_exactly_the_room_the_adapter_asks_for(tmp_path: Path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    engine, run, brief = _overflow_edge(tmp_path / "a", 300)
+    assert engine._round_overflows(run, brief, ["r"], None, cut=True) is False
+    engine, run, brief = _overflow_edge(tmp_path / "b", 299)
+    assert engine._round_overflows(run, brief, ["r"], None, cut=True) is True
+    # A round not being cut asks only what any call asks.
+    assert engine._round_overflows(run, brief, ["r"], None) is False
+
+
+def test_a_sub_agents_round_keeps_its_own_room_and_not_a_leads(tmp_path: Path):
+    """The gates sized a sub-agent's part by its own room, so a lead's would cut files they admitted."""
+    engine, run, brief = _overflow_edge(tmp_path, 100)
+    worker = SimpleNamespace(id="w1", function="worker")
+    assert engine._round_overflows(run, brief, ["r"], worker, cut=True) is False
+    assert engine._round_overflows(run, brief, ["r"], None, cut=True) is True
+
+
+def test_the_reply_room_of_a_call_with_no_round_does_not_change(tmp_path: Path):
+    """The setting cuts rounds. A call sent as it stands goes as it did, so a tape's other calls stay what they were."""
+    (tmp_path / "s0").mkdir()
+    measure = RoomyRound()
+    engine = Engine(MemoryStore(tmp_path / "s0"), adapter=measure, budget=Budget(max_tokens_per_call=8_000), toolbox=Toolbox(roots=[tmp_path]))
+    run = _run()
+    engine._arm(run)
+    size = measure.estimate_tokens(_lead_reads(engine, run))
+    assert engine._reply_room(run) == 0
+    adapter = RoomyRound(_art("ANSWER: 2"))
+    root = _files(tmp_path, a=10)
+    _, product = _act(tmp_path, adapter, root, cap=size + 20)
+    assert product.claim == "ANSWER: 2" and len(adapter.briefs) == 1
+
+
+def test_claude_keeps_what_the_tapes_measured_and_the_others_keep_nothing():
+    assert AnthropicAdapter.round_reply_tokens == 3_000 and LiveAdapter.round_reply_tokens == 0 and SimModel.round_reply_tokens == 0
+    assert AnthropicAdapter("", "m", client=object()).tape_header()["round_reply_tokens"] == 3_000
+
+
+def _tape_with(tmp_path: Path, **header) -> Path:
+    path = tmp_path / "t.jsonl"
+    path.write_text(json.dumps({"tape": 1, "adapter": "anthropic", "model": "m"} | header) + "\n")
+    return path
+
+
+def test_a_replay_keeps_what_its_tape_kept(tmp_path: Path):
+    assert replay_adapter(Player(_tape_with(tmp_path, round_reply_tokens=3_000))).round_reply_tokens == 3_000
+    assert replay_adapter(Player(_tape_with(tmp_path, round_reply_tokens=2_500))).round_reply_tokens == 2_500
+    # A tape older than the setting replays as it ran, whatever today's code keeps.
+    assert replay_adapter(Player(_tape_with(tmp_path))).round_reply_tokens == 0
+
+
+@pytest.mark.parametrize("bad", [-1, True, "3000", 3_000.0, [3_000]])
+def test_a_tape_cannot_say_anything_of_its_rounds(tmp_path: Path, bad):
+    with pytest.raises(InvariantError):
+        Player(_tape_with(tmp_path, round_reply_tokens=bad))
 
 
 @pytest.mark.parametrize("size", range(1_000, 1_500, 7))

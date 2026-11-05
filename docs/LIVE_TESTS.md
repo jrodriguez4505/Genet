@@ -543,6 +543,21 @@ All 590 reviews, and 449 of the 450 trials, replay with the same results. The ot
 
 All 72 reviews and all 60 reworks replay with the same results.
 
+### The whole run, stopped after one seed
+
+`bash scripts/team_runs.sh whole` had its bars written first, and was stopped on purpose just after the first of its five seeds because of what it found. It cost $0.42, including 16 trials of the next seed, which do not count and are run again below.
+
+| Seed 106 | Single | Told crew | Genet |
+|---|---|---|---|
+| Right, 10 companies, of 24 | | 23 | 24 |
+| Right, 20 companies, of 6 | 1 | 4 | 4 |
+
+- **Rounds that fit moved the failure instead of fixing it.** At 20 companies all 14 of the lead's replies cut off at their limit came right after a cut round. Each had between 706 and 2,403 tokens left, and thinking often took all of them, so the reply came back broken, or in 7 cases with no visible text at all. The retry had less room still. So the run ended on a malformed reply where it used to end on size. The replay before this run could show only that the call fit. It said a live run was needed to show what the call would do, and it was.
+- **A cut note costs room of its own.** With under 2,500 tokens left, 14 of 15 lead replies ran out right after a cut round, against 1 of 9 on the 3 November tapes, where no cut note was sent. With 3,000 or more, none of 729 ran out, and the largest took 2,416.
+- **The fix.** A cut round now gives back reads until a lead has 3,000 tokens to reply in. A round that is not cut is untouched. Replayed with that on, seed 106 at 10 companies is the same in all 48 trials, and the 3 November tapes change only the 99 trials that stopped on size. Of those, 3 still have less room, all single-agent runs whose earlier rounds had already filled the call. The setting is on the tape, so older tapes replay as they ran.
+- **Not fixed: a sub-agent's reply can be cut off too.** The gates size a part with 1,500 tokens of room, and a part of 5 files leaves about 2,000. On this seed 7 of 92 sub-agent calls ran out, against 8 of 466 on the 3 November tapes at 20 companies. 43 of 92 replies now mention a heading, against 2 of 466, so the sentence may be lengthening them, though one seed cannot say.
+- **A sleeping Mac stops trials.** The machine slept from about 17:26 to 17:41, and a trial's 600-second limit runs on through sleep. Two trials at 20 companies stopped on it, one after a single call. They are the only 2 of the seed's 66 trials that do not replay as recorded, which is how they show.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.

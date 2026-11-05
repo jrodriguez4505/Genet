@@ -186,6 +186,38 @@ def test_the_whole_run_is_the_plan_it_shows(tmp_path: Path):
     assert all(c.endswith(f"key={KEY}") and KEY not in c.split(" key=")[0] for c in calls)
 
 
+RERUN = ["rerun-s%d-%d" % (seed, size) for seed in (107, 108, 109, 110) for size in (10, 20)] + ["rerun-s112-20"]
+
+
+def test_the_rerun_is_the_plan_it_shows(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "rerun")
+    calls = _calls(log)
+    assert len(calls) == 9 and "about $1.82" in out and "$3.00 in all" in out and "Done." in out and KEY not in out
+    for name, call in zip(RERUN, calls):
+        seed, size = name.split("-s")[1].split("-")
+        assert "compare" in call and "--adapter anthropic" in call
+        assert f"--seed {seed} " in call and f"--entities {size} " in call and "--context 8000" in call and "--tool-rounds 4" in call
+        assert "--author-rule headed" in call and "--verify-rule" not in call and "--no-rework-reason" not in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        if size == "10":
+            assert "--per-family 6" in call and "--strategies always-told,genet " in call and "--max-spend 0.35 " in call
+        else:
+            assert "--families aggregate,breadth --per-family 3" in call and "--strategies single,always-told,genet " in call and "--max-spend 0.32 " in call
+    assert all(c.endswith(f"key={KEY}") and KEY not in c.split(" key=")[0] for c in calls)
+
+
+def test_the_rerun_needs_a_y_and_goes_on_from_what_finished(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "rerun") and _calls(log) == []
+    (tmp_path / "t").mkdir()
+    log, env = _held_tree(tmp_path / "t", STUB_DIES="rerun-s108-10")
+    out = _session(tmp_path / "t", env, f"{KEY}\ny\n", "rerun")
+    assert "rerun-s108-10 did not finish" in out and "scripts/team_runs.sh rerun" in out and len(_calls(log)) == 3
+    out = _session(tmp_path / "t", env | {"STUB_DIES": "none"}, f"{KEY}\ny\n", "rerun")
+    assert out.count("already done") == 2 and "Done." in out and len(_calls(log)) == 10
+
+
 def test_the_whole_run_needs_a_y_and_goes_on_from_what_finished(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "whole") and _calls(log) == []

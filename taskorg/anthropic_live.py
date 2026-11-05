@@ -52,6 +52,10 @@ class AnthropicAdapter(LiveAdapter):
     # A sub-agent's reply after reading, on Haiku 5.5 at effort low: the 90th percentile ran 1,352 to 1,609 at
     # caps from 4,000 to 200,000 tokens, so it does not follow the cap (docs/LIVE_TESTS.md).
     part_reply_tokens = 1_500
+    # A lead's reply once told a round was cut, on Haiku 5.5 at effort low, thinking included. Left under 2,500 tokens, 14
+    # of 15 ran out of room, some with no visible text at all, against 1 of 9 with as little room and no cut. With 3,000
+    # or more none of 729 did, and the largest took 2,416 (docs/LIVE_TESTS.md).
+    round_reply_tokens = 3_000
 
     def __init__(self, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None,
                  effort: str | None = None, base_url: str = BASE_URL, client=None):
@@ -79,7 +83,7 @@ class AnthropicAdapter(LiveAdapter):
         return cls(key, model, timeout=env_timeout(60), models=env_models(), effort=effort, base_url=base)
 
     def tape_header(self) -> dict:
-        return super().tape_header() | {"effort": self.effort}
+        return super().tape_header() | {"effort": self.effort, "round_reply_tokens": self.round_reply_tokens}
 
     def _payload(self, brief: Brief) -> dict:
         payload = {

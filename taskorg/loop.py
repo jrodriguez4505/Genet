@@ -596,19 +596,21 @@ class Engine:
             if len(wanted) > MAX_TOOL_REQUESTS:
                 results.append(f"[{len(wanted) - MAX_TOOL_REQUESTS} more tool requests not run: at most {MAX_TOOL_REQUESTS} per round]")
                 wanted = wanted[:MAX_TOOL_REQUESTS]
-            for i, req in enumerate(wanted):
+            ran: list[tuple[str, str, set]] = []  # each request kept: what it returned, and what was held before it
+            for req in wanted:
                 with self._lock:
                     run.assert_running()
                 held = set(have)
                 out = toolbox.run(req, have)
-                if self._round_overflows(run, brief, [*results, out], slot):
+                if self._round_overflows(run, brief, [*results, *(r[1] for r in ran), out], slot):
                     # The call never sees this result, so nothing it holds or has read changes on its account.
                     have.intersection_update(held)
-                    results.append(ROUND_CUT.format(n=len(wanted) - i))
-                    with self._lock:
-                        run._record("tool_round_cut", {"slot": slot.id if slot else brief.slot_function,
-                                                       "channel": brief.channel_id, "not_run": [str(r)[:200] for r in wanted[i:]]})
+                    # Told of a cut, a lead thinks over what is missing, so it gives back reads to have room for that.
+                    while ran and self._round_overflows(run, brief, [*results, *(r[1] for r in ran)], slot, cut=True):
+                        have.intersection_update(ran.pop()[2])
                     break
+                ran.append((req, out, held))
+            for req, out, _ in ran:
                 results.append(out)
                 with self._lock:
                     run._record("tool", {
@@ -619,6 +621,11 @@ class Engine:
                         # The files it showed, so a check later knows what the run saw and what it never did.
                         **checks.files_in_result(out),
                     })
+            if len(ran) < len(wanted):
+                results.append(ROUND_CUT.format(n=len(wanted) - len(ran)))
+                with self._lock:
+                    run._record("tool_round_cut", {"slot": slot.id if slot else brief.slot_function, "channel": brief.channel_id,
+                                                   "not_run": [str(r)[:200] for r in wanted[len(ran):]]})
             brief = self._current(run, replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join(results)), slot)
             art = self._call(run, brief, slot)
         if any(_tool_name(r) in RUNNABLE for r in art.requests):
@@ -626,16 +633,21 @@ class Engine:
                 run._record("tool_rounds_exhausted", {"slot": slot.id if slot else brief.slot_function})
         return art
 
-    def _round_overflows(self, run: Run, brief: Brief, results: list[str], slot: Slot | None) -> bool:
+    def _round_overflows(self, run: Run, brief: Brief, results: list[str], slot: Slot | None, *, cut: bool = False) -> bool:
         """Would the next call, carrying these results and the note a cut leaves, pass the per-call cap? A round may
-        return more than one call can carry, and a run should go on with what fits rather than stop on what it asked for."""
+        return more than one call can carry, and a run should go on with what fits rather than stop on what it asked for.
+        cut: the round is being cut, so a lead needs what its adapter says a reply takes after one."""
         if not run.budget:
             return False
         note = ROUND_CUT.format(n=MAX_TOOL_REQUESTS)
         sized = replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n" + "\n\n".join([*results, note]))
         size = self.adapter.estimate_tokens(sized)
         with self._lock:
-            return size + self._reply_room(run, slot) > run.budget.max_tokens_per_call
+            room = self._reply_room(run, slot)
+        # A sub-agent's room is its own measure, and the gates sized its part by it.
+        if cut and not (slot and slot.function == "worker"):
+            room = max(room, getattr(self.adapter, "round_reply_tokens", 0))
+        return size + room > run.budget.max_tokens_per_call
 
     def _current(self, run: Run, brief: Brief, slot: Slot | None) -> Brief:
         """Kept current (part 8): a member's next call carries the situation as it stands now, as the record

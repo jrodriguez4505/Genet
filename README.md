@@ -127,7 +127,7 @@ Every slot carries one active skill. The lead can switch its own. A sub-agent is
 
 The tools only read: `read:<path>`, `retrieve:<query>` and `observe[:<dir>]`. They reach only the `--workspace` directories and the `--read` files. Hidden files (anything whose name or folder starts with a dot, such as `.env` or `.git/`), binaries, and symlinks that lead outside the workspace or into a hidden file are refused. A file you attach with `--read` is readable even if hidden, because you named it. The allowlist is checked before any tool runs, and each tool round is a budgeted call (at most 2 rounds per sub-agent).
 
-A round's requests run one at a time. The round stops when what it returned would not fit the next call, and tells the lead how many did not run.
+A round's requests run one at a time. The round stops when what it returned would not fit the next call, and tells the lead how many did not run. A cut round gives back reads until a lead has room to reply: told of a cut, Haiku's leads used up to 2,400 tokens thinking it over.
 
 ## Budget tiers
 
@@ -484,7 +484,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 423 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 436 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 

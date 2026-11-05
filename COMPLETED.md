@@ -8,7 +8,7 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 
 **Built.**
 - **The verifier's reason in the rework brief** (`loop.py`), up to 1,200 characters. `--no-rework-reason` leaves it out, as tapes before this version recorded it.
-- **Rounds that fit.** A round's tool requests run one at a time, and the round stops when what it returned would not fit the next call, telling the lead how many did not run (`loop.py`).
+- **Rounds that fit.** A round's tool requests run one at a time, and the round stops when what it returned would not fit the next call, telling the lead how many did not run. A cut round gives back reads until a lead has room to reply (`round_reply_tokens` on the adapter, which a tape records, so older tapes replay as they ran) (`loop.py`).
 - **`--author-rule headed`** tells the lead and sub-agents the heading sentence. It is off by default until a whole run measures it.
 - **`rework-bench`** (`taskorg/rework_bench.py`). The tapes' reworks asked again, with and without the reason, product by product.
 - **The verify bench's `heading` arm.** Wrong figures from a section, a paragraph or a whole file that a heading does not cover, with the company's file always open.

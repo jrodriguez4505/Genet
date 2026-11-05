@@ -128,6 +128,7 @@ class Player:
             and isinstance(models, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in models.items())
             and (h.get("effort") is None or isinstance(h["effort"], str))
             and (h.get("max_reply_param") is None or isinstance(h["max_reply_param"], str))
+            and (h.get("round_reply_tokens") is None or (type(h["round_reply_tokens"]) is int and h["round_reply_tokens"] >= 0))
         )
         if not ok:
             raise InvariantError("COMPARE", f"tape {self.path} has no valid header (format {FORMAT}, adapter {' or '.join(ADAPTERS)})")
@@ -187,6 +188,8 @@ def replay_adapter(player: Player):
         from .anthropic_live import AnthropicAdapter
 
         adapter = AnthropicAdapter("", h["model"], models=h.get("models"), effort=h.get("effort"), client=_Offline())
+        # What this tape's rounds kept; a tape older than the setting kept nothing beyond the reply's room.
+        adapter.round_reply_tokens = h.get("round_reply_tokens") or 0
     else:
         from .live import LiveAdapter
 
