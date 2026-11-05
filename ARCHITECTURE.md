@@ -135,7 +135,7 @@ Every model call goes through `Engine._call`:
 
 | Decision | Why |
 |---|---|
-| One agent by default. Each added agent is a cost. | Others measured large token multiples for multi-agent gains, and losses on sequential work (sources in the design's related work). On Claude Haiku 5.5, a single agent got every answer up to 20 companies a question. |
+| One agent by default. Each added agent is a cost. | Others measured large token multiples for multi-agent gains, and losses on sequential work (sources in the design's related work). On Claude Haiku 5.5, at a 200,000-token cap, a single agent got every answer up to 20 companies a question. |
 | A reason to split is measured, not stated. | A lead can always give a reason. `--split-policy stated` keeps the old rule for comparison, and on Haiku it was the weakest strategy. |
 | Models fill a fixed artifact, and authority stays in code. | No prompt can change the team. Red-team tests and the mutation check hold this. |
 | One owner, a shared outcome. | A failed part goes back to the lead, and the run goes on. The review and the lessons come from the record, never from model text. |
