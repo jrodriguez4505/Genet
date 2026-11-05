@@ -57,6 +57,25 @@
 #       right at least twice as many as the plain brief and at least 3 more, if those only it brings right are at least 3
 #       times those only the plain brief brings right, and if the right products it alone turns wrong are at most 1, or 5%.
 #       If not, the reason goes back off.
+#   bash scripts/team_runs.sh whole   whole runs with v0.11.0's changes on together: the verifier's reason in the rework
+#     brief, rounds that fit, and the heading sentence told to the lead and sub-agents. 5 seeds no tape has used, 106 to
+#     110: 24 questions at 10 companies under the told crew and genet, and 6 at 20 under those and single, whose size stops
+#     now go on. 330 trials.
+#     Measured against the held-out run of the same shape, on seeds 101 to 105. Its told crew and genet, 300 trials: 270
+#     right; 9 size stops at 20 companies; 19 answers that decline, leave out or hedge a figure or name; none finished with
+#     a wrong figure or name; 28,283 and 25,561 tokens a task. Its single at 20 companies: 0 of 30, each a size stop.
+#     The bars, written before the run:
+#     - Harm. The told crew and genet finish with a wrong figure or name at most 2 times in 300, and each spends at most 15%
+#       more tokens a task. If either fails, the changes are tested apart before any move to Sonnet.
+#     - Single at 20 companies. It finishes with a wrong figure or name at most 3 times in 30. A stop was an honest failure,
+#       and going on must not hand back a wrong answer as complete. If it does, a cut round stops a single agent's run again.
+#     - Rounds that fit. At 20 companies, size stops at most 2 of 60, and genet right on at least 24 of 30. If so, the
+#       size problem counts as fixed. If not, it stays open.
+#     - The heading sentence. Answers that decline, leave out or hedge a figure or name, at most 9 of 300. If so, and the
+#       harm bar holds, --author-rule headed becomes the default. If not, it stays off.
+#     - Right answers. At least 277 of 300, a quarter fewer wrong. Below 270 the changes are tested apart before Sonnet.
+#     These are other questions than the reference's, so a few answers either way is noise, and with the changes on together
+#     the run cannot say which did what. Reported with no bar: how many wrong products a rework puts right, against 7 of 22.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -67,8 +86,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -81,7 +100,9 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = refine ]; then
+if [ "$mode" = whole ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.05 in all, each run capped (\$3.35 in all)"
+elif [ "$mode" = refine ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.17 in all, each run capped (\$0.30 in all)"
 elif [ "$mode" = heldout ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.50 in all, each run capped (\$4.10 in all, and the smoke test)"
@@ -151,7 +172,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -177,6 +198,36 @@ if [ "$mode" = heldout ] || [ "$mode" = refine ]; then
       exit 1
     fi
   }
+fi
+if [ "$mode" = whole ]; then
+  echo
+  echo ">>> Whole runs with the changes on together, on $model, about 2 hours. Run it again to go on if it is cut off:"
+  echo "    5 seeds no tape has used (106 to 110), each: 24 questions at 10 companies, the told crew and genet, about \$0.23;"
+  echo "      it stops itself before \$0.35. And 6 at 20 companies, the told crew, genet and single, about \$0.18, of which"
+  echo "      single's 6 trials are about \$0.06 and at most about \$0.13; it stops itself before \$0.32."
+  echo "    On in every run: the verifier's reason in the rework brief, rounds that fit, and the heading sentence for authors."
+  echo "    Written before it ran, against the held-out run on other questions, told crew and genet, 300 trials:"
+  echo "      at most 2 finish with a wrong figure or name (it had 0), at most 15% more tokens a task;"
+  echo "      size stops at 20 companies at most 2 of 60 (it had 9), and genet right on at least 24 of 30 there (it had 22);"
+  echo "      answers that decline or leave out a figure at most 9 (it had 19); at least 277 right (it had 270)."
+  echo "      Single at 20 companies finishes with a wrong figure or name at most 3 of 30."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  # Hours long: keep the machine from idling to sleep for as long as this script runs, and no longer.
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 106 107 108 109 110; do
+    held "whole-s$seed-10" 0.35 compare --seed "$seed" --per-family 6 --entities 10 --distractors 6 \
+      --strategies always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+    held "whole-s$seed-20" 0.32 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+  done
+  echo
+  echo "Done. Results: data/compare/whole-*.json   Tapes: data/tapes/whole-*.jsonl"
+  exit 0
 fi
 if [ "$mode" = refine ]; then
   echo
