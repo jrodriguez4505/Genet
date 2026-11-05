@@ -207,6 +207,21 @@ def test_the_rerun_is_the_plan_it_shows(tmp_path: Path):
     assert all(c.endswith(f"key={KEY}") and KEY not in c.split(" key=")[0] for c in calls)
 
 
+def test_the_gap_rule_run_is_the_plan_it_shows_and_needs_a_y(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "gaprule") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")
+    calls = _calls(log)
+    assert len(calls) == 1 and "about $0.42" in out and "before $0.50" in out and "Done." in out and KEY not in out
+    call = calls[0]
+    assert "merge-bench" in call and "--rules both,named " in call and "--max-spend 0.50 " in call and "--adapter anthropic" in call
+    assert ",".join(f"data/tapes/{name}.jsonl" for name in RERUN) in call
+    assert "--record data/tapes/gaprule-merges.jsonl" in call and "--out data/compare/gaprule-merges.json" in call
+    assert call.endswith(f"key={KEY}") and KEY not in call.split(" key=")[0]
+    # Done once, it is not paid for twice.
+    assert "gaprule-merges: already done" in _session(tmp_path, env, f"{KEY}\ny\n", "gaprule") and len(_calls(log)) == 1
+
+
 def test_the_rerun_needs_a_y_and_goes_on_from_what_finished(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "rerun") and _calls(log) == []

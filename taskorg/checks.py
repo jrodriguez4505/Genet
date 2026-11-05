@@ -63,6 +63,13 @@ HEADING_RULE = (
     " A file's heading applies to its lines: a line that gives no year takes the year in the heading, unless it "
     "says otherwise."
 )
+# A product that names its own gap is no answer. On the rerun of 5 November, 5 of the 6 wrong answers that finished had
+# set a named company aside ("contributes 0", "unresolved") and were passed under the sample rule, which says a figure
+# no file covers is no fault (docs/LIVE_TESTS.md).
+NAMED_RULE = (
+    " A product that leaves out, sets aside or counts as zero anything the goal names, whatever reason it gives, has "
+    "not answered the goal: FAIL it and name what is missing."
+)
 # What the verifier is told after the source rule unless a run names another. On five seeds no tape had used, right
 # answers failed fell from 69 of 220 to 6, and wrong answers caught went from 36 of 39 to 37 (docs/LIVE_TESTS.md).
 VERIFY_RULE = SAMPLE_RULE + HEADING_RULE

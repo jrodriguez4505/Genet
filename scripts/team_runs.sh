@@ -82,6 +82,15 @@
 #     at 20 in place of 106, which the fix was read from. Seed 106 at 10 companies counts as it ran: no round there was cut.
 #     The bars are those above, unchanged but for one thing: in the rounds bar, a stop on a malformed reply counts as a size
 #     stop, so the same failure cannot pass under another name. Reported with no bar: sub-agents' replies cut off.
+#   bash scripts/team_runs.sh gaprule   the rerun's real merges, 224 of them, reviewed under both and under named, which adds
+#     one sentence: a product that leaves out, sets aside or counts as zero anything the goal names has not answered it.
+#     The rerun failed its harm bar, 6 finished wrong of 300; 5 of the 6 had set a named company aside and passed review.
+#     The bars, written before the run:
+#     - It cannot say unless both passes at least 4 of the wrong products here.
+#     - Wrong answers. Named passes at most 1 of the wrong products, and fewer than both does.
+#     - Right answers. Named fails at most 5 more of the right products than both does.
+#     If both hold, named becomes the verifier's default. If not, it stays off and the harm stays an open problem.
+#     Reported with no bar: the 6 that finished wrong, one by one, and right products that admit a gap.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -92,8 +101,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -106,7 +115,9 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = rerun ]; then
+if [ "$mode" = gaprule ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.42, capped at \$0.50"
+elif [ "$mode" = rerun ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.82 in all, each run capped (\$3.00 in all)"
 elif [ "$mode" = whole ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.05 in all, each run capped (\$3.35 in all)"
@@ -180,7 +191,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -206,6 +217,28 @@ if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$m
       exit 1
     fi
   }
+fi
+if [ "$mode" = gaprule ]; then
+  echo
+  echo ">>> The rerun's 224 real merges, each reviewed under both and under named, on $model, about 10 minutes."
+  echo "    Named adds one sentence: a product that leaves out, sets aside or counts as zero anything the goal names"
+  echo "    has not answered it. About \$0.42; it stops itself before \$0.50."
+  echo "    Written before it ran: named passes at most 1 wrong product and fewer than both, and fails at most 5 more"
+  echo "    right products than both. If so, it becomes the verifier's default. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  tapes=""
+  for name in s107-10 s107-20 s108-10 s108-20 s109-10 s109-20 s110-10 s110-20 s112-20; do
+    tapes="$tapes${tapes:+,}data/tapes/rerun-$name.jsonl"
+  done
+  held gaprule-merges 0.50 merge-bench --workers 4 --rules both,named --tapes "$tapes"
+  echo
+  echo "Done. Results: data/compare/gaprule-merges.json   Tape: data/tapes/gaprule-merges.jsonl"
+  exit 0
 fi
 if [ "$mode" = rerun ]; then
   echo

@@ -114,6 +114,10 @@ def test_each_rule_adds_its_words_after_the_source_rule(tmp_path: Path):
     assert checks.SOURCE_RULE + checks.SAMPLE_RULE in told and checks.HEADING_RULE not in told
     assert checks.SOURCE_RULE + checks.HEADING_RULE in mb.with_rule(m.brief, "headed").packet
     assert checks.SOURCE_RULE + checks.SAMPLE_RULE + checks.HEADING_RULE in mb.with_rule(m.brief, "both").packet
+    named = mb.with_rule(m.brief, "named").packet
+    assert checks.SOURCE_RULE + checks.SAMPLE_RULE + checks.NAMED_RULE + checks.HEADING_RULE in named
+    # The rule a run is told by default is both, until a run shows the named rule pays.
+    assert checks.VERIFY_RULE == mb.RULES["both"] and checks.NAMED_RULE not in checks.VERIFY_RULE
     assert m.brief.packet.count(checks.SOURCE_RULE) == 1 and checks.SAMPLE_RULE not in m.brief.packet
 
 
@@ -137,7 +141,7 @@ def test_the_bench_runs_every_merge_under_every_rule_in_order(tmp_path: Path):
     for workers in (1, 4):
         done = mb.run_bench(merges, Says, workers=workers, progress=lines.append)
         assert [(r.row, r.rule) for r in done] == [(m.row, rule) for m in merges for rule in mb.RULES]
-    assert len(lines) == 2 * len(merges) * 4
+    assert len(lines) == 2 * len(merges) * len(mb.RULES)
     assert [r.repeat for r in mb.run_bench(merges[:1], Says, rules=("none",), repeats=2)] == [0, 1]
 
 
@@ -182,7 +186,7 @@ def test_the_cli_reviews_and_refuses_what_it_cannot_do(tmp_path: Path, capsys):
     capsys.readouterr()
     assert main(["merge-bench", "--tapes", str(path), "--dry-run", "--out", str(tmp_path / "d.json")]) == 0
     config = json.loads(capsys.readouterr().out)
-    assert config["merges"] == 4 and config["right"] == 3 and config["recorded_fail"] == 1 and config["reviews"] == 16
+    assert config["merges"] == 4 and config["right"] == 3 and config["recorded_fail"] == 1 and config["reviews"] == 4 * len(mb.RULES)
     out = tmp_path / "m.json"
     assert main(["merge-bench", "--tapes", str(path), "--rules", "none,both", "--workers", "2", "--out", str(out)]) == 0
     saved = json.loads(out.read_text())

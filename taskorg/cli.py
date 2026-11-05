@@ -100,7 +100,7 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
                         "(the brief before v0.7.0, which older tapes replay)")
     p.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
-                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, "
+                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, "
                         "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
                    help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")
@@ -419,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
                      help="sources the kernel opens for the verifier: layered (default), full, or none "
                           "(the brief before v0.7.0, which older tapes replay)")
     p_c.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
-                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, "
+                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, "
                           "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p_c.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
                      help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")

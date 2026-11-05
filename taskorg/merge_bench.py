@@ -9,6 +9,7 @@ call goes to the model, and the same brief goes under each rule, so the rules co
   told    plus: the files are a sample, and a figure no file covers is no reason to FAIL
   headed  plus: a line that gives no year takes the year in its file's heading
   both    plus both
+  named   both, and: a product that leaves out, sets aside or counts as zero anything the goal names has not answered it
 
 Measures: right answers failed, split by what the verifier said when recorded, and wrong answers caught. A rule that
 fails fewer right answers must still catch errors, which these few wrong merges cannot show: the verify bench's split
@@ -36,7 +37,8 @@ RULES: dict[str, str] = {
     "none": "",
     "told": checks.SAMPLE_RULE,
     "headed": checks.HEADING_RULE,
-    "both": checks.VERIFY_RULE,
+    "both": checks.SAMPLE_RULE + checks.HEADING_RULE,
+    "named": checks.SAMPLE_RULE + checks.NAMED_RULE + checks.HEADING_RULE,
 }
 _PRODUCT = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)(?:\nEVIDENCE GIVEN WITH IT\n|\n" + re.escape(checks.SOURCES_HEAD) + ")", re.S)
 _BODY = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)\n" + re.escape(checks.SOURCES_HEAD), re.S)
