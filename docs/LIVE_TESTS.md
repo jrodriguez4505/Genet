@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room, two benches and the verifier on real merges (3 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: 3 November's as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room, two benches and the verifier on real merges (3 November), the verifier's rule on new questions (3 November), two benches and a whole run (4 November), its rerun and a test of one more verifier sentence (5 and 6 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: those of 3 to 6 November as [tapes-20261106](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261106), 3 November's earlier runs as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -445,6 +445,176 @@ The rules add sentences after the source rule. `told` says the files are a sampl
 
 All the tapes replay on this code with no request missing and the same results.
 
+## 3 November 2026: the verifier's rule on new questions
+
+`bash scripts/team_runs.sh heldout`, on Haiku 5.5 at effort `low`. Five seeds no tape had used, 101 to 105, with `both` on in every run: 24 questions at 10 companies and 6 at 20, under single, the told crew and Genet, 450 trials. Then every review after a split on those tapes was asked again under today's rule and `both`, 259 products and 518 reviews. Then the built products on seed 101, 72 reviews. It cost $2.40, against an estimate of $2.50 and a cap of $4.10, and no run reached its cap.
+
+The bar was written at the top of the script before the run. Both parts had to hold for the rule to become the default.
+
+| The bar | Needed | Result |
+|---|---|---|
+| Today's rule fails enough right answers to tell | at least 10 | 69 |
+| Right answers `both` fails | at most half of today's | **6 against 69** |
+| Products only today's rule fails, against only `both` | at least 3 times | **64 against 1** |
+| Wrong answers only today's rule fails | at most 1 of 39 | **1** |
+
+| Rule | Right answers failed | Failed when recorded, failed again | Passed when recorded, failed now | Wrong answers caught | Wrong answers passed |
+|---|---|---|---|---|---|
+| Today's | 69 of 220 | 4 of 9 | 64 of 210 | 36 of 39 | 3 |
+| **Both** | **6 of 220** | 3 of 9 | **3 of 210** | **37 of 39** | **2** |
+
+One right answer has no verdict under today's rule: its reply did not parse.
+
+| Right answers | Single | Told crew | Genet |
+|---|---|---|---|
+| Lookup and compare, 10 companies, of 60 | 57 | 51 | 58 |
+| Aggregate and breadth, 10 companies, of 60 | 0 | 56 | 56 |
+| Aggregate and breadth, 20 companies, of 30 | 0 | 27 | 22 |
+| All, of 150 | 57 | 134 | 136 |
+| Verified, of 150 | 57 | 132 | 136 |
+| Each seed, of 30 | 10 to 12 | 24 to 29 | 24 to 29 |
+| Tokens a task | 5,833 | 28,283 | 25,561 |
+| Cost per right answer | $0.0031 | $0.0064 | $0.0057 |
+
+- **The rule cleared its bar, and the earlier result held.** Today's rule failed 31% of right answers here and 33% on seed 7. `both` failed 3% in each. Every seed shows it: 11, 16, 12, 18 and 12 failed under today's rule, against 0, 3, 1, 1 and 1.
+- **The wrong-answer part cleared with nothing to spare.** One wrong answer only today's rule failed, and 1 was the limit. It failed that product on the form of its answer, `ANSWER: unknown` not being a number, and called its substance accurate. So it did not see the error either. `both` caught 2 that today's rule passed, each by naming the line.
+- **What got through was a missing answer, not a false one.** In the runs, 7 of 450 trials finished with a wrong answer, and none gave a wrong figure. Two named the right company with a hedge on the answer line. Five, on 3 questions of seed 102, said a figure was not in a file that holds it.
+- **The test files helped cause those five.** Their sentences are shuffled, so "The churn rate for Q3 settled at 6.4%." follows a sentence about FY2025, and one figure follows "Quillon Biologics is a separate company". The file's heading makes the answer key right, but a careful reader can carry the other sentence over. `both` caught some of these and passed others.
+- **Genet and the told crew are level overall.** Question by question, only Genet was right on 11 and only the crew on 9. At 10 companies Genet leads 9 to 2, and at 20 the crew leads 7 to 2. Those splits were looked at after the run, and neither is settled (p about 0.07 and 0.18).
+- **Genet stopped on size at 20 companies 7 times in 30, the crew 2.** Each stop came on the lead's own call, after a part the gates refused (3), a part a sub-agent failed or handed back (2), or with no sub-agent at all (2). Its brief came to about 7,000 to 12,000 tokens, which with room for the reply is over the 8,000 cap. On the 4 read closely, the lead had just made at least six reads or searches, and the run stopped there rather than trim what they returned.
+- **The built products agree.** `both` failed 0 of 12 right ones, and today's rule 1 of 12. Errors in a file shown were caught 12 of 12 under each, and errors in a file not shown 0 of 12 under each. A pass still checks only the files opened.
+- **What this does not show.** These are the same kind of files with new figures, so this cannot show whether the heading sentence misleads where a heading does not apply to a file's lines. It is one review of each product under each rule, on one model. All 39 wrong answers are products after a split. No run went without the rule on these seeds, so the comparison is of reviews, not of whole runs. On this result the rule became the default in v0.10.0, and older tapes replay with `--verify-rule none`.
+
+All 590 reviews, and 449 of the 450 trials, replay with the same results. The other, the told crew on `aggregate-1` of seed 103, stops on size each time, after 6 or 8 calls against the 7 recorded. The likely cause is timing, since its sub-agents run in parallel. Its result does not change.
+
+## 4 November 2026: files a heading does not cover, and what the verifier said
+
+`bash scripts/team_runs.sh refine`, on Haiku 5.5 at effort `low`. Two benches on what the run of 3 November left open. It cost $0.14, against an estimate of $0.17 and a cap of $0.30, and neither bench reached its cap. Each bar was written at the top of the script before the run.
+
+### Does the heading sentence mislead where a heading does not hold?
+
+`verify-bench --arms heading`, on seed 111 with 20 companies: 36 built products, each reviewed under the source rule alone and under the default rule, 72 reviews, $0.08. Each wrong product takes a figure from a line its file's heading does not cover. The company's own file was open in every review.
+
+| The bar | Needed | Result |
+|---|---|---|
+| The source rule alone catches enough to tell | at least 9 of 18 | 17 |
+| Wrong products only the source rule alone fails | at most 1 | **0** |
+| Right products only the default rule fails | at most 1 | **0** |
+| Controls the default rule catches | at least 5 of 6 | **6** |
+
+| Product | Source rule alone | Default rule |
+|---|---|---|
+| A sub-heading says FY2025, caught | 6 of 6 | 6 of 6 |
+| A paragraph says last year, caught | 6 of 6 | 6 of 6 |
+| The file is headed FY2025, caught | 5 of 6 | 6 of 6 |
+| The line says FY2025 (the control), caught | 6 of 6 | 6 of 6 |
+| Right, failed | 0 of 12 | 0 of 12 |
+
+- **The sentence held.** It lost no catch, and failed no right product. The one difference runs the other way: a sum in a file headed FY2025, which the source rule alone passed.
+- **The catches name the line.** One reads "the 49.5 figure is from the '## FY2025 comparatives' section". Under the default rule 23 of 24 named the planted error, and the other failed its product over a different company's line.
+- **What this does not show.** The verifier read built products, on one seed, once each. Right products passed under both rules here, so this bench cannot show what the sentence is for, which the run of 3 November showed on real merges. It says nothing of how a lead or sub-agent reads the sentence.
+
+### Told why the verifier failed its product, does a lead put it right?
+
+`rework-bench`: all 30 reworks on the tapes of 3 November, each asked again with and without what the verifier said, 60 trials, $0.06. Before this, the brief said only "Misses: claim is not PASS". Only the lead's call and its tool rounds go to the model. Of the products, 22 were wrong before the rework and 8 right.
+
+| The bar | Needed | Result |
+|---|---|---|
+| Products wrong before, enough to tell | at least 10 | 22 |
+| Wrong products brought right, the reason against the plain brief | at least twice, and 3 more | **11 against 3** |
+| Those only the reason brings right, against only the plain brief | at least 3 times | **8 against 0** |
+| Right products only the reason turns wrong | at most 1, or 5% | **0 of 8** |
+
+| Brief | Wrong before, right after | Right before, still right | Tokens a rework |
+|---|---|---|---|
+| Plain, on the tapes | 7 of 22 | 7 of 8 | |
+| Plain, asked again | 3 of 22 | 8 of 8 | 4,352 |
+| **With the reason** | **11 of 22** | **8 of 8** | 4,459 |
+
+- **The reason cleared its bar.** Product by product it put 8 right that the plain brief did not, and the plain brief none that it did not (sign test, p about 0.008). It talked no right product wrong, though 8 is few.
+- **The same brief got 7 on the tape and 3 here, so the gain is likely smaller than 11 against 3.** All 30 first calls of the plain arm are the requests on the tape, byte for byte, with the same system prompt, effort and token limit. The difference is the model's answers varying. Together the two give 5 of 22. Against the tape alone, 11 to 7 would miss the "twice" part of the bar, though all 7 right on the tape are right with the reason too.
+- **What stays wrong is mostly a figure left out.** Of the 11 still wrong, 10 decline or leave out one company, such as "not determinable (nine-company sum 531.9 excludes Halvorsen Freight)". One gives a wrong figure. Being told why did not get those leads to take the figure.
+- **What this does not show.** No verifier saw these answers, so this is not how many would pass. Each arm asked once, on one model.
+
+### Built, with no paid test yet
+
+- **A round of reads fits the call that carries it.** A round's requests run one at a time, and the round stops when what it returned would not fit the next call, telling the lead how many did not run. Replayed on the tapes of 3 November, all 9 size stops of the told crew and Genet now send a further call that fits, about 5,400 to 6,200 tokens, and the single agent's 90 size stops all go on as well. The other 351 trials replay the same. A tape cannot say whether those further calls reach right answers.
+- **`--author-rule headed`** tells the lead and sub-agents the heading sentence, for the leads above who will not take a figure. The verifier's result above allows it, but cannot show it helps an author, so it is off until a whole run measures it.
+
+All 72 reviews and all 60 reworks replay with the same results.
+
+### The whole run, stopped after one seed
+
+`bash scripts/team_runs.sh whole` had its bars written first, and was stopped on purpose just after the first of its five seeds because of what it found. It cost $0.42, including 16 trials of the next seed, which do not count and are run again below.
+
+| Seed 106 | Single | Told crew | Genet |
+|---|---|---|---|
+| Right, 10 companies, of 24 | | 23 | 24 |
+| Right, 20 companies, of 6 | 1 | 4 | 4 |
+
+- **Rounds that fit moved the failure instead of fixing it.** At 20 companies all 14 of the lead's replies cut off at their limit came right after a cut round. Each had between 706 and 2,403 tokens left, and thinking often took all of them, so the reply came back broken, or in 7 cases with no visible text at all. The retry had less room still. So the run ended on a malformed reply where it used to end on size. The replay before this run could show only that the call fit. It said a live run was needed to show what the call would do, and it was.
+- **A cut note costs room of its own.** With under 2,500 tokens left, 14 of 15 lead replies ran out right after a cut round, against 1 of 9 on the 3 November tapes, where no cut note was sent. With 3,000 or more, none of 729 ran out, and the largest took 2,416.
+- **The fix.** A cut round now gives back reads until a lead has 3,000 tokens to reply in. A round that is not cut is untouched. Replayed with that on, seed 106 at 10 companies is the same in all 48 trials, and the 3 November tapes change only the 99 trials that stopped on size. Of those, 3 still have less room, all single-agent runs whose earlier rounds had already filled the call. The setting is on the tape, so older tapes replay as they ran.
+- **Not fixed: a sub-agent's reply can be cut off too.** The gates size a part with 1,500 tokens of room, and a part of 5 files leaves about 2,000. On this seed 7 of 92 sub-agent calls ran out, against 8 of 466 on the 3 November tapes at 20 companies. 43 of 92 replies now mention a heading, against 2 of 466, so the sentence may be lengthening them, though one seed cannot say.
+- **A sleeping Mac stops trials.** The machine slept from about 17:26 to 17:41, and a trial's 600-second limit runs on through sleep. Two trials at 20 companies stopped on it, one after a single call. They are the only 2 of the seed's 66 trials that do not replay as recorded, which is how they show.
+
+## 5 November 2026: the rerun, and a verifier that passed a gap
+
+`bash scripts/team_runs.sh rerun`, on Haiku 5.5 at effort `low`, with the fix for cut rounds above. Seeds 107 to 110 at 10 and 20 companies and seed 112 at 20, the told crew and Genet at both sizes and single at 20, with the verifier's reason in the rework brief, rounds that fit and `--author-rule headed` all on. Seed 106 at 10 companies counts as it ran. The bars were written at the top of the script before it ran. It cost $2.08, against an estimate of $1.82, and no run reached its cap. Of that, $0.15 went on 12 trials of seed 108 at 20 companies that a restart of the Mac cut off at 21:19. The script ran that set again from the start the next morning and kept the cut tape under its own name. Those 12 trials do not count, and are reported below.
+
+| The bar | Needed | Result |
+|---|---|---|
+| Told crew and Genet finish with a wrong figure or name | at most 2 of 300 | **6** (the reference had 0) |
+| Tokens a task, told crew | at most 32,525 | 30,105 |
+| Tokens a task, Genet | at most 29,395 | 27,840 |
+| Single at 20 companies finishes with a wrong figure or name | at most 3 of 30 | 2 |
+| Size stops and malformed replies at 20 companies | at most 2 of 60 | **1** (the reference had 9) |
+| Genet right at 20 companies | at least 24 of 30 | **21** |
+| Answers that decline, leave out or hedge | at most 9 of 300 | **11** (the reference had 19) |
+| Right answers | at least 277 of 300 | **276** (the reference had 270) |
+
+| Right | Single | Told crew | Genet |
+|---|---|---|---|
+| 10 companies, of 120 | | 112 (reference 107) | 116 (reference 114) |
+| 20 companies, of 30 | 2 (reference 0) | 27 (reference 27) | 21 (reference 22) |
+
+- **The harm bar failed, so the changes are tested apart before any move to Sonnet.** Six answers finished wrong, against none in the reference.
+- **All six begin the same way.** A sub-agent or lead sets a company's true figure aside because of the sentence next to it: a prior-year figure, or the look-alike company's note, in the same paragraph. That happened in the reference too, and there it ended in a declined answer. Here the product answers anyway. It says a company "contributes 0", is "excluded" or is "unresolved", and the verifier passes it, in 5 of the 6 at its first review. Its reasons echo the sample rule, which says a figure no file covers is no fault: "the unopened companies cannot be checked, so the sum is not disproved".
+- **Two of the six have a second cause.** On seed 108 the told crew's lead first said a comparison "cannot be settled"; the verifier failed that, and the rework picked a company. On seed 112 a lead read an "FY2025 churn" sentence as a heading and set aside the right company's line under the heading sentence.
+- **Across the tapes, the verifier now passes such answers more often.** At 10 companies, lead products that admit a company is missing or set aside, yet give an answer, passed review 3 times of 23 on the reference's tapes and 11 of 22 here. That count is a text search over different products, so it points at the verifier's rule but does not prove it. The test below reviews the same products again.
+- **The cut-off trials had a seventh.** Among the 12 trials the restart cut off, the told crew's lead summed 19 of 20 companies, "excluding Kestrel Mill Supply, which it says has no Q2 figure", and the verifier passed it. It does not count, by the rule written before the run, but it is the same failure.
+- **Rounds that fit fixed the size stops.** At 20 companies 1 trial of 60 stopped on size or a malformed reply, against 9 in the reference, and the lead's replies cut off at their limit fell from 14 of 50 calls on seed 106 to 4 of 469. The bar also asked for Genet right on 24 of 30 at 20 companies, and it got 21, three of them the wrong answers above, so by the bar as written the size problem stays open.
+- **The heading sentence stays off.** Answers that decline or leave out a figure fell from 19 to 11, short of the 9 the bar asked for, and one of the six wrong answers misread it.
+- **Single at 20 companies now finishes.** Its size stops go on: 2 right of 30, 2 finished wrong, and most of the rest stopped by the verifier.
+- **Reported with no bar: reworks.** After a FAIL, a rework put a wrong product right 9 times of 44, against 7 of 22 on the reference's tapes without the reason. At 10 companies it also turned 3 right products wrong, against 1. These are other products than the rework bench's, most of them partial answers at 20 companies, but the bench's gain did not show in the whole run.
+- **Reported with no bar: sub-agents' replies cut off.** At 20 companies 14 of 485 sub-agent calls ran out, against 8 of 466 in the reference. Once, on the cut-off trials, that ended in a size stop.
+
+All 282 trials that finished replay with the same results. The 12 cut off are on their own tape, with no results to match.
+
+### Told to fail a product that leaves out what the goal names
+
+`bash scripts/team_runs.sh gaprule`, on 6 November. Every review after a split on the rerun's tapes, 224 products, asked again under `both` and under `named`, which adds one sentence after the sample rule: "A product that leaves out, sets aside or counts as zero anything the goal names, whatever reason it gives, has not answered the goal: FAIL it and name what is missing." Of the products 187 were right and 37 wrong. 448 reviews cost $0.44, against an estimate of $0.42 and a cap of $0.50. The bars were written at the top of the script before the run, and both had to hold for the sentence to become the default.
+
+| The bar | Needed | Result |
+|---|---|---|
+| `both` passes enough wrong products to tell | at least 4 | 6 |
+| Wrong products `named` passes | at most 1, and fewer than `both` | **0** |
+| Right products `named` fails, against `both` | at most 5 more | **25 against 3** |
+
+| Rule | Right answers failed | Passed when recorded, failed now | Wrong answers caught | Wrong answers passed | Tokens a review |
+|---|---|---|---|---|---|
+| Both | 3 of 187 | 2 of 182 | 31 of 37 | 6 | 4,547 |
+| Named | 25 of 187 | 22 of 182 | 37 of 37 | 0 | 4,673 |
+
+One right answer has no verdict under `both`: its reply did not parse.
+
+- **The sentence stops the harm, but fails too many right answers, so it stays off.** Asked again, `both` passed 5 of the 6 products the wrong answers finished on, the five that set a company aside, and `named` failed all 6. But it failed 22 right products that `both` passed, where the bar allowed 5. `--verify-rule named` turns it on.
+- **What it fails is a list that is not complete.** Of those 22, about 15 give figures for only some of the companies, such as the top three, and still name the right company or total. The verifier read "leaves out" as not listing every company. 5 did set a company aside and came to the right answer anyway, a fair failure. 2 failed for other reasons.
+- **A failure has a cost.** A failed product goes back to the lead, and on the rerun a rework turned a right product wrong 3 times at 10 companies.
+- **What this does not show.** It is one review of each product under each rule, on one model, and these are the products the sentence was written from. They were not reviewed under the source rule alone, so this cannot say whether the v0.10.0 rule let them through. A narrower sentence, failing only a product that says it set a named company aside, would keep these catches and fail fewer lists. It is untested, and would need new questions.
+
+All 448 reviews replay with the same results.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.
@@ -524,4 +694,4 @@ World: `$HOME/genet-job/note-a.txt` filed, `note-b.txt` open.
 
 ## Run files
 
-The Claude runs' results are in `data/compare/` and their tapes in `data/tapes/`, and both are published as releases, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102) and [for 3 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), each with a `REPLAY.md` that gives each tape's command. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.
+The Claude runs' results are in `data/compare/` and their tapes in `data/tapes/`, and both are published as releases, [through 29 October](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), [for 2 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), [for 3 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103) and [for 3 to 6 November](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261106), each with a `REPLAY.md` that gives each tape's command. The run files in `data/` and `Data2/` stay on the operator's machine and are not committed. `Data2/data/` is a backup copy of `data/`. The four episodes in `data/episodic/` that have no saved run (`mx-001`, `pw-001`, `so-001`, `so-live-gate`) came from the stub adapter, not from a live model.

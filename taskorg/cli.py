@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 
 from .budget import Budget
-from .checks import SOURCES, VIEWS
+from .checks import AUTHOR_RULES, SOURCES, VIEWS
 from .errors import InvariantError
 from .factory import new_run
 from .gates import Subtask, World
@@ -99,6 +99,14 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
                         "(the brief before v0.7.0, which older tapes replay)")
+    p.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
+                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, "
+                        "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
+    p.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
+                   help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")
+    p.add_argument("--author-rule", default="none", choices=list(AUTHOR_RULES),
+                   help="words for the lead's and sub-agents' briefs: none (the default), or headed, a line that gives no "
+                        "year takes the year in its file's heading")
     p.add_argument("--abort", action="append", default=[], metavar="CRITERION",
                    help="stop at a decision point when this is met: forecast_short (the budget cannot finish the "
                         f"work; the default), parts_failed:N (N parts' sub-agents failed), or none. "
@@ -151,7 +159,9 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
     toolbox = Toolbox(roots=args.workspace, files=args.read)
     return Engine(store, adapter=pick_adapter(args.adapter), budget=_budget(args), toolbox=toolbox,
                   split_policy=args.split_policy, isolation_required=args.isolate, lessons=not args.no_lessons,
-                  verify_view=args.verify_view, verify_sources=args.verify_sources, report_up=args.report_up,
+                  verify_view=args.verify_view, verify_sources=args.verify_sources, verify_note=MERGE_RULES[args.verify_rule],
+                  rework_reason=args.rework_reason, author_note=AUTHOR_RULES[args.author_rule],
+                  report_up=args.report_up,
                   cards=args.cards)
 
 
@@ -408,6 +418,14 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
                      help="sources the kernel opens for the verifier: layered (default), full, or none "
                           "(the brief before v0.7.0, which older tapes replay)")
+    p_c.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
+                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, "
+                          "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
+    p_c.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
+                     help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")
+    p_c.add_argument("--author-rule", default="none", choices=list(AUTHOR_RULES),
+                     help="words for the lead's and sub-agents' briefs: none (the default), or headed, a line that gives no "
+                          "year takes the year in its file's heading")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
 
@@ -453,6 +471,23 @@ def main(argv: list[str] | None = None) -> int:
     p_m.add_argument("--out", default=None, help="results JSON (default data/compare/merges-<time>.json)")
     p_m.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
     p_m.set_defaults(func=cmd_merge_bench)
+
+    p_w = sub.add_parser("rework-bench", help="told why the verifier failed its product, does a lead put it right? the tapes' reworks, asked again")
+    p_w.add_argument("--tapes", required=True, help="the tapes to take reworks from, comma separated")
+    p_w.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
+                     help="sim: at $0; live or anthropic: a real lead")
+    p_w.add_argument("--arms", default="plain,reason", help="from plain, reason")
+    p_w.add_argument("--repeat", type=_whole(1), default=1)
+    p_w.add_argument("--workers", type=_whole(1), default=1, help="reworks at the same time")
+    p_w.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens")
+    p_w.add_argument("--price-out", type=_finite(0, strict=False), default=None, help="$ per 1M output tokens")
+    p_w.add_argument("--max-spend", type=_finite(0, strict=True), default=None,
+                     help="$ cap: stop before a rework that could pass it (needs --price-in and --price-out)")
+    p_w.add_argument("--record", default=None, help="save every model exchange to this tape")
+    p_w.add_argument("--replay", default=None, help="answer from this tape: no key, no spend")
+    p_w.add_argument("--out", default=None, help="results JSON (default data/compare/reworks-<time>.json)")
+    p_w.add_argument("--dry-run", action="store_true", help="print the plan; call no model")
+    p_w.set_defaults(func=cmd_rework_bench)
 
     p_p = sub.add_parser("plan-bench", help="does a second plan fit? first plans the gates refuse, and the lead's next")
     p_p.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
@@ -542,6 +577,8 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
         player = Player(Path(args.replay))
         recorded = player.header.get(header_key)
         recorded = recorded if isinstance(recorded, dict) else {}
+        if recorded:  # A tape from before a switch does not name it, and was recorded without it.
+            recorded = {"verify_rule": "none", "rework_reason": False} | recorded
         differ = [k for k in keys if k in recorded and recorded[k] != config.get(k)]
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
@@ -600,7 +637,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
         "per_family": args.per_family, "repeat": args.repeat, "seed": args.seed,
         "entities": args.entities, "distractors": args.distractors, "filed": args.filed,
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
-        "verify_view": args.verify_view, "verify_sources": args.verify_sources,
+        "verify_view": args.verify_view, "verify_sources": args.verify_sources, "verify_rule": args.verify_rule,
+        "rework_reason": args.rework_reason, "author_rule": args.author_rule,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
     if args.price_in is not None:
@@ -613,7 +651,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
     factory, player, recorder = _model_source(
         args, config, "compare", "COMPARE",
         ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors", "filed",
-         "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources"),
+         "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources", "verify_rule",
+         "rework_reason", "author_rule"),
     )
     if args.corpus:
         suite.write_corpus(args.corpus)
@@ -628,7 +667,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
             corpus_dir=Path(args.corpus) if args.corpus else None,
             progress=stderr,
             stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
-            verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources},
+            verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
+                    "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
+                    "author_note": AUTHOR_RULES[args.author_rule]},
         )
     finally:
         if recorder:
@@ -764,6 +805,63 @@ def cmd_merge_bench(args: argparse.Namespace) -> int:
         if recorder:
             recorder.close()
     if len(results) < reviews:
+        config["stopped_after"] = len(results)
+    summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
+    save(out, config=config, results=results, summary=summary)
+    print(render(summary))
+    if player:
+        print(f"replay: {player.served} replies served ({player.repeated} repeated), "
+              f"{player.misses} requests the tape does not have")
+    if recorder:
+        print(f"tape: {recorder.count} exchanges saved to {args.record}")
+    print(f"saved {out}")
+    return 0
+
+
+def cmd_rework_bench(args: argparse.Namespace) -> int:
+    import time
+
+    from .compare import spend_cap, stderr
+    from .rework_bench import ARMS, render, reworks_from, run_bench, save, summarize
+
+    arms = tuple(dict.fromkeys(a.strip() for a in args.arms.split(",") if a.strip()))
+    bad = set(arms) - set(ARMS)
+    if not arms or bad:
+        raise InvariantError("REWORK_BENCH", f"name arms from {list(ARMS)}" + (f"; unknown: {sorted(bad)}" if bad else ""))
+    if (args.price_in is None) != (args.price_out is None):
+        raise InvariantError("REWORK_BENCH", "give both --price-in and --price-out, or neither")
+    if args.max_spend is not None and args.price_in is None:
+        raise InvariantError("REWORK_BENCH", "--max-spend needs --price-in and --price-out")
+    if args.record and args.replay:
+        raise InvariantError("REWORK_BENCH", "--record or --replay, not both")
+    tapes = [t.strip() for t in args.tapes.split(",") if t.strip()]
+    missing = [t for t in tapes if not Path(t).is_file()]
+    if not tapes or missing:
+        raise InvariantError("REWORK_BENCH", f"--tapes names no tape it can read: {missing or 'none given'}")
+    reworks = [r for t in tapes for r in reworks_from(Path(t))]
+    if not reworks:
+        raise InvariantError("REWORK_BENCH", "those tapes hold no rework after a verifier's reply")
+    trials = len(reworks) * len(arms) * args.repeat
+    out = _out_path(args.out, Path(f"data/compare/reworks-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    config = {
+        "adapter": "replay" if args.replay else args.adapter, "arms": list(arms), "tapes": [Path(t).name for t in tapes],
+        "reworks": len(reworks), "was_right": sum(r.right_before for r in reworks), "repeat": args.repeat, "trials": trials,
+    }
+    if args.price_in is not None:
+        config |= {"price_in": args.price_in, "price_out": args.price_out}
+    if args.max_spend is not None:
+        config["max_spend"] = args.max_spend
+    if args.dry_run:
+        print(json.dumps(config, indent=2))
+        return 0
+    factory, player, recorder = _model_source(args, config, "rework_bench", "REWORK_BENCH", ("arms", "tapes", "repeat"))
+    try:
+        results = run_bench(reworks, factory, arms=arms, repeats=args.repeat, workers=args.workers, progress=stderr,
+                            stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None)
+    finally:
+        if recorder:
+            recorder.close()
+    if len(results) < trials:
         config["stopped_after"] = len(results)
     summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
     save(out, config=config, results=results, summary=summary)

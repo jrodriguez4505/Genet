@@ -52,17 +52,30 @@ SOURCE_RULE = (
     "of them covers, that file must support it for the same subject and period. If one does not, FAIL and "
     "name the fact and the file."
 )
-# The verifier told what a layered pick is. Off by default: the verify bench measures what it saves and costs.
+# The verifier told what a layered pick is: a figure no source covers is no reason to FAIL.
 SAMPLE_RULE = (
     " These files are a sample: the kernel opened only some of what the product draws on. A fact that no file "
     "here covers is not a fault, so do not FAIL a product because a figure could not be confirmed or a file was "
     "not opened. FAIL for a fact a file here contradicts, or a product that does not answer the goal."
 )
-# How to read a source's undated line. Off by default, for the same benches: half the failures of right merges cite one.
+# How to read a source's undated line: half the failures of right merges cited one.
 HEADING_RULE = (
     " A file's heading applies to its lines: a line that gives no year takes the year in the heading, unless it "
     "says otherwise."
 )
+# A product that names its own gap is no answer. On the rerun of 5 November, 5 of the 6 wrong answers that finished had
+# set a named company aside ("contributes 0", "unresolved") and were passed under the sample rule, which says a figure
+# no file covers is no fault (docs/LIVE_TESTS.md).
+NAMED_RULE = (
+    " A product that leaves out, sets aside or counts as zero anything the goal names, whatever reason it gives, has "
+    "not answered the goal: FAIL it and name what is missing."
+)
+# What the verifier is told after the source rule unless a run names another. On five seeds no tape had used, right
+# answers failed fell from 69 of 220 to 6, and wrong answers caught went from 36 of 39 to 37 (docs/LIVE_TESTS.md).
+VERIFY_RULE = SAMPLE_RULE + HEADING_RULE
+# What the lead and sub-agents can be told about an undated line (--author-rule). Off until a run shows it pays: on the
+# held-out seeds, 23 of 33 wrong answers were an author refusing a figure its file holds, on a line with no year.
+AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip()}
 
 _READ_HEAD = re.compile(r"\[read ([^\]\n]+)\](?:\n| already in full above)")
 _MATCH_LINE = re.compile(r"^([^\[\n:][^\n:]*):\d+: ", re.MULTILINE)

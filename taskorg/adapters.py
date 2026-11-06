@@ -38,6 +38,9 @@ class ModelAdapter:
     min_reply_tokens = 0
     # Tokens a sub-agent's reply is assumed to need once it has read. 0 where nothing has measured it.
     part_reply_tokens = 0
+    # Tokens a lead's reply is assumed to need once it is told a round was cut, thinking included. A cut round gives back
+    # reads until it leaves this much. 0 where nothing has measured it.
+    round_reply_tokens = 0
     # The model's tokens per four characters. The kernel scales what it measures in characters, such as a
     # sub-task's files, by this, so the gates and the size check count alike.
     token_ratio = 1.0

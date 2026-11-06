@@ -2,6 +2,40 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.11.0 — November 2026: a lead told why, and rounds that fit
+
+**Why.** The run of 3 November left four things to try. Nobody had tested the heading sentence on files where a heading does not hold. The lead's rework brief never said what the verifier objected to, in 0 of 32 requests. A lead's own reads could overflow its next call and stop the run. And most wrong answers were an author refusing a figure that is in the file.
+
+**Built.**
+- **The verifier's reason in the rework brief** (`loop.py`), up to 1,200 characters. `--no-rework-reason` leaves it out, as tapes before this version recorded it.
+- **Rounds that fit.** A round's tool requests run one at a time, and the round stops when what it returned would not fit the next call, telling the lead how many did not run. A cut round gives back reads until a lead has room to reply (`round_reply_tokens` on the adapter, which a tape records, so older tapes replay as they ran) (`loop.py`).
+- **`--author-rule headed`** tells the lead and sub-agents the heading sentence. It is off by default until a whole run measures it.
+- **`rework-bench`** (`taskorg/rework_bench.py`). The tapes' reworks asked again, with and without the reason, product by product.
+- **The verify bench's `heading` arm.** Wrong figures from a section, a paragraph or a whole file that a heading does not cover, with the company's file always open.
+- **`scripts/team_runs.sh refine`.** Both benches, with their bars written before the run.
+- **`--verify-rule named`**, off by default: the default rule and one more sentence, that a product that leaves out, sets aside or counts as zero anything the goal names has not answered it (`checks.NAMED_RULE`). `merge-bench` reviews under it too.
+- **`scripts/team_runs.sh whole`, `rerun` and `gaprule`.** Whole runs with every change on, and the test of that sentence, each with its bars written before the run.
+
+**What the live runs showed** (4 November, Haiku 5.5, $0.14). The heading sentence held: the default rule caught 24 of 24 wrong products against 23 of 24 for the source rule alone, and failed none of 12 right ones. Told the reason, leads put right 11 of 22 wrong products, against 3 for the same brief without it, and talked none of 8 right ones wrong. The same plain brief got 7 of 22 on the tapes, so the gain is likely smaller than that.
+
+The whole run (4 to 6 November, $2.94 with a first try stopped after one seed and the sentence's test) took the told crew and Genet over five more seeds. The first try found that a cut round left a lead too little room to reply, so a cut round now gives back reads until a lead has 3,000 tokens. The rerun's harm bar failed: 6 of 300 answers finished wrong, against none before. In 5 a product set a company's true figure aside and the verifier passed it. Stops on size or a malformed reply at 20 companies fell from 9 of 60 to 1, but Genet was right on 21 of 30 there, short of its bar's 24. The told crew got 139 of 150 and Genet 137. The `named` sentence failed all 37 wrong products on the rerun's tapes, but 22 more right ones than the default, against a limit of 5, so it stays off. See [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+
+**Left open.** A verifier that passes a product setting part of the goal aside (question 15 in [ARCHITECTURE.md](ARCHITECTURE.md)). Genet's right answers at 20 companies after the size fix, and sub-agent replies cut off at their limit (question 16). `--author-rule headed` cut answers that decline from 19 to 11 of 300, short of its bar's 9, so it stays off (question 17). Of the 11 reworks still wrong on the bench, 10 decline or leave out one company.
+
+## v0.10.0 — November 2026: the verifier told what its sources are
+
+**Why.** On real merges the verifier failed about 1 right answer in 3. Two sentences nearly stopped that on the tapes that suggested one of them, so they waited for new questions.
+
+**Built.**
+- **The rule is the default.** After the source rule, the verifier is told its files are a sample, so a figure no file covers is no reason to FAIL, and that a line with no year takes its file's heading (`checks.VERIFY_RULE`, `loop.py`).
+- **`--verify-rule`** on `compare` and every run command: `both` (the default), `told`, `headed` or `none`. `none` is the brief before this version, which older tapes replay, and replaying one without it gets a note.
+- **`merge-bench`** replaces whatever rule a tape was recorded under, so `none` means none on a tape recorded under another, and reports each rule against the first, product by product. Its first rule was called `today`.
+- **`scripts/team_runs.sh heldout`.** Five seeds no tape had used, resumable, with its bar written before the run.
+
+**What the live run showed** (3 November, Haiku 5.5, $2.40). The rule cleared its bar. Of 220 right answers, the source rule alone failed 69 and the rule 6, and 64 to 1 product by product. Of 39 wrong answers it caught 37, against 36. The single agent got 57 of 150, the told crew 134 and Genet 136. Full results are in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+
+**Left open.** A pass still checks only the files opened. These seeds are the same kind of files with new figures, so nothing yet shows whether the heading sentence misleads where a heading does not apply (question 15 in [ARCHITECTURE.md](ARCHITECTURE.md)). The run found two new problems: a lead's own reads overflowing its next call at 20 companies, and answers of "not found" that finish as complete (questions 16 and 17).
+
 ## v0.9.3 — November 2026: files a plan leaves out, and benches for the second plan and the verifier
 
 **Why.** The check of v0.9.2 left two questions a run could not answer. Every lead's first plan fit, so no real lead had written a second. And the verifier failed a right answer on 4 of 5 split runs.

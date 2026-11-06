@@ -189,8 +189,8 @@ def run_trial(
     store_root: Path | None = None,
     verify: dict | None = None,
 ) -> TrialResult:
-    """One task under one strategy. verify: the verifier's view and sources (Engine's verify_view and
-    verify_sources), the same for every strategy."""
+    """One task under one strategy. verify: the verifier's view, sources and rule (Engine's verify_view,
+    verify_sources and verify_note), the same for every strategy."""
     with tempfile.TemporaryDirectory() as tmp:
         store = MemoryStore(store_root or Path(tmp))
         run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=PURPOSE, done_when=DONE_WHEN)

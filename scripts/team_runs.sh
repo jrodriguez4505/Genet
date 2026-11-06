@@ -26,6 +26,15 @@
 #   bash scripts/team_runs.sh merges   the real merges on the tapes, reviewed under today's rule and three others, and
 #     the two new rules on the built products, whose errors sit in files shown or not. Which rule stops the verifier
 #     failing right answers, and does it still catch wrong ones?
+#   bash scripts/team_runs.sh heldout   the rule from the merges run, on questions it has never seen: 5 seeds no tape has
+#     used, single, the told crew and genet, all with --verify-rule both. Then each new merge reviewed under today's rule
+#     and both, and the built products on a new seed. Stops at the first run that stops; run it again to go on, and
+#     what finished is kept. The bar, written before any of it ran:
+#   (today's rule, as this was written: the source rule alone, which merge-bench now calls none.)
+#     - Fewer false failures: of right answers, both fails at most half as many as today's rule, and the products only
+#       today's rule fails are at least 3 times those only both fails. Today's rule must fail at least 10, or it cannot say.
+#     - Errors still caught: of wrong answers, those only today's rule fails are no more than 1, or 5% if that is more.
+#     Both must hold for the rule to become the default.
 #
 # 1. The report bench (team design part 8): 24 sub-agent parts of 20-company aggregate questions, 12 with
 #    the plan wrong for them (their files are a look-alike's or an unrelated company's), each run with the
@@ -34,6 +43,54 @@
 # 2. The cards (team design part 7): genet with and without the members table in the lead's plan brief,
 #    on 10-company aggregate questions at a cap where the material does not fit one call. Does the lead
 #    propose differently, with fewer parts refused or failed?
+#   bash scripts/team_runs.sh refine   two benches on what the held-out run found.
+#     Heading: every right figure in the suite's files sits on a line with no year, so a sentence saying such a line takes
+#     its file's heading could not lose on them. On seed 111, files where the heading does not hold for every line: 6
+#     questions, 18 wrong products, 12 right ones and 6 controls, each under the source rule alone and the default rule.
+#     Rework: each rework on the held-out tapes asked again, with and without what the verifier said.
+#     The bars, written before the run:
+#     - Heading. It cannot say unless the source rule alone catches at least 9 of the 18 wrong products. The sentence holds
+#       if the wrong products only the source rule alone fails are at most 1, and the right products only the default rule
+#       fails are at most 1, and the default rule catches at least 5 of the 6 controls. If so, the lead and sub-agents may
+#       be told it. If not, it is reworded and tested again on another seed.
+#     - Rework. It cannot say unless at least 10 products were wrong before. The reason stays on if, of those, it brings
+#       right at least twice as many as the plain brief and at least 3 more, if those only it brings right are at least 3
+#       times those only the plain brief brings right, and if the right products it alone turns wrong are at most 1, or 5%.
+#       If not, the reason goes back off.
+#   bash scripts/team_runs.sh whole   whole runs with v0.11.0's changes on together: the verifier's reason in the rework
+#     brief, rounds that fit, and the heading sentence told to the lead and sub-agents. 5 seeds no tape has used, 106 to
+#     110: 24 questions at 10 companies under the told crew and genet, and 6 at 20 under those and single, whose size stops
+#     now go on. 330 trials.
+#     Measured against the held-out run of the same shape, on seeds 101 to 105. Its told crew and genet, 300 trials: 270
+#     right; 9 size stops at 20 companies; 19 answers that decline, leave out or hedge a figure or name; none finished with
+#     a wrong figure or name; 28,283 and 25,561 tokens a task. Its single at 20 companies: 0 of 30, each a size stop.
+#     The bars, written before the run:
+#     - Harm. The told crew and genet finish with a wrong figure or name at most 2 times in 300, and each spends at most 15%
+#       more tokens a task. If either fails, the changes are tested apart before any move to Sonnet.
+#     - Single at 20 companies. It finishes with a wrong figure or name at most 3 times in 30. A stop was an honest failure,
+#       and going on must not hand back a wrong answer as complete. If it does, a cut round stops a single agent's run again.
+#     - Rounds that fit. At 20 companies, size stops at most 2 of 60, and genet right on at least 24 of 30. If so, the
+#       size problem counts as fixed. If not, it stays open.
+#     - The heading sentence. Answers that decline, leave out or hedge a figure or name, at most 9 of 300. If so, and the
+#       harm bar holds, --author-rule headed becomes the default. If not, it stays off.
+#     - Right answers. At least 277 of 300, a quarter fewer wrong. Below 270 the changes are tested apart before Sonnet.
+#     These are other questions than the reference's, so a few answers either way is noise, and with the changes on together
+#     the run cannot say which did what. Reported with no bar: how many wrong products a rework puts right, against 7 of 22.
+#   bash scripts/team_runs.sh rerun   the whole run again, now that a round leaves a lead 3,000 tokens to reply in. The run
+#     above was stopped on 4 November after seed 106: at 20 companies all 14 of a lead's cut-off replies came right after a
+#     cut round, so size stops had become stops on a malformed reply. Seeds 107 to 110 at 10 and 20 companies, and seed 112
+#     at 20 in place of 106, which the fix was read from. Seed 106 at 10 companies counts as it ran: no round there was cut.
+#     The bars are those above, unchanged but for one thing: in the rounds bar, a stop on a malformed reply counts as a size
+#     stop, so the same failure cannot pass under another name. Reported with no bar: sub-agents' replies cut off.
+#   bash scripts/team_runs.sh gaprule   the rerun's real merges, 224 of them, reviewed under both and under named, which adds
+#     one sentence: a product that leaves out, sets aside or counts as zero anything the goal names has not answered it.
+#     The rerun failed its harm bar, 6 finished wrong of 300; 5 of the 6 had set a named company aside and passed review.
+#     The bars, written before the run:
+#     - It cannot say unless both passes at least 4 of the wrong products here.
+#     - Wrong answers. Named passes at most 1 of the wrong products, and fewer than both does.
+#     - Right answers. Named fails at most 5 more of the right products than both does.
+#     If both hold, named becomes the verifier's default. If not, it stays off and the harm stays an open problem.
+#     Reported with no bar: the 6 that finished wrong, one by one, and right products that admit a gap.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -44,8 +101,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -58,7 +115,17 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = merges ]; then
+if [ "$mode" = gaprule ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.42, capped at \$0.50"
+elif [ "$mode" = rerun ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.82 in all, each run capped (\$3.00 in all)"
+elif [ "$mode" = whole ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.05 in all, each run capped (\$3.35 in all)"
+elif [ "$mode" = refine ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.17 in all, each run capped (\$0.30 in all)"
+elif [ "$mode" = heldout ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.50 in all, each run capped (\$4.10 in all, and the smoke test)"
+elif [ "$mode" = merges ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.64 in all, each run capped (\$1.00 in all, and the smoke test)"
 elif [ "$mode" = next ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.10 in all, each run capped (\$0.20 in all, and the smoke test)"
@@ -122,6 +189,174 @@ print(f"smoke: {r['status']}, answer {r['answer']!r} (expected {r['expected']!r}
 if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
     sys.exit("the smoke test did not get the right answer")
 EOF
+fi
+
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ]; then
+  # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
+  held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
+    local name=$1 cap=$2 sub=$3
+    shift 3
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      # A tape is the record of what was spent, so one a cut-off run left is kept, under a name of its own.
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name"
+      "$PY" -m taskorg.cli "$sub" --adapter anthropic --price-in "$pin" --price-out "$pout" --max-spend "$cap" "$@" \
+        --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\[|^\| |^- |^(Right|Wrong) |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+    fi
+    echo
+    if [ ! -f "data/compare/$name.json" ]; then
+      echo "$name did not finish, so nothing more was run. What finished is kept. To go on: bash scripts/team_runs.sh $mode"
+      exit 1
+    fi
+    if grep -q '"stopped_after"' "data/compare/$name.json"; then
+      echo "$name stopped early, at its cap or by you, so nothing more was run. What finished is kept. To run it again, move its results out of data/compare."
+      exit 1
+    fi
+  }
+fi
+if [ "$mode" = gaprule ]; then
+  echo
+  echo ">>> The rerun's 224 real merges, each reviewed under both and under named, on $model, about 10 minutes."
+  echo "    Named adds one sentence: a product that leaves out, sets aside or counts as zero anything the goal names"
+  echo "    has not answered it. About \$0.42; it stops itself before \$0.50."
+  echo "    Written before it ran: named passes at most 1 wrong product and fewer than both, and fails at most 5 more"
+  echo "    right products than both. If so, it becomes the verifier's default. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  tapes=""
+  for name in s107-10 s107-20 s108-10 s108-20 s109-10 s109-20 s110-10 s110-20 s112-20; do
+    tapes="$tapes${tapes:+,}data/tapes/rerun-$name.jsonl"
+  done
+  held gaprule-merges 0.50 merge-bench --workers 4 --rules both,named --tapes "$tapes"
+  echo
+  echo "Done. Results: data/compare/gaprule-merges.json   Tape: data/tapes/gaprule-merges.jsonl"
+  exit 0
+fi
+if [ "$mode" = rerun ]; then
+  echo
+  echo ">>> Whole runs again, now that a round leaves a lead 3,000 tokens to reply in, on $model, about 3 hours."
+  echo "    Run it again to go on if it is cut off. Keep the lid open: a sleeping Mac stalls it."
+  echo "    Seeds 107 to 110: 24 questions at 10 companies, the told crew and genet, about \$0.23; it stops itself before \$0.35."
+  echo "    Seeds 107 to 110 and 112: 6 at 20 companies, the told crew, genet and single, about \$0.18; it stops itself before \$0.32."
+  echo "    On in every run: the verifier's reason in the rework brief, rounds that fit and the heading sentence for authors."
+  echo "    Written before it ran, against the held-out run on other questions, told crew and genet, 300 trials,"
+  echo "    with seed 106 at 10 companies counted as it ran:"
+  echo "      at most 2 finish with a wrong figure or name (it had 0), at most 15% more tokens a task;"
+  echo "      size stops and stops on a malformed reply at 20 companies at most 2 of 60 (it had 9),"
+  echo "      and genet right on at least 24 of 30 there (it had 22);"
+  echo "      answers that decline or leave out a figure at most 9 (it had 19); at least 277 right (it had 270)."
+  echo "      Single at 20 companies finishes with a wrong figure or name at most 3 of 30."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  # Hours long: keep the machine from idling to sleep for as long as this script runs, and no longer.
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 107 108 109 110 112; do
+    if [ "$seed" != 112 ]; then
+      held "rerun-s$seed-10" 0.35 compare --seed "$seed" --per-family 6 --entities 10 --distractors 6 \
+        --strategies always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+    fi
+    held "rerun-s$seed-20" 0.32 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+  done
+  echo
+  echo "Done. Results: data/compare/rerun-*.json   Tapes: data/tapes/rerun-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = whole ]; then
+  echo
+  echo ">>> Whole runs with the changes on together, on $model, about 2 hours. Run it again to go on if it is cut off:"
+  echo "    5 seeds no tape has used (106 to 110), each: 24 questions at 10 companies, the told crew and genet, about \$0.23;"
+  echo "      it stops itself before \$0.35. And 6 at 20 companies, the told crew, genet and single, about \$0.18, of which"
+  echo "      single's 6 trials are about \$0.06 and at most about \$0.13; it stops itself before \$0.32."
+  echo "    On in every run: the verifier's reason in the rework brief, rounds that fit, and the heading sentence for authors."
+  echo "    Written before it ran, against the held-out run on other questions, told crew and genet, 300 trials:"
+  echo "      at most 2 finish with a wrong figure or name (it had 0), at most 15% more tokens a task;"
+  echo "      size stops at 20 companies at most 2 of 60 (it had 9), and genet right on at least 24 of 30 there (it had 22);"
+  echo "      answers that decline or leave out a figure at most 9 (it had 19); at least 277 right (it had 270)."
+  echo "      Single at 20 companies finishes with a wrong figure or name at most 3 of 30."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  # Hours long: keep the machine from idling to sleep for as long as this script runs, and no longer.
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 106 107 108 109 110; do
+    held "whole-s$seed-10" 0.35 compare --seed "$seed" --per-family 6 --entities 10 --distractors 6 \
+      --strategies always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+    held "whole-s$seed-20" 0.32 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --author-rule headed
+  done
+  echo
+  echo "Done. Results: data/compare/whole-*.json   Tapes: data/tapes/whole-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = refine ]; then
+  echo
+  echo ">>> Two benches on $model, about 10 minutes. Run it again to go on if it is cut off:"
+  echo "    Files where a heading does not hold for every line, seed 111: 72 reviews, about \$0.09; it stops itself before \$0.15"
+  echo "    The reworks on the held-out tapes, with and without what the verifier said: about \$0.08; it stops itself before \$0.15"
+  echo "    Written before it ran: the heading sentence may lose at most 1 caught error of 18, and the reason must bring right"
+  echo "    at least twice as many wrong products as the plain brief, and talk at most 1 right one wrong, or 5%."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  held refine-heading 0.15 verify-bench --seed 111 --setups independent-layered,independent-both --arms heading \
+    --questions 6 --entities 20 --distractors 6 --context 8000
+  tapes=""
+  for seed in 101 102 103 104 105; do tapes="$tapes${tapes:+,}data/tapes/heldout-s$seed-10.jsonl,data/tapes/heldout-s$seed-20.jsonl"; done
+  held refine-rework 0.15 rework-bench --workers 4 --tapes "$tapes"
+  echo
+  echo "Done. Results: data/compare/refine-*.json   Tapes: data/tapes/refine-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = heldout ]; then
+  echo
+  echo ">>> Questions the rule has never seen, on $model, about 2.5 hours. Run it again to go on if it is cut off:"
+  echo "    5 seeds (101 to 105), each: 24 questions at 10 companies, about \$0.27, stops itself before \$0.42;"
+  echo "      and 6 at 20 companies, about \$0.12, stops itself before \$0.20. Single, the told crew and genet, the rule on."
+  echo "    Every new merge reviewed under the source rule alone and the rule, about \$0.50; it stops itself before \$0.85"
+  echo "    The built products on seed 101, under the source rule alone and the rule, about \$0.08; it stops itself before \$0.15"
+  echo "    Written before it ran: the rule must fail at most half as many right answers, and lose at most 1 caught error"
+  echo "    or 5%, whichever is more. The full bar is at the top of this script."
+  read -r -p "Run them now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  # Hours long: keep the machine from idling to sleep for as long as this script runs, and no longer.
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  tapes=""
+  for seed in 101 102 103 104 105; do
+    held "heldout-s$seed-10" 0.42 compare --seed "$seed" --per-family 6 --entities 10 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --verify-rule both
+    held "heldout-s$seed-20" 0.20 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 --distractors 6 \
+      --strategies single,always-told,genet --context 8000 --tool-rounds 4 --verify-rule both
+    tapes="$tapes${tapes:+,}data/tapes/heldout-s$seed-10.jsonl,data/tapes/heldout-s$seed-20.jsonl"
+  done
+  held heldout-merges 0.85 merge-bench --workers 4 --rules none,both --tapes "$tapes"
+  held heldout-built 0.15 verify-bench --seed 101 --setups independent-layered,independent-both --arms split \
+    --questions 6 --entities 20 --distractors 6 --context 8000
+  echo
+  echo "Done. Results: data/compare/heldout-*.json   Tapes: data/tapes/heldout-*.jsonl"
+  exit 0
 fi
 
 if [ "$mode" = merges ]; then

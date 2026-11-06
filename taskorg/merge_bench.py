@@ -5,10 +5,11 @@ like a merge. The runs' own merges fail far more often. So this bench takes the 
 the product and sources as they were sent after a real split, and asks again under each rule. Only the verifier's
 call goes to the model, and the same brief goes under each rule, so the rules compare product by product.
 
-  today   the source rule as it stands
+  none    the source rule alone, the default before v0.10.0
   told    plus: the files are a sample, and a figure no file covers is no reason to FAIL
   headed  plus: a line that gives no year takes the year in its file's heading
   both    plus both
+  named   both, and: a product that leaves out, sets aside or counts as zero anything the goal names has not answered it
 
 Measures: right answers failed, split by what the verifier said when recorded, and wrong answers caught. A rule that
 fails fewer right answers must still catch errors, which these few wrong merges cannot show: the verify bench's split
@@ -33,10 +34,11 @@ from .errors import InvariantError
 from .suite import build_suite, extract_answer, grade
 
 RULES: dict[str, str] = {
-    "today": "",
+    "none": "",
     "told": checks.SAMPLE_RULE,
     "headed": checks.HEADING_RULE,
     "both": checks.SAMPLE_RULE + checks.HEADING_RULE,
+    "named": checks.SAMPLE_RULE + checks.NAMED_RULE + checks.HEADING_RULE,
 }
 _PRODUCT = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)(?:\nEVIDENCE GIVEN WITH IT\n|\n" + re.escape(checks.SOURCES_HEAD) + ")", re.S)
 _BODY = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)\n" + re.escape(checks.SOURCES_HEAD), re.S)
@@ -136,8 +138,13 @@ def merges_from(path: Path) -> list[Merge]:
 
 
 def with_rule(brief: Brief, rule: str) -> Brief:
-    """The same brief, with the rule's words after the source rule."""
-    return replace(brief, packet=brief.packet.replace(checks.SOURCE_RULE, checks.SOURCE_RULE + RULES[rule], 1))
+    """The same brief, with the rule's words after the source rule in place of any it was recorded with, so none
+    means none on a tape recorded under another. Longest first, or both would lose only one of its sentences."""
+    for recorded in sorted(RULES.values(), key=len, reverse=True):
+        said = checks.SOURCE_RULE + recorded
+        if said in brief.packet:
+            return replace(brief, packet=brief.packet.replace(said, checks.SOURCE_RULE + RULES[rule], 1))
+    return brief
 
 
 def review(merge: Merge, rule: str, adapter: ModelAdapter, repeat: int = 0) -> MergeResult:
@@ -169,11 +176,28 @@ def run_bench(
     progress: Callable[[str], None] | None = None,
     stop_when: Callable[[list[MergeResult]], str] | None = None,
 ) -> list[MergeResult]:
-    """Every merge under every rule, rules interleaved so endpoint drift hits them alike, in the order listed whatever
-    order they finish in. A stop_when reason, or Ctrl-C, ends it before the next review; the reviews already made are
-    returned. Reviews under way count against stop_when at the largest so far, so a spend cap holds with workers too."""
+    """Every merge under every rule, rules interleaved so endpoint drift hits them alike. See run_jobs."""
     jobs = [(r, merge, rule) for r in range(repeats) for merge in merges for rule in rules]
-    done: dict[int, MergeResult] = {}
+
+    def work(job, adapter):
+        r, merge, rule = job
+        return review(merge, rule, adapter, r)
+
+    def mark(job, res):
+        _, merge, rule = job
+        ok = "ok " if res.verdict == ("PASS" if res.right else "FAIL") else "x  "
+        return (f"{ok}{rule:<7} {merge.tape[:8]:<8} {merge.task_id:<12} {'right' if merge.right else 'wrong'} {res.verdict:<5} "
+                f"was {merge.recorded:<5} {res.tokens / 1000:>5.1f}k tok {res.latency_s:>5.1f}s")
+
+    return run_jobs(jobs, work, mark, adapter_factory, workers=workers, progress=progress, stop_when=stop_when, noun="reviews")
+
+
+def run_jobs(jobs: list, work: Callable, mark: Callable, adapter_factory: Callable[[], ModelAdapter], *, workers: int = 1,
+             progress: Callable[[str], None] | None = None, stop_when: Callable[[list], str] | None = None, noun: str = "reviews") -> list:
+    """Each job with its own adapter, in the order listed whatever order they finish in. A stop_when reason, or Ctrl-C,
+    ends it before the next job; the results already made are returned. Jobs under way count against stop_when at the
+    largest so far, so a spend cap holds with workers too."""
+    done: dict = {}
     running: dict = {}
 
     def collect(finished) -> None:
@@ -181,15 +205,11 @@ def run_bench(
             i = running.pop(future)
             res = done[i] = future.result()
             if progress:
-                _, merge, rule = jobs[i]
-                mark = "ok " if res.verdict == ("PASS" if res.right else "FAIL") else "x  "
-                progress(f"[{len(done)}/{len(jobs)}] {mark}{rule:<7} {merge.tape[:8]:<8} {merge.task_id:<12} "
-                         f"{'right' if merge.right else 'wrong'} {res.verdict:<5} was {merge.recorded:<5} "
-                         f"{res.tokens / 1000:>5.1f}k tok {res.latency_s:>5.1f}s")
+                progress(f"[{len(done)}/{len(jobs)}] {mark(jobs[i], res)}")
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         try:
-            for i, (r, merge, rule) in enumerate(jobs):
+            for i, job in enumerate(jobs):
                 while len(running) >= max(1, workers):
                     collect(wait(running, return_when=FIRST_COMPLETED).done)
                 so_far = list(done.values())
@@ -197,16 +217,16 @@ def run_bench(
                 reason = stop_when(so_far + ([worst] * len(running) if worst else [])) if stop_when else ""
                 if reason:
                     if progress:
-                        progress(f"stopped after {len(done)} of {len(jobs)} reviews: {reason}")
+                        progress(f"stopped after {len(done)} of {len(jobs)} {noun}: {reason}")
                     break
-                running[pool.submit(review, merge, rule, adapter_factory(), r)] = i
+                running[pool.submit(work, job, adapter_factory())] = i
             while running:
                 collect(wait(running, return_when=FIRST_COMPLETED).done)
         except KeyboardInterrupt:
             for future in running:
                 future.cancel()
             if progress:
-                progress(f"interrupted after {len(done)} of {len(jobs)} reviews; the reviews in progress are not counted")
+                progress(f"interrupted after {len(done)} of {len(jobs)} {noun}; those in progress are not counted")
     return [done[i] for i in sorted(done)]
 
 
@@ -235,7 +255,26 @@ def summarize(results: list[MergeResult], *, price_in: float | None = None, pric
         if price_in is not None and price_out is not None:
             block["cost_total"] = round(sum(trial_cost(r, price_in, price_out) for r in rows), 4)
         out[rule] = block
-    return {"rules": out}
+    return {"rules": out, "paired": _paired(results)}
+
+
+def _paired(results: list[MergeResult]) -> dict:
+    """The first rule against each other, product by product. Where two rules part is what a rule changes, and a
+    product with no verdict under either says nothing about it, so it is left out."""
+    rules = list(dict.fromkeys(r.rule for r in results))
+    first = {(r.tape, r.row, r.repeat): r.verdict for r in results if r.rule == rules[0]} if rules else {}
+    out = {}
+    for rule in rules[1:]:
+        block = {kind: {"first_failed_only": 0, "rule_failed_only": 0, "both_failed": 0, "both_passed": 0} for kind in ("right", "wrong")}
+        for r in results:
+            was = first.get((r.tape, r.row, r.repeat))
+            if r.rule != rule or was not in ("PASS", "FAIL") or r.verdict not in ("PASS", "FAIL"):
+                continue
+            key = {("FAIL", "PASS"): "first_failed_only", ("PASS", "FAIL"): "rule_failed_only",
+                   ("FAIL", "FAIL"): "both_failed", ("PASS", "PASS"): "both_passed"}[(was, r.verdict)]
+            block["right" if r.right else "wrong"][key] += 1
+        out[rule] = block
+    return out
 
 
 def _of(pair: list[int]) -> str:
@@ -255,6 +294,11 @@ def render(summary: dict) -> str:
         if has_cost:
             row += f" ${v.get('cost_total', 0):.4f} |"
         lines.append(row)
+    first = next(iter(blocks), "")
+    for rule, block in (summary.get("paired") or {}).items():
+        for kind, n in block.items():
+            lines += ["", f"{kind.capitalize()} answers, {first} against {rule}: {first} alone failed {n['first_failed_only']}, "
+                          f"{rule} alone failed {n['rule_failed_only']}, both failed {n['both_failed']}, both passed {n['both_passed']}."]
     if any(v.get("tokens_estimated") for v in blocks.values()):
         lines += ["", "Token counts are estimated (the adapter reported no usage)."]
     return "\n".join(lines) + "\n"
