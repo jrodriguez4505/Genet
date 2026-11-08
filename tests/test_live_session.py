@@ -328,6 +328,40 @@ def test_the_agent_count_sweep_runs_both_seeds_at_both_limits_on_haiku(tmp_path:
         assert f"--record data/tapes/agents-s{seed}-{cap}.jsonl" in call and call.endswith(f"key={KEY}")
 
 
+def _env_stub(tmp_path: Path, log: Path):
+    """The held stand-in, also logging the cache and verifier-model settings each run had."""
+    stub = tmp_path / "python"
+    stub.write_text(stub.read_text().replace('echo "args=$* key=', 'echo "cache=${TASKORG_MODEL_CACHE:-} verify=${TASKORG_MODEL_NAME_VERIFY:-} args=$* key='))
+
+
+def test_the_cache_run_turns_caching_on_for_the_sweeps_64000_questions(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    _env_stub(tmp_path, log)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "cache") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "cache")
+    calls = _calls(log)
+    assert len(calls) == 2 and "on claude-haiku-5-5" in out and "about $0.25" in out and "Done." in out
+    for call, seed in zip(calls, (113, 114)):
+        assert call.startswith("cache=1 verify= args=") and f"--seed {seed} " in call and "--context 64000 " in call
+        assert "--strategies single,split-4,genet " in call and "--max-spend 0.50 " in call
+        assert f"--record data/tapes/cache-s{seed}-64000.jsonl" in call and call.endswith(f"key={KEY}")
+
+
+def test_the_mixed_run_has_sonnet_check_and_prices_it_as_sonnet(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    _env_stub(tmp_path, log)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "mixed") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "mixed")
+    calls = _calls(log)
+    assert len(calls) == 4 and "on claude-haiku-5-5" in out and "about $2.20" in out and "Done." in out
+    for call, (seed, size, cap) in zip(calls, [(108, 10, "1.20"), (108, 20, "0.70"), (110, 10, "1.20"), (110, 20, "0.70")]):
+        assert call.startswith("cache= verify=claude-sonnet-5-5 args=") and f"--seed {seed} " in call
+        assert f"--entities {size} " in call and "--strategies always-told,genet " in call and f"--max-spend {cap} " in call
+        assert "--price-in 0.10 --price-out 0.50 " in call and "--price claude-sonnet-5-5=2/10" in call
+        assert "--context 8000 --tool-rounds 4 --author-rule headed" in call
+        assert f"--record data/tapes/mixed-s{seed}-{size}.jsonl" in call and call.endswith(f"key={KEY}")
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

@@ -539,6 +539,8 @@ class Engine:
             "packet": brief.packet,
             "heard_channels": heard,
             "adapter": getattr(self.adapter, "name", ""),
+            # The model that answered, where the adapter names one: a team may mix models, each at its own price.
+            **({"model": self.adapter.model_for(brief)} if hasattr(self.adapter, "model_for") else {}),
             "tokens_estimated": not usage_real,
             **({"view": brief.view} if brief.view else {}),
         }
@@ -576,7 +578,10 @@ class Engine:
             art.channel_id = brief.channel_id
         with self._lock:
             run.adapter_name = getattr(self.adapter, "name", "") or run.adapter_name
-            run.record_call(self._call_record(brief, slot, heard, latency, prompt, completion, usage_real))
+            record = self._call_record(brief, slot, heard, latency, prompt, completion, usage_real)
+            # Of the prompt, what a cache wrote and read, which cost other than the rest.
+            record |= {k: usage[k] for k in ("cache_write_tokens", "cache_read_tokens") if type(usage.get(k)) is int and usage[k] > 0}
+            run.record_call(record)
             # Only known tool names. Schema words like "purpose" are not tools.
             toolish = [_tool_name(r) for r in art.requests if _tool_name(r) in TOOL_NAMES]
             if toolish:

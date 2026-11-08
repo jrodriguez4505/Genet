@@ -169,6 +169,29 @@
 #     Reported with no bar: whether a split costs fewer tokens than one agent even where the work fits (in the simulator
 #     4 parts do, because one agent re-sends what it has read every round); if so, the should-we rule needs a cost term.
 #     This is still a small model of large work: 20 files of about 900 tokens each.
+#   bash scripts/team_runs.sh cache   prompt caching (TASKORG_MODEL_CACHE=1): a call that may go on to tool rounds is sent in
+#     blocks cut where each round begins, so a round reads what came before it from the cache at a tenth of the price.
+#     The agent-count sweep found that where the work fits one call (64,000), one agent spent twice what 4 parts did,
+#     because it sends everything it has read again every round. Does caching close that? The sweep's 64,000 questions
+#     again (seeds 113 and 114), one agent, 4 parts and Genet, cached: 36 trials on Haiku 5.5, about $0.25, each seed
+#     stopping itself before $0.50. Uncached, a question cost: one agent $0.0129 (11 right of 12), 4 parts $0.0079 (12),
+#     Genet $0.0140 (11), priced from the sweep's tapes.
+#     The bars, written before the run:
+#     - Answers hold. Each strategy is right within 1 of its uncached count.
+#     - Caching pays. One agent's cost a question falls by at least 30%.
+#     - The gap. Cached, one agent costs at most 1.25 times what 4 parts do a question, cached. If so, the should-we rule
+#       needs no cost term while caching is on. If not, it does.
+#     If the first two hold, caching becomes the default.
+#   bash scripts/team_runs.sh mixed   a mixed team: Haiku's lead and sub-agents, Sonnet's verifier (TASKORG_MODEL_NAME_VERIFY),
+#     on seeds 108 and 110 with the rerun's settings, the told crew and Genet: 120 trials, each paired with Haiku's and
+#     Sonnet's own. By the tapes the verifier is 14 to 20% of the tokens, so this costs about $2.20, against $9.59 for
+#     Sonnet alone and $0.75 for Haiku alone on the same trials. The other way round, Sonnet reading and Haiku checking,
+#     would cost about $8.14, close to Sonnet alone, so it is not run.
+#     The bars, written before the run:
+#     - Wrong answers. It finishes wrong at most 1 time in 120 (Haiku alone 5, Sonnet alone 0).
+#     - Right answers. At least 105 of 120 (Haiku alone 108, Sonnet alone 116): a stricter checker may stop a few more.
+#     If both hold, the team to use is Haiku's authors with Sonnet checking, at about a quarter of Sonnet's cost. If the
+#     wrong-answer bar misses, the authors' reading needs Sonnet, and Sonnet alone is the choice.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -179,8 +202,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -193,7 +216,11 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = agents ]; then
+if [ "$mode" = cache ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.25 in all, each seed capped at \$0.50"
+elif [ "$mode" = mixed ]; then
+  echo "  1) claude-haiku-5-5 with claude-sonnet-5-5 checking   about \$2.20 in all, each step capped (\$3.80 in all)"
+elif [ "$mode" = agents ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.20 in all, each of 4 steps capped at \$1.50"
 elif [ "$mode" = sonnettwo ]; then
   echo "  2) claude-sonnet-5-5   \$2 / \$10        seed 110, about \$5.40 (caps \$12.00)"
@@ -286,7 +313,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -312,6 +339,51 @@ if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$m
       exit 1
     fi
   }
+fi
+if [ "$mode" = cache ]; then
+  echo
+  echo ">>> Prompt caching on the sweep's 64,000 questions: one agent, 4 parts and Genet, seeds 113 and 114, on $model."
+  echo "    36 trials, about \$0.25 and 30 minutes; each seed stops itself before \$0.50."
+  echo "    Written before it ran: answers within 1 of uncached; one agent's cost a question falls by at least 30%; cached,"
+  echo "    one agent costs at most 1.25 times 4 parts. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  export TASKORG_MODEL_CACHE=1
+  for seed in 113 114; do
+    held "cache-s$seed-64000" 0.50 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+      --distractors 6 --strategies single,split-4,genet --context 64000 --tool-rounds 4 --max-calls 80
+  done
+  echo
+  echo "Done. Results: data/compare/cache-*.json   Tapes: data/tapes/cache-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = mixed ]; then
+  echo
+  echo ">>> A mixed team: Haiku's lead and sub-agents, Sonnet's verifier, on seeds 108 and 110 with the rerun's settings."
+  echo "    The told crew and Genet, 120 trials, about \$2.20 and an hour; each step stops itself at its cap (\$3.80 in all)."
+  echo "    Written before it ran: it finishes wrong at most 1 time in 120 (Haiku alone 5), and is right on at least 105"
+  echo "    (Haiku alone 108). The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  export TASKORG_MODEL_NAME_VERIFY=claude-sonnet-5-5
+  shared="--context 8000 --tool-rounds 4 --author-rule headed --price claude-sonnet-5-5=2/10"
+  for seed in 108 110; do
+    held "mixed-s$seed-10" 1.20 compare --seed "$seed" --families lookup,aggregate,compare,breadth --per-family 6 \
+      --entities 10 --distractors 6 --strategies always-told,genet $shared
+    held "mixed-s$seed-20" 0.70 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+      --distractors 6 --strategies always-told,genet $shared
+  done
+  echo
+  echo "Done. Results: data/compare/mixed-*.json   Tapes: data/tapes/mixed-*.jsonl"
+  exit 0
 fi
 if [ "$mode" = agents ]; then
   echo

@@ -25,7 +25,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import atomic, checks
@@ -160,7 +160,8 @@ class FixedSplit(AlwaysSplit):
         return out
 
 
-SWEEP = (2, 4, 10, 20)  # the parts compare's split-N strategies use
+SWEEP = (2, 4, 10, 20)
+CACHE_WRITE, CACHE_READ = 1.25, 0.1  # of the input price, for prompt cache writes (five-minute entries) and reads  # the parts compare's split-N strategies use
 
 # genet uses the measured "should we"; genet-stated accepts the lead's reasons, for comparison.
 BASELINES = ("single", "always")
@@ -196,6 +197,10 @@ class TrialResult:
     proposed: int = 0    # parts the gates judged
     refused: int = 0     # of those, parts the gates refused
     covered: int = 0     # parts whose sub-agent failed or handed them back, for the lead to cover
+    cache_write_tokens: int = 0  # of prompt_tokens, written to a prompt cache (1.25 times the input price)
+    cache_read_tokens: int = 0   # of prompt_tokens, read from one (a tenth of it)
+    # model -> [prompt, completion, cache write, cache read] tokens, for a team that mixes models
+    by_model: dict = field(default_factory=dict)
 
 
 def _last_product(run: Run) -> str:
@@ -253,7 +258,20 @@ def run_trial(
         proposed=sum(e.event == "gate" for e in run.since_last_plan()),
         refused=sum(e.event == "gate" and not e.detail.get("legal") for e in run.since_last_plan()),
         covered=sum(e.event in ("part_failed", "part_reported") for e in run.log),
+        cache_write_tokens=sum(c.get("cache_write_tokens") or 0 for c in run.calls),
+        cache_read_tokens=sum(c.get("cache_read_tokens") or 0 for c in run.calls),
+        by_model=_by_model(run.calls),
     )
+
+
+def _by_model(calls: list[dict]) -> dict:
+    out: dict = {}
+    for c in calls:
+        if c.get("model"):
+            row = out.setdefault(c["model"], [0, 0, 0, 0])
+            for i, key in enumerate(("prompt_tokens", "completion_tokens", "cache_write_tokens", "cache_read_tokens")):
+                row[i] += int(c.get(key) or 0)
+    return out
 
 
 def comparison_budget(max_calls: int = 40, context: int = 16_000, max_seconds: float = 600.0) -> Budget:
@@ -310,8 +328,21 @@ def run_comparison(
     return results
 
 
-def trial_cost(r: TrialResult, price_in: float, price_out: float) -> float:
-    return (r.prompt_tokens * price_in + r.completion_tokens * price_out) / 1e6
+def _priced(prompt: int, completion: int, write: int, read: int, price_in: float, price_out: float) -> float:
+    return ((prompt - write - read + CACHE_WRITE * write + CACHE_READ * read) * price_in + completion * price_out) / 1e6
+
+
+def trial_cost(r: TrialResult, price_in: float, price_out: float, prices: dict | None = None) -> float:
+    """What a trial cost: cache writes and reads at their own rates, and with prices (model -> (in, out)) each model's
+    tokens at that model's rate; tokens no call attributes to a model at price_in and price_out."""
+    write, read = getattr(r, "cache_write_tokens", 0), getattr(r, "cache_read_tokens", 0)
+    by = getattr(r, "by_model", None) or {}
+    if not prices or not by:
+        return _priced(r.prompt_tokens, r.completion_tokens, write, read, price_in, price_out)
+    total = sum(_priced(*row, *prices.get(model, (price_in, price_out))) for model, row in by.items())
+    rest = [r.prompt_tokens - sum(v[0] for v in by.values()), r.completion_tokens - sum(v[1] for v in by.values()),
+            write - sum(v[2] for v in by.values()), read - sum(v[3] for v in by.values())]
+    return total + _priced(*rest, price_in, price_out)
 
 
 def live_spend_cap(spend, max_spend: float, price_in: float, price_out: float) -> Callable[[list[TrialResult]], str]:
@@ -334,11 +365,11 @@ def live_spend_cap(spend, max_spend: float, price_in: float, price_out: float) -
     return stop
 
 
-def spend_cap(max_spend: float, price_in: float, price_out: float) -> Callable[[list[TrialResult]], str]:
+def spend_cap(max_spend: float, price_in: float, price_out: float, prices: dict | None = None) -> Callable[[list[TrialResult]], str]:
     """Stops before a trial that could take spending past the cap, judged by the costliest trial so far."""
 
     def stop(done: list[TrialResult]) -> str:
-        costs = [trial_cost(r, price_in, price_out) for r in done]
+        costs = [trial_cost(r, price_in, price_out, prices) for r in done]
         spent = sum(costs)
         if spent >= max_spend:
             return f"spend cap: ${spent:.4f} spent of ${max_spend:.2f}"
@@ -352,7 +383,7 @@ def spend_cap(max_spend: float, price_in: float, price_out: float) -> Callable[[
 # --- report ---
 
 
-def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | None) -> dict:
+def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | None, prices: dict | None = None) -> dict:
     n = len(rows)
     out = {
         "n": n,
@@ -369,18 +400,19 @@ def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | 
         "tokens_estimated": any(r.tokens_estimated for r in rows),
     }
     if price_in is not None and price_out is not None:
-        cost = sum(trial_cost(r, price_in, price_out) for r in rows)
+        cost = sum(trial_cost(r, price_in, price_out, prices) for r in rows)
         out["cost_total"] = round(cost, 4)
         out["cost_per_correct"] = round(cost / max(1, sum(r.correct for r in rows)), 4)
     return out
 
 
-def summarize(results: list[TrialResult], *, price_in: float | None = None, price_out: float | None = None) -> dict:
+def summarize(results: list[TrialResult], *, price_in: float | None = None, price_out: float | None = None,
+              prices: dict | None = None) -> dict:
     strategies = list(dict.fromkeys(r.strategy for r in results))
     families = list(dict.fromkeys(r.family for r in results))
-    overall = {s: _rollup([r for r in results if r.strategy == s], price_in, price_out) for s in strategies}
+    overall = {s: _rollup([r for r in results if r.strategy == s], price_in, price_out, prices) for s in strategies}
     by_family = {
-        f: {s: _rollup([r for r in results if r.strategy == s and r.family == f], price_in, price_out) for s in strategies}
+        f: {s: _rollup([r for r in results if r.strategy == s and r.family == f], price_in, price_out, prices) for s in strategies}
         for f in families
     }
     verdict = {}

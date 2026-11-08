@@ -432,6 +432,8 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--gap-check", action="store_true",
                      help="send back, once, a product the verifier passed that says itself it has no figure for something, adds 0 "
                           "for it or set it aside; a reworked product that still says so stops the run. Off by default")
+    p_c.add_argument("--price", action="append", default=[], metavar="MODEL=IN/OUT",
+                     help="$ per 1M tokens for one model, input/output, for a team that mixes models; repeat for each")
     p_c.add_argument("--then-live", action="store_true",
                      help="with --replay and --record: answer from the tape until the gap check sends a product back, "
                           "then send that trial's later requests to the model (--adapter anthropic) and record them")
@@ -605,6 +607,8 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
             from .tape import Recorder
 
             config["model"] = first.model
+            if getattr(first, "cache", False):
+                config["cache"] = True
             recorder = Recorder(Path(args.record), first.tape_header() | {header_key: dict(config)})
             config["tape"] = str(args.record)
 
@@ -614,6 +618,21 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
                 adapter.tape = recorder
             return adapter
     return factory, player, recorder
+
+
+def _model_prices(raw: list[str]) -> dict[str, tuple[float, float]]:
+    """--price MODEL=IN/OUT, each repeat one model."""
+    out = {}
+    for item in raw:
+        try:
+            model, rates = item.split("=", 1)
+            price_in, price_out = (float(x) for x in rates.split("/"))
+        except ValueError:
+            raise InvariantError("COMPARE", f"--price takes MODEL=IN/OUT, got {item!r}") from None
+        if not model.strip() or price_in < 0 or price_out < 0 or not math.isfinite(price_in + price_out):
+            raise InvariantError("COMPARE", f"--price takes MODEL=IN/OUT with prices of 0 or more, got {item!r}")
+        out[model.strip()] = (price_in, price_out)
+    return out
 
 
 def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, code: str):
@@ -669,6 +688,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
         raise InvariantError("COMPARE", "give both --price-in and --price-out, or neither")
     if args.max_spend is not None and args.price_in is None:
         raise InvariantError("COMPARE", "--max-spend needs --price-in and --price-out")
+    prices = _model_prices(args.price)
+    if prices and args.price_in is None:
+        raise InvariantError("COMPARE", "--price needs --price-in and --price-out, for tokens no model is named for")
     if args.record and args.replay and not args.then_live:
         raise InvariantError("COMPARE", "--record or --replay, not both, unless --then-live")
     try:
@@ -690,6 +712,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
     if args.max_spend is not None:
         config["max_spend"] = args.max_spend
+    if prices:
+        config["prices"] = {m: list(p) for m, p in prices.items()}
     if args.dry_run:
         print(json.dumps(config | {"tasks": [t.question for t in suite.tasks]}, indent=2))
         return 0
@@ -713,7 +737,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
             progress=stderr,
             stop_when=(None if args.max_spend is None
                        else live_spend_cap(factory.spend, args.max_spend, args.price_in, args.price_out) if args.then_live
-                       else spend_cap(args.max_spend, args.price_in, args.price_out)),
+                       else spend_cap(args.max_spend, args.price_in, args.price_out, prices)),
             verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
                     "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
                     "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check},
@@ -723,7 +747,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
             recorder.close()
     if len(results) < trials:
         config["stopped_after"] = len(results)
-    summary = summarize(results, price_in=args.price_in, price_out=args.price_out)
+    summary = summarize(results, price_in=args.price_in, price_out=args.price_out, prices=prices)
     save(out, config=config, results=results, summary=summary)
     print(render(summary))
     if player:
