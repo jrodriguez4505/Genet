@@ -131,9 +131,18 @@ RETRY_NOTE = ("\nRETRY. Your last reply was not the JSON object the schema asks 
 # Model output is untrusted. These bound what one reply can make the kernel do.
 MAX_TOOL_REQUESTS = 8    # tools run per round; repeats count once
 MAX_PROPOSALS = 16       # sub-tasks the gates consider from one plan
+MAX_PARTS = 32           # sub-agents one run may staff, whatever an engine is set to
 REPORT_REASON_CHARS = 200
 REWORK_REASON_CHARS = 1200  # of what the verifier said, in the lead's rework brief
 REWORK_HEAD = "REWORK. The verifier failed the last product. "
+# What the lead is told when the kernel's gap check (--gap-check) turns a PASS into a rework: its own reason, always given,
+# since it is the kernel's and not model output.
+GAP_REASON = ("FAIL. The product says: \"{said}\" A product that says something the goal asks about has no figure, "
+              "counts as zero or was set aside has not answered the goal. Find that figure in the workspace's files and "
+              "answer with it, or say why the sentence leaves out nothing the goal names.")
+# Words only that reason carries: a replay that may go live (compare --then-live) goes live on the request that has them.
+GAP_ARM = "A product that says something the goal asks about has no figure, counts as zero or was set aside"
+GAP_MISS = "the product says it left out something the goal asks about"
 # What a call is told when a round of tools returned more than it can carry.
 ROUND_CUT = ("[{n} more tool requests not run: this call has no room for what they return. Work from what is above, "
              "and name anything still missing rather than guess.]")
@@ -284,6 +293,8 @@ class Engine:
         author_note: str = "",
         report_up: bool = False,
         cards: bool = False,
+        gap_check: bool = False,
+        max_workers: int = MAX_WORKERS,
     ):
         self.store = store
         self.adapter = adapter or StubAdapter()
@@ -315,6 +326,13 @@ class Engine:
         # The lead's plan brief carries a card for each position it can staff (part 7). Off by default: it
         # changes the plan brief, and it stays off until a test shows the cards pay for their tokens.
         self.cards = cards
+        # A product the verifier passed that says itself it has no figure for something, adds 0 for it or set it aside
+        # is sent back once (checks.gap_said). Off by default: it changes what finishes.
+        self.gap_check = gap_check
+        # The most sub-agents a run may staff: 4 unless a measured sweep (compare's split-N) names another.
+        if not 1 <= int(max_workers) <= MAX_PARTS:
+            raise ValueError(f"max_workers must be 1 to {MAX_PARTS}, got {max_workers!r}")
+        self.max_workers = int(max_workers)
         # Sub-agents run in threads; every run mutation in a call goes through this.
         self._lock = threading.RLock()
         # Calls started but not yet recorded, per run. Admission counts them, so parallel
@@ -401,6 +419,7 @@ class Engine:
         never hands one run's elapsed time to the next."""
         if run.budget is None:
             run.attach_budget(replace(self.budget, started_at=time.time()))
+        run.worker_cap = self.max_workers
 
     def handoff_peer(self, src: Run, dst: Run, claim: str) -> None:
         src.send_peer(src.state.lead_id, claim, peer_id=dst.id)
@@ -766,7 +785,7 @@ class Engine:
             calls_left=(b.max_calls - len(run.calls)) if b else None,
             # Merge, which reads when it covers a part no sub-agent took, then verify.
             calls_after_split=self._merge_cost() + 1,
-            worker_slots_left=MAX_WORKERS - run.state.worker_count(),
+            worker_slots_left=self.max_workers - run.state.worker_count(),
             worker_cost=self._worker_cost,
             policy=self.split_policy,
             declared=declared or self.isolation_required,
@@ -957,6 +976,12 @@ class Engine:
         check = self._act(run, self._verifier_brief(run, product))
         verified = _verifier_accepts(check, run, product)
         run.accept_artifact(check)
+        reason = check.claim
+        said = self._gap(run, product) if verified else ""
+        if said:
+            verified, reason = False, GAP_REASON.format(said=said)
+            last = run.last_verify or {}
+            run.last_verify = last | {"world_misses": list(last.get("world_misses", [])) + [GAP_MISS]}
         if not verified:
             self._record_verify_failed(run)
         b = run.budget
@@ -965,12 +990,12 @@ class Engine:
         if rework and self._calls_left(run) >= 2:
             last = run.last_verify or {}
             misses = list(last.get("misses", [])) + list(last.get("world_misses", []))
-            run.request_replan(f"verifier did not pass: {check.claim[:160]}; misses: {', '.join(misses) or 'none named'}")
+            run.request_replan(f"verifier did not pass: {reason[:160]}; misses: {', '.join(misses) or 'none named'}")
             run.answer_review(lead, "replan", "CHANGE_METHOD", f"rework the product to meet: {'; '.join(run.state.success_criteria)}")
             product = self._act(run, self._brief(
                 run, "lead",
                 extra=(
-                    REWORK_HEAD + (rework_said(check.claim) if self.rework_reason else "")
+                    REWORK_HEAD + (rework_said(reason) if self.rework_reason or said else "")
                     + f"Misses: {', '.join(misses) or 'none named'}. Last product: {product.claim[:400]}"
                 ),
                 mode="rework",
@@ -981,12 +1006,24 @@ class Engine:
             check = self._act(run, self._verifier_brief(run, product))
             verified = _verifier_accepts(check, run, product)
             run.accept_artifact(check)
+            # Only a rework the check asked for is checked again: after the verifier's own rework, a free dry run of the
+            # rerun and held-out tapes stopped 5 right answers this way and no wrong one.
+            if verified and said and self._gap(run, product):
+                verified = False
             if not verified:
                 self._record_verify_failed(run)
         if not verified:
             run.mark_stop_rule_failed("verifier")
             run.halt("verifier did not PASS named success criteria", code="VERIFY")
         return product, verified
+
+    def _gap(self, run: Run, product: Artifact) -> str:
+        """With the gap check on, the sentence in which the product says it left something out; else empty. Recorded."""
+        said = checks.gap_said(product.claim) if self.gap_check else ""
+        if said:
+            with self._lock:
+                run._record("gap_check", {"said": said})
+        return said
 
     def _propose(self, run: Run, again: str = "") -> list[Subtask]:
         """The lead reads the context and proposes sub-tasks. Strategies override this.
@@ -1028,7 +1065,7 @@ class Engine:
             note += GOAL_NOTE.format(files=len(found), total=total)
         # Only when the workspace does not fit one call: a lead there groups files, and the gates can measure a
         # group only by its files' names. Told nothing, a lead's groups were all refused as unknown material.
-        return note + (group.format(workers=MAX_WORKERS) if sum(sizes) + brief > b.max_tokens_per_call else "")
+        return note + (group.format(workers=self.max_workers) if sum(sizes) + brief > b.max_tokens_per_call else "")
 
     def _judge(self, run: Run, subtasks: list[Subtask]) -> list[Assessment]:
         """The gates. Strategies override this."""

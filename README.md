@@ -206,6 +206,7 @@ Each run starts with clean working memory, even when you reuse a run id. Runs sa
 | `genet-stated` | Same, but the lead's stated reasons are enough. Add it with `--strategies single,always,genet,genet-stated`. |
 | `genet-cards` | Same as `genet`, with the members table in the lead's plan brief (`--cards`). |
 | `always-told` | Same as `always`, with the size notes `genet`'s lead gets. No gates. |
+| `split-2`, `split-4`, `split-10`, `split-20` | The kernel splits the files the question names into that many parts, one sub-agent each, and the lead merges. No planning call and no gates, so only the count differs. For the agent-count sweep; the worker cap of 4 is raised to the count for these runs only. |
 
 The tasks come from a seeded, synthetic corpus of company operating notes, so ground truth is exact and no model has seen it. Facts are written in varied prose and surrounded by distractors: prior-year figures and look-alike company names.
 
@@ -432,7 +433,9 @@ It has no tools of its own. On 28 October, before the kernel opened files for it
 |---|---|---|
 | `--verify-view` | `independent` (default), `shared` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. `shared` shows it every member's notes and reports: the default until v0.9.0, and how a false note got past it. |
 | `--verify-sources` | `layered` (default), `full`, `none` | The kernel opens workspace files and puts them in the verifier's brief. See below. `none` opens nothing. |
-| `--verify-rule` | `both` (default), `told`, `headed`, `named`, `none` | Words after the source rule, with sources open. `told` says the files are a sample, so a figure no file covers is no reason to FAIL. `headed` says a line with no year takes the year in its file's heading. `both` says both. `named` says both, and that a product that leaves out, sets aside or counts as zero anything the goal names has not answered it; it is off because it failed too many right answers. `none` is the brief before v0.10.0, which older tapes replay. |
+| `--verify-rule` | `both` (default), `told`, `headed`, `named`, `aside`, `none` | Words after the source rule, with sources open. `told` says the files are a sample, so a figure no file covers is no reason to FAIL. `headed` says a line with no year takes the year in its file's heading. `both` says both. `named` says both, and that a product that leaves out, sets aside or counts as zero anything the goal names has not answered it; it is off because it failed too many right answers. `aside` says both, and fails only a product that says itself that something the goal names has no figure, counts as zero or was set aside; it is off because it missed even on the products it was written from. `none` is the brief before v0.10.0, which older tapes replay. |
+
+`--gap-check` (off by default) is the same test made by the kernel, not the model: a product the verifier passed whose own words say it has no figure for something, adds 0 for it or set it aside goes back once, with the kernel's reason, and a product sent back for that which still says so stops the run. On 19 trials it turned about 7 of 10 wrong finishes into stops, and about 5 of 9 right finishes too, so it stays off ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). `compare --then-live` tests such a change cheaply: each trial replays from its tape, and only a trial the check sends back goes to the model from that point.
 
 What each mode opens:
 - **`full`:** every file the goal names, the product cites or its uncertainty names, or the run read.

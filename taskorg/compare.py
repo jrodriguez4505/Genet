@@ -28,7 +28,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from . import atomic
+from . import atomic, checks
 from .adapters import ModelAdapter
 from .budget import Budget
 from .errors import InvariantError
@@ -117,7 +117,7 @@ class AlwaysSplit(Engine):
                 a.refuse("can_someone_else", f"channel {subtask.channel_id} proposed twice")
             elif problem:
                 a.refuse("could_we", problem)
-            elif staffed >= MAX_WORKERS:
+            elif staffed >= self.max_workers:
                 a.refuse("could_we", "worker cap: no room for this sub-agent")
             else:
                 staffed += 1
@@ -136,6 +136,32 @@ class ToldCrew(AlwaysSplit):
         return base + self._size_note(run, base, group=CREW_GROUP_NOTE)
 
 
+class FixedSplit(AlwaysSplit):
+    """The agent-count sweep: the kernel splits the files the question names into `parts` groups, as even as it can,
+    one sub-agent each, and the lead merges what they report. No planning call and no gates, so the number of parts
+    is the one thing that differs between arms. One part is the single baseline, so split-N starts at 2."""
+
+    def __init__(self, *args, parts: int = 2, **kwargs):
+        super().__init__(*args, max_workers=parts, **kwargs)
+        self.parts = parts
+
+    def _propose(self, run: Run, again: str = "") -> list[Subtask]:
+        files = checks.named_in(run.state.goal, self.toolbox.shown_files())
+        n = max(1, min(self.parts, len(files)))
+        size, extra = divmod(len(files), n)
+        out, i = [], 0
+        for k in range(n):
+            group = files[i:i + size + (k < extra)]
+            i += len(group)
+            named = ", ".join(group[:-1]) + (" and " if len(group) > 1 else "") + group[-1] if group else ""
+            out.append(Subtask(channel_id=f"part-{k + 1:02d}", skill="retrieve",
+                               named_failure=f"report what the goal asks for from {named}"))
+        run._record("fixed_split", {"parts": n, "files": len(files)})
+        return out
+
+
+SWEEP = (2, 4, 10, 20)  # the parts compare's split-N strategies use
+
 # genet uses the measured "should we"; genet-stated accepts the lead's reasons, for comparison.
 BASELINES = ("single", "always")
 STRATEGIES: dict[str, Callable[..., Engine]] = {
@@ -145,7 +171,7 @@ STRATEGIES: dict[str, Callable[..., Engine]] = {
     "genet": Engine,
     "genet-stated": functools.partial(Engine, split_policy="stated"),
     "genet-cards": functools.partial(Engine, cards=True),
-}
+} | {f"split-{n}": functools.partial(FixedSplit, parts=n) for n in SWEEP}
 
 
 @dataclass
@@ -286,6 +312,26 @@ def run_comparison(
 
 def trial_cost(r: TrialResult, price_in: float, price_out: float) -> float:
     return (r.prompt_tokens * price_in + r.completion_tokens * price_out) / 1e6
+
+
+def live_spend_cap(spend, max_spend: float, price_in: float, price_out: float) -> Callable[[list[TrialResult]], str]:
+    """spend_cap for a replay that goes live part way (tape.Continuing): counts only what went to the model, and stops
+    before a trial that could take it past the cap, judged by the costliest trial's live part so far."""
+    parts: list[float] = []
+    last = [0.0]
+
+    def stop(done: list[TrialResult]) -> str:
+        now = spend.cost(price_in, price_out)
+        if done:
+            parts.append(now - last[0])
+            last[0] = now
+        if now >= max_spend:
+            return f"spend cap: ${now:.4f} sent to the model, of ${max_spend:.2f}"
+        if parts and now + max(parts) > max_spend:
+            return f"spend cap: ${now:.4f} sent to the model, and the next trial could cost ${max(parts):.4f}, past ${max_spend:.2f}"
+        return ""
+
+    return stop
 
 
 def spend_cap(max_spend: float, price_in: float, price_out: float) -> Callable[[list[TrialResult]], str]:

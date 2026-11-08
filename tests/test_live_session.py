@@ -115,6 +115,7 @@ def _held_tree(tmp_path: Path, **stub_env) -> tuple[Path, dict]:
     stub = tmp_path / "python"
     stub.write_text(f'''#!/bin/bash
 echo "args=$* key=${{TASKORG_ANTHROPIC_KEY:-none}}" >> "{log}"
+[ "$1" = -I ] && exit "${{STUB_GATE:-0}}"
 out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done
 case "$out" in
   "") ;;
@@ -220,6 +221,117 @@ def test_the_gap_rule_run_is_the_plan_it_shows_and_needs_a_y(tmp_path: Path):
     assert call.endswith(f"key={KEY}") and KEY not in call.split(" key=")[0]
     # Done once, it is not paid for twice.
     assert "gaprule-merges: already done" in _session(tmp_path, env, f"{KEY}\ny\n", "gaprule") and len(_calls(log)) == 1
+
+
+def test_the_aside_run_is_two_steps_and_the_second_waits_on_the_first(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "aside") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "aside")
+    calls = _calls(log)
+    assert len(calls) == 3 and "about $0.54" in out and "before $0.30" in out and "before $0.45" in out and "Done." in out
+    first, gate, second = calls
+    assert "merge-bench" in first and "--rules aside " in first and "--max-spend 0.30 " in first and "--adapter anthropic" in first
+    assert ",".join(f"data/tapes/{name}.jsonl" for name in RERUN) in first
+    assert "--record data/tapes/aside-insample.jsonl" in first and "--out data/compare/aside-insample.json" in first
+    assert gate.startswith("args=-I -")
+    held = HELD + ["whole-s106-10", "whole-s106-20", "whole-s107-10"]
+    assert "--rules aside " in second and "--max-spend 0.45 " in second
+    assert ",".join(f"data/tapes/{name}.jsonl" for name in held) in second
+    assert "--record data/tapes/aside-heldout.jsonl" in second and "--out data/compare/aside-heldout.json" in second
+    assert all(c.endswith(f"key={KEY}") and KEY not in c.split(" key=")[0] for c in calls) and KEY not in out
+    # Done once, neither step is paid for twice; only the check between them, which reads two files, runs again.
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "aside")
+    assert "aside-insample: already done" in again and "aside-heldout: already done" in again
+    assert [c.split(" key=")[0] for c in _calls(log)[3:]] == ["args=-I -"]
+
+
+def test_the_aside_run_stops_after_a_first_step_that_misses(tmp_path: Path):
+    log, env = _held_tree(tmp_path, STUB_GATE="3")
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "aside")
+    calls = _calls(log)
+    assert len(calls) == 2 and "step 2 was not run" in out and "aside-heldout" not in " ".join(calls)
+
+
+GAPCHECK = ["rerun-s108-10", "rerun-s108-20", "rerun-s109-10", "rerun-s109-20", "rerun-s110-10", "rerun-s112-20",
+            "heldout-s101-10", "heldout-s102-10", "heldout-s103-10", "heldout-s103-20", "heldout-s105-10"]
+
+
+def test_the_gap_check_run_replays_each_tape_three_times_and_needs_a_y(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "gapcheck") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "gapcheck")
+    calls = _calls(log)
+    assert len(calls) == 33 and "about $0.15" in out and "before $0.03" in out and "Done." in out and KEY not in out
+    names = [f"gapcheck-r{r}-{tape}" for r in (1, 2, 3) for tape in GAPCHECK]
+    for name, call in zip(names, calls):
+        tape = name.split("-", 2)[2]
+        seed, size = tape.rsplit("-s", 1)[1].split("-")
+        assert "compare" in call and "--adapter anthropic" in call and "--max-spend 0.03 " in call
+        assert "--gap-check --then-live" in call and f"--replay data/tapes/{tape}.jsonl" in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        assert f"--seed {seed} " in call and f"--entities {size} " in call and "--context 8000 --tool-rounds 4" in call
+        # Each tape with the settings it was recorded under.
+        assert ("--author-rule headed" in call) == tape.startswith("rerun") and ("--no-rework-reason" in call) == tape.startswith("heldout")
+        assert call.endswith(f"key={KEY}") and KEY not in call.split(" key=")[0]
+    # Done once, nothing is paid for twice.
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "gapcheck")
+    assert again.count("already done") == 33 and len(_calls(log)) == 33
+
+
+def test_the_sonnet_run_is_two_steps_each_with_its_own_y(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "sonnet") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\nn\n", "sonnet")
+    calib, gate = _calls(log)
+    assert "on claude-sonnet-5-5" in out and "Step 2 not run." in out and KEY not in out
+    assert "--price-in 2 --price-out 10 --max-spend 1.50 " in calib and "--seed 108 " in calib and "--per-family 1 " in calib
+    assert "--entities 20 " in calib and "--strategies always-told,genet " in calib and "--author-rule headed" in calib
+    assert "--record data/tapes/sonnet-calib.jsonl" in calib and gate.startswith("args=-I -")
+    out = _session(tmp_path, env, f"{KEY}\ny\ny\n", "sonnet")
+    ten, twenty = _calls(log)[3:]
+    assert "sonnet-calib: already done" in out and "Done." in out
+    for call, size, strategies in ((ten, "10", "always-told,genet"), (twenty, "20", "single,always-told,genet")):
+        # The rerun's settings for seed 108, so each trial pairs with Haiku's.
+        assert f"--entities {size} " in call and f"--strategies {strategies} " in call and "--seed 108 " in call
+        assert "--price-in 2 --price-out 10 --max-spend 6.00 " in call and "--context 8000 --tool-rounds 4 --author-rule headed" in call
+        assert f"--record data/tapes/sonnet-s108-{size}.jsonl" in call and call.endswith(f"key={KEY}")
+
+
+def test_the_sonnet_run_stops_after_a_calibration_that_finds_a_problem(tmp_path: Path):
+    log, env = _held_tree(tmp_path, STUB_GATE="3")
+    out = _session(tmp_path, env, f"{KEY}\ny\ny\n", "sonnet")
+    assert len(_calls(log)) == 2 and "Results: data/compare/sonnet-calib.json" in out and "Done." not in out
+
+
+def test_the_second_sonnet_seed_is_seed_110_with_the_reruns_settings(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "sonnettwo") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "sonnettwo")
+    ten, twenty = _calls(log)
+    assert "on claude-sonnet-5-5" in out and "about $5.40" in out and "Done." in out and KEY not in out
+    for call, size, strategies in ((ten, "10", "always-told,genet"), (twenty, "20", "single,always-told,genet")):
+        assert f"--entities {size} " in call and f"--strategies {strategies} " in call and "--seed 110 " in call
+        assert "--price-in 2 --price-out 10 --max-spend 6.00 " in call and "--context 8000 --tool-rounds 4 --author-rule headed" in call
+        assert f"--record data/tapes/sonnet-s110-{size}.jsonl" in call and call.endswith(f"key={KEY}")
+
+
+def test_the_agent_count_sweep_runs_both_seeds_at_both_limits_on_haiku(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "agents") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "agents")
+    calls = _calls(log)
+    assert len(calls) == 4 and "on claude-haiku-5-5" in out and "about $2.20" in out and "Done." in out
+    for call, (seed, cap) in zip(calls, [(s, c) for s in (113, 114) for c in (8000, 64000)]):
+        assert f"--seed {seed} " in call and f"--context {cap} " in call and "--max-calls 80" in call
+        assert "--strategies single,split-2,split-4,split-10,split-20,always-told,genet " in call
+        assert "--entities 20 " in call and "--price-in 0.10 --price-out 0.50 --max-spend 1.50 " in call
+        assert f"--record data/tapes/agents-s{seed}-{cap}.jsonl" in call and call.endswith(f"key={KEY}")
+
+
+def test_other_runs_stay_on_haiku(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")
+    assert "on claude-haiku-5-5" in out and "--price-in 0.10 --price-out 0.50 " in _calls(log)[0]
 
 
 def test_the_rerun_needs_a_y_and_goes_on_from_what_finished(tmp_path: Path):

@@ -100,13 +100,16 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
                         "(the brief before v0.7.0, which older tapes replay)")
     p.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
-                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, "
+                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, aside, "
                         "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
                    help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")
     p.add_argument("--author-rule", default="none", choices=list(AUTHOR_RULES),
                    help="words for the lead's and sub-agents' briefs: none (the default), or headed, a line that gives no "
                         "year takes the year in its file's heading")
+    p.add_argument("--gap-check", action="store_true",
+                   help="send back, once, a product the verifier passed that says itself it has no figure for something, adds 0 "
+                        "for it or set it aside; a reworked product that still says so stops the run. Off by default")
     p.add_argument("--abort", action="append", default=[], metavar="CRITERION",
                    help="stop at a decision point when this is met: forecast_short (the budget cannot finish the "
                         f"work; the default), parts_failed:N (N parts' sub-agents failed), or none. "
@@ -162,7 +165,7 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
                   verify_view=args.verify_view, verify_sources=args.verify_sources, verify_note=MERGE_RULES[args.verify_rule],
                   rework_reason=args.rework_reason, author_note=AUTHOR_RULES[args.author_rule],
                   report_up=args.report_up,
-                  cards=args.cards)
+                  cards=args.cards, gap_check=args.gap_check)
 
 
 def _out_path(raw: str | None, default: Path) -> Path:
@@ -419,13 +422,19 @@ def main(argv: list[str] | None = None) -> int:
                      help="sources the kernel opens for the verifier: layered (default), full, or none "
                           "(the brief before v0.7.0, which older tapes replay)")
     p_c.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
-                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, "
+                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, aside, "
                           "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p_c.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
                      help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")
     p_c.add_argument("--author-rule", default="none", choices=list(AUTHOR_RULES),
                      help="words for the lead's and sub-agents' briefs: none (the default), or headed, a line that gives no "
                           "year takes the year in its file's heading")
+    p_c.add_argument("--gap-check", action="store_true",
+                     help="send back, once, a product the verifier passed that says itself it has no figure for something, adds 0 "
+                          "for it or set it aside; a reworked product that still says so stops the run. Off by default")
+    p_c.add_argument("--then-live", action="store_true",
+                     help="with --replay and --record: answer from the tape until the gap check sends a product back, "
+                          "then send that trial's later requests to the model (--adapter anthropic) and record them")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
 
@@ -571,6 +580,8 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
     from .compare import stderr
 
     player = recorder = None
+    if getattr(args, "then_live", False):
+        return _continuing_source(args, config, header_key, code)
     if args.replay:
         from .tape import Player, replay_adapter
 
@@ -578,7 +589,7 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
         recorded = player.header.get(header_key)
         recorded = recorded if isinstance(recorded, dict) else {}
         if recorded:  # A tape from before a switch does not name it, and was recorded without it.
-            recorded = {"verify_rule": "none", "rework_reason": False} | recorded
+            recorded = {"verify_rule": "none", "rework_reason": False, "gap_check": False} | recorded
         differ = [k for k in keys if k in recorded and recorded[k] != config.get(k)]
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
@@ -605,10 +616,44 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
     return factory, player, recorder
 
 
+def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, code: str):
+    """--then-live: each trial replays its tape until the gap check sends a product back, then goes to the model. The
+    live adapter must be the one the tape was recorded with, so the requests before that point are the same."""
+    from .loop import GAP_ARM
+    from .tape import Continuing, LiveSpend, Player, Recorder
+
+    if not (args.replay and args.record and args.adapter == "anthropic" and args.gap_check):
+        raise InvariantError(code, "--then-live needs --replay, --record, --adapter anthropic and --gap-check")
+    player = Player(Path(args.replay))
+    h = player.header
+    first = pick_adapter(args.adapter)  # fails fast with no key or model
+    same = (h.get("adapter") == first.name and h.get("model") == first.model and h.get("effort") == first.effort
+            and dict(h.get("models") or {}) == dict(first.models))
+    if not same:
+        raise InvariantError(code, f"--then-live needs the tape's model and effort ({h.get('model')}, {h.get('effort')}); "
+                                   f"the environment gives {first.model}, {first.effort}")
+    rounds = h.get("round_reply_tokens") or 0
+    config |= {"tape": str(args.replay), "replayed": h.get("adapter"), "model": h.get("model"), "then_live": True,
+               "live_tape": str(args.record)}
+    first.round_reply_tokens = rounds
+    recorder = Recorder(Path(args.record), first.tape_header() | {header_key: dict(config)})
+    spend = LiveSpend()
+
+    def factory():
+        adapter = pick_adapter(args.adapter)
+        adapter.round_reply_tokens = rounds  # what the tape's rounds kept, so its requests are the same
+        adapter.tape = Continuing(player, recorder, GAP_ARM, spend)
+        return adapter
+
+    factory.spend = spend
+    return factory, player, recorder
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     import time
 
-    from .compare import STRATEGIES, comparison_budget, render, run_comparison, save, spend_cap, stderr, summarize
+    from .compare import (STRATEGIES, comparison_budget, live_spend_cap, render, run_comparison, save, spend_cap, stderr,
+                          summarize)
     from .suite import FAMILIES, build_suite
 
     # Each once: a repeat would run every trial twice, or give two tasks the same id.
@@ -624,8 +669,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
         raise InvariantError("COMPARE", "give both --price-in and --price-out, or neither")
     if args.max_spend is not None and args.price_in is None:
         raise InvariantError("COMPARE", "--max-spend needs --price-in and --price-out")
-    if args.record and args.replay:
-        raise InvariantError("COMPARE", "--record or --replay, not both")
+    if args.record and args.replay and not args.then_live:
+        raise InvariantError("COMPARE", "--record or --replay, not both, unless --then-live")
     try:
         suite = build_suite(seed=args.seed, per_family=args.per_family, families=families,
                             entities=args.entities, distractors=args.distractors, filed=args.filed)
@@ -638,7 +683,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         "entities": args.entities, "distractors": args.distractors, "filed": args.filed,
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
         "verify_view": args.verify_view, "verify_sources": args.verify_sources, "verify_rule": args.verify_rule,
-        "rework_reason": args.rework_reason, "author_rule": args.author_rule,
+        "rework_reason": args.rework_reason, "author_rule": args.author_rule, "gap_check": args.gap_check,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
     if args.price_in is not None:
@@ -652,7 +697,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         args, config, "compare", "COMPARE",
         ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors", "filed",
          "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources", "verify_rule",
-         "rework_reason", "author_rule"),
+         "rework_reason", "author_rule", "gap_check"),
     )
     if args.corpus:
         suite.write_corpus(args.corpus)
@@ -666,10 +711,12 @@ def cmd_compare(args: argparse.Namespace) -> int:
             tool_rounds=args.tool_rounds,
             corpus_dir=Path(args.corpus) if args.corpus else None,
             progress=stderr,
-            stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
+            stop_when=(None if args.max_spend is None
+                       else live_spend_cap(factory.spend, args.max_spend, args.price_in, args.price_out) if args.then_live
+                       else spend_cap(args.max_spend, args.price_in, args.price_out)),
             verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
                     "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
-                    "author_note": AUTHOR_RULES[args.author_rule]},
+                    "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check},
         )
     finally:
         if recorder:
@@ -682,6 +729,10 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if player:
         print(f"replay: {player.served} replies served ({player.repeated} repeated), "
               f"{player.misses} requests the tape does not have")
+    if args.then_live:
+        spend = factory.spend
+        live = (f", ${spend.cost(args.price_in, args.price_out):.4f}" if args.price_in is not None else "")
+        print(f"live: {spend.calls} requests sent to the model after the gap check{live}")
     if recorder:
         print(f"tape: {recorder.count} exchanges saved to {args.record}")
     print(f"saved {out}")

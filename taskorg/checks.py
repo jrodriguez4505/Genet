@@ -70,6 +70,38 @@ NAMED_RULE = (
     " A product that leaves out, sets aside or counts as zero anything the goal names, whatever reason it gives, has "
     "not answered the goal: FAIL it and name what is missing."
 )
+# The named rule narrowed to what a product says of itself. On the gap test of 6 November the named rule caught all 37
+# wrong merges but failed 22 more right ones, most of which only listed figures for some companies, or said look-alike
+# names or other years' figures were kept out. All 6 wrong ones it alone caught said a named company had no figure,
+# contributed 0 or was set aside.
+ASIDE_RULE = (
+    " A product that says something the goal names has no figure, could not be found, counts as zero or was set "
+    "aside has not answered the goal: FAIL it and name what is missing. Keeping out look-alike names or other "
+    "periods' figures is not this, and a product need not list every figure it used."
+)
+# A product's own words that it has no figure for something, adds 0 for it, or set it aside (--gap-check). Fixed on
+# 7 November from the gap test's merges, before any other product was read against it, and not changed after: on 318
+# merges no rule was written from, it matched 3 of the 5 wrong products the default rule passes, and 8 right ones.
+GAP_SAID = re.compile(
+    r"has no (?:FY20\d\d )?(?:Q[1-4] )?(?:revenue |churn )?figure|has no FY20\d\d|no (?:FY20\d\d )?Q[1-4] figure|"
+    r"contribut\w* (?:0|zero|nothing|\$0)|counted (?:as|at) (?:0|zero)|amount is not included|is not included|"
+    r"(?:figure|\$[\d.]+ ?M?) (?:is|was) (?:excluded|set aside|left out)|(?:set|sets) aside|not (?:retrieved|found)\b|"
+    r"cannot be (?:settled|resolved|confirmed)|unresolved", re.I)
+GAP_SAID_CHARS = 300
+
+
+def gap_said(claim: str) -> str:
+    """The sentence of the product in which it says it has no figure for something, adds 0 for it or set it aside;
+    empty if none. The kernel's check, not the model's: it reads the product's own words and nothing else."""
+    found = GAP_SAID.search(claim or "")
+    if not found:
+        return ""
+    start = max(claim.rfind(". ", 0, found.start()) + 2, claim.rfind("\n", 0, found.start()) + 1, 0)
+    ends = [i for i in (claim.find(". ", found.end()), claim.find("\n", found.end())) if i >= 0]
+    end = min(ends) + 1 if ends else len(claim)
+    return " ".join(claim[start:end].split())[:GAP_SAID_CHARS]
+
+
 # What the verifier is told after the source rule unless a run names another. On five seeds no tape had used, right
 # answers failed fell from 69 of 220 to 6, and wrong answers caught went from 36 of 39 to 37 (docs/LIVE_TESTS.md).
 VERIFY_RULE = SAMPLE_RULE + HEADING_RULE

@@ -39,6 +39,7 @@ RULES: dict[str, str] = {
     "headed": checks.HEADING_RULE,
     "both": checks.SAMPLE_RULE + checks.HEADING_RULE,
     "named": checks.SAMPLE_RULE + checks.NAMED_RULE + checks.HEADING_RULE,
+    "aside": checks.SAMPLE_RULE + checks.ASIDE_RULE + checks.HEADING_RULE,
 }
 _PRODUCT = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)(?:\nEVIDENCE GIVEN WITH IT\n|\n" + re.escape(checks.SOURCES_HEAD) + ")", re.S)
 _BODY = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)\n" + re.escape(checks.SOURCES_HEAD), re.S)
