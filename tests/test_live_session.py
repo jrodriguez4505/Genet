@@ -362,6 +362,35 @@ def test_the_mixed_run_has_sonnet_check_and_prices_it_as_sonnet(tmp_path: Path):
         assert f"--record data/tapes/mixed-s{seed}-{size}.jsonl" in call and call.endswith(f"key={KEY}")
 
 
+def test_the_opus_run_calibrates_then_waits_for_a_second_y(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "opus") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\nn\n", "opus")
+    calib, gate = _calls(log)
+    assert "on claude-opus-5-5" in out and "Step 2 not run." in out and KEY not in out
+    assert "--price-in 4 --price-out 20 --max-spend 2.50 " in calib and "--seed 108 " in calib and "--per-family 1 " in calib
+    assert gate.startswith("args=-I - 4 20")
+    out = _session(tmp_path, env, f"{KEY}\ny\ny\n", "opus")
+    ten, twenty = _calls(log)[3:]
+    assert "opus-calib: already done" in out and "Done." in out
+    for call, size, strategies in ((ten, "10", "always-told,genet"), (twenty, "20", "single,always-told,genet")):
+        assert f"--entities {size} " in call and f"--strategies {strategies} " in call and "--seed 108 " in call
+        assert "--price-in 4 --price-out 20 --max-spend 8.00 " in call and "--context 8000 --tool-rounds 4 --author-rule headed" in call
+        assert f"--record data/tapes/opus-s108-{size}.jsonl" in call and call.endswith(f"key={KEY}")
+
+
+def test_the_sonnet_sweep_runs_both_seeds_at_8000_on_sonnet(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "sonnetsweep")
+    calls = _calls(log)
+    assert len(calls) == 2 and "on claude-sonnet-5-5" in out and "about $9.40" in out and "Done." in out
+    for call, seed in zip(calls, (113, 114)):
+        assert f"--seed {seed} " in call and "--context 8000 " in call and "--max-calls 80" in call
+        assert "--strategies single,split-4,split-10,split-20,genet " in call
+        assert "--price-in 2 --price-out 10 --max-spend 6.00 " in call
+        assert f"--record data/tapes/sonnetsweep-s{seed}-8000.jsonl" in call and call.endswith(f"key={KEY}")
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

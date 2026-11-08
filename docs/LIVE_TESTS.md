@@ -741,6 +741,26 @@ All three tapes are `sonnet-calib`, `sonnet-s108-10` and `sonnet-s108-20`.
 
 The tapes are `agents-s113-8000`, `-s113-64000`, `-s114-8000` and `-s114-64000`.
 
+### Prompt caching on the questions that fit
+
+`bash scripts/team_runs.sh cache`, on 8 November. With `TASKORG_MODEL_CACHE=1`, a call that may go on to tool rounds is sent in blocks cut where each round begins, the newest round marked, so the next round reads what came before from the cache at a tenth of the input price; a write costs a quarter more. The model reads the same text. The sweep's 64,000 questions again, one agent, 4 parts and Genet, 36 trials, $0.31 against an estimate of $0.25 and caps of $1.00.
+
+| Strategy | Right, uncached / cached | Cost a question, uncached / cached | Calls a trial, uncached / cached |
+|---|---|---|---|
+| One agent | 11 / 9 | $0.0129 / $0.0090 | 7.5 / 5.8 |
+| 4 parts | 12 / 11 | $0.0079 / $0.0080 | 10.0 / 10.0 |
+| Genet (one agent every time) | 11 / 11 | $0.0140 / $0.0089 | 8.2 / 6.6 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Answers hold | each within 1 of uncached | **one agent 9 against 11**, misses |
+| Caching pays | one agent's cost a question down 30% or more | **29.8%**, misses |
+| The gap | cached one agent at most 1.25 times cached 4 parts | **1.12**, holds |
+
+- **Caching stays off: both bars it needed missed.** One by a hair, one by an answer.
+- **Most of the sweep's cost gap was the missing cache.** Cached, one agent cost 1.12 times what 4 parts did, against 1.63 times uncached in this run's terms. So, with caching, the should-we rule would need no cost term. 4 parts gained nothing from it: a part reads in one or two rounds, and the write costs more than the reads save.
+- **But the cached single agent read less and was wrong more.** It made 5.8 calls a trial against 7.5, and finished 3 answers wrong where uncached it finished none, one of them a look-alike (Halvorsen Freight Labs). Genet, also one agent here, made fewer calls too and kept its 11. Twelve trials cannot tell the block format from chance, so before caching is used, the uncached and cached single agent need running again side by side.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.

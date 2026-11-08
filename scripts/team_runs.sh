@@ -192,6 +192,26 @@
 #     - Right answers. At least 105 of 120 (Haiku alone 108, Sonnet alone 116): a stricter checker may stop a few more.
 #     If both hold, the team to use is Haiku's authors with Sonnet checking, at about a quarter of Sonnet's cost. If the
 #     wrong-answer bar misses, the authors' reading needs Sonnet, and Sonnet alone is the choice.
+#   bash scripts/team_runs.sh opus   Claude Opus 5.5 on seed 108 with the rerun's settings, so each trial pairs with Haiku's and
+#     Sonnet's own: three models on the same 66 trials. Two steps, a y each, as for Sonnet. A calibration of 4 trials at 20
+#     companies, about $1.10, stopping itself before $2.50; a stop on size, a malformed reply or the API, or a trial over 450
+#     of its 600 seconds, and nothing more runs. Then the 66 trials, at about twice Sonnet's $5.82 by the price, each size
+#     capped at $8.00. On seed 108 Haiku was right on 52 and finished wrong 4 times; Sonnet right on 59, wrong 0.
+#     The bars, written before the run:
+#     - Opus finishes wrong at most 1 time in 66.
+#     - Splitting holds. At 20 companies the told crew and Genet together are right on at least 9 of 12, and one agent on
+#       at most 1 of 6 (Haiku 7 and 0, Sonnet 11 and 0).
+#     - Reported with no bar: right answers against Haiku's and Sonnet's, cost a right answer, the verifier's stops.
+#     If the first holds, the wrong answers are a limit of the smallest model, not of Genet's design.
+#   bash scripts/team_runs.sh sonnetsweep   the agent-count sweep at a call limit of 8,000 on Sonnet 5.5: seeds 113 and 114,
+#     one agent, 4, 10 and 20 parts and Genet, 60 trials, about $9.40, each seed capped at $6.00. Does "about four" hold
+#     on a stronger reader?
+#     The bars, written before the run, Haiku's at 8,000:
+#     - Splitting is needed. The best split is right on at least 6 more of 12 than one agent.
+#     - Past a handful, more agents do not pay. 20 parts right on no more than the better of 4 and 10, for at least 1.3
+#       times its tokens a question.
+#     - Genet's own plan is right on at most 1 fewer than the best split, for at most 1.2 times its tokens.
+#     If the second holds on Sonnet as on Haiku, about four is not a limit of the smaller model.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -202,8 +222,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -216,7 +236,11 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = cache ]; then
+if [ "$mode" = opus ]; then
+  echo "  3) claude-opus-5-5     \$4 / \$20        calibration about \$1.10 (cap \$2.50); then seed 108, about \$11.60 (caps \$16.00)"
+elif [ "$mode" = sonnetsweep ]; then
+  echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$9.40 in all, each seed capped at \$6.00"
+elif [ "$mode" = cache ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.25 in all, each seed capped at \$0.50"
 elif [ "$mode" = mixed ]; then
   echo "  1) claude-haiku-5-5 with claude-sonnet-5-5 checking   about \$2.20 in all, each step capped (\$3.80 in all)"
@@ -262,8 +286,10 @@ fi
 if [ -n "${GENET_LIVE_SESSION:-}" ] && [ -n "${TASKORG_ANTHROPIC_KEY:-}" ]; then
   # scripts/live_session.sh holds the key for a sitting. With no smoke test, nothing is spent before this run's y.
   session=1
-  if [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ]; then
+  if [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = sonnetsweep ]; then
     model=claude-sonnet-5-5; pin=2; pout=10
+  elif [ "$mode" = opus ]; then
+    model=claude-opus-5-5; pin=4; pout=20
   else
     model=claude-haiku-5-5; pin=0.10; pout=0.50
   fi
@@ -271,13 +297,15 @@ if [ -n "${GENET_LIVE_SESSION:-}" ] && [ -n "${TASKORG_ANTHROPIC_KEY:-}" ]; then
 else
   session=""
   pick=""
-  want=1; { [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ]; } && want=2
+  want=1; { [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = sonnetsweep ]; } && want=2; [ "$mode" = opus ] && want=3
   while [ -z "$pick" ]; do
     read -r -p "Model, type $want: " pick
   done
   case "$mode:$pick" in
-    sonnet:2|sonnettwo:2) model=claude-sonnet-5-5; pin=2; pout=10 ;;
-    sonnet:*|sonnettwo:*) echo "This run is on Sonnet: type 2. Nothing was run."; exit 1 ;;
+    sonnet:2|sonnettwo:2|sonnetsweep:2) model=claude-sonnet-5-5; pin=2; pout=10 ;;
+    sonnet:*|sonnettwo:*|sonnetsweep:*) echo "This run is on Sonnet: type 2. Nothing was run."; exit 1 ;;
+    opus:3) model=claude-opus-5-5; pin=4; pout=20 ;;
+    opus:*) echo "This run is on Opus: type 3. Nothing was run."; exit 1 ;;
     *:1) model=claude-haiku-5-5; pin=0.10; pout=0.50 ;;
     *) echo "Only Haiku runs from this script, but for its sonnet run. Nothing was run."; exit 1 ;;
   esac
@@ -313,7 +341,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -339,6 +367,79 @@ if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$m
       exit 1
     fi
   }
+fi
+if [ "$mode" = opus ]; then
+  echo
+  echo ">>> Claude Opus 5.5 on seed 108, with the rerun's settings, so each trial pairs with Haiku's and Sonnet's. Two steps."
+  echo "    1. Calibration, 4 trials at 20 companies: about \$1.10, stopping itself before \$2.50. A stop on size, a malformed"
+  echo "       reply or the API, or a trial near its time limit, and nothing more runs."
+  echo "    2. Seed 108, 66 trials: a firm estimate is shown after step 1, and it waits for a second y."
+  echo "    Written before it ran: Opus finishes wrong at most 1 time in 66 (Haiku 4, Sonnet 0), and at 20 companies splitting"
+  echo "    holds. The full bars are at the top of this script."
+  read -r -p "Run step 1 now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  shared="--context 8000 --tool-rounds 4 --author-rule headed"
+  twenty="--families aggregate,breadth --entities 20 --distractors 6"
+  held opus-calib 2.50 compare --seed 108 $twenty --per-family 1 --strategies always-told,genet $shared
+  # As for Sonnet: stops on settings measured on Haiku end it here; otherwise a firm estimate at this model's prices.
+  if ! "$PY" -I - "$pin" "$pout" <<'EOF'
+import json, sys
+pin, pout = float(sys.argv[1]), float(sys.argv[2])
+rows = json.load(open("data/compare/opus-calib.json"))["results"]
+cost = [(r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6 for r in rows]
+for r, c in zip(rows, cost):
+    print(f"  {r['strategy']:<11} {r['task_id']:<12} {r['status']:<8} {r['code'] or '-':<7} {r['calls']:>2} calls "
+          f"{r['tokens']:>7,} tokens ${c:.3f} {r['latency_s']:>5.0f}s right={r.get('answer_right')}")
+bad = [r for r in rows if r["code"] in ("BUDGET", "SCHEMA", "LIVE") or r["latency_s"] > 450]
+mean = sum(cost) / max(1, len(cost))
+# Haiku's trial at 10 companies cost 0.373 of its trial at 20 on seed 108 (rerun-s108-10 and -20).
+estimate = mean * 18 + mean * 0.373 * 48
+print(f"step 1: ${sum(cost):.3f}; a trial at 20 companies ${mean:.3f}; step 2 about ${estimate:.2f} (caps $8.00 and $8.00)")
+if bad:
+    print("step 1 found stops on settings measured on Haiku, so step 2 was not run:", [(r["task_id"], r["code"]) for r in bad])
+    sys.exit(3)
+if estimate > 15:
+    print("step 2 would likely pass its caps, so it was not run")
+    sys.exit(4)
+EOF
+  then
+    echo "Results: data/compare/opus-calib.json"
+    exit 0
+  fi
+  read -r -p "Run step 2, seed 108 on Opus, at the estimate above? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Step 2 not run."; exit 0 ;;
+  esac
+  held opus-s108-10 8.00 compare --seed 108 --families lookup,aggregate,compare,breadth --per-family 6 --entities 10 \
+    --distractors 6 --strategies always-told,genet $shared
+  held opus-s108-20 8.00 compare --seed 108 $twenty --per-family 3 --strategies single,always-told,genet $shared
+  echo
+  echo "Done. Results: data/compare/opus-*.json   Tapes: data/tapes/opus-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = sonnetsweep ]; then
+  echo
+  echo ">>> The agent-count sweep on $model: seeds 113 and 114 at a call limit of 8,000, one agent, 4, 10 and 20 parts and"
+  echo "    Genet. 60 trials, about \$9.40 and an hour; each seed stops itself before \$6.00."
+  echo "    Written before it ran: Haiku's bars at 8,000. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 113 114; do
+    held "sonnetsweep-s$seed-8000" 6.00 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+      --distractors 6 --strategies single,split-4,split-10,split-20,genet --context 8000 --tool-rounds 4 --max-calls 80
+  done
+  echo
+  echo "Done. Results: data/compare/sonnetsweep-*.json   Tapes: data/tapes/sonnetsweep-*.jsonl"
+  exit 0
 fi
 if [ "$mode" = cache ]; then
   echo

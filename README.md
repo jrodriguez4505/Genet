@@ -19,6 +19,17 @@ The team is small, and every agent can switch skills, with specialists added onl
 
 Quality of process over quantity of agents: possibly more efficient, and possibly more effective. That stays a claim until measured. `taskorg compare` exists to measure it (see [Proving it](#proving-it)).
 
+**What the tests have found so far.** The same questions over 20 companies' notes, split by the kernel into a fixed number of parts, on Claude Haiku 5.5 (7 and 8 November, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)):
+
+| Right of 12 (tokens a question) | Calls capped at 8,000: the files do not fit one call | Calls capped at 64,000: they do |
+|---|---|---|
+| One agent | 1 (54k) | 11 (82k) |
+| 4 parts | 10 (52k) | 12 (41k) |
+| 10 parts | 11 (65k) | 12 (64k) |
+| 20 parts | 9 (98k) | 9 (100k) |
+
+About four agents was right. Twenty did worse at about twice the cost: each saw one file, so none could tell a company from its look-alike, and the lead had twenty reports to merge. On two question sets run on both Haiku 5.5 and Sonnet 5.5, Sonnet finished no answer wrong against Haiku's 6, at about 13 times the cost. The limits: one kind of synthetic task, at reduced scale, on two models so far.
+
 ## The team
 
 Genet is built for a small, cohesive team:
