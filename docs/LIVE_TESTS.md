@@ -700,6 +700,48 @@ All three tapes are `sonnet-calib`, `sonnet-s108-10` and `sonnet-s108-20`.
 - **Across both seeds:** Sonnet finished wrong 0 times in 132, against Haiku's 6, and was right on 116 against 109. Its verifier failed 4 right answers, Haiku's on the same trials 0 of those. Sonnet cost $11.62 for the 132; Haiku $0.90.
 - **So the next question is which role needs Sonnet.** The authors' reading, the verifier's, or both: a mixed team can tell, and may get most of the gain at a fraction of the cost.
 
+### Haiku authors with Sonnet checking
+
+`bash scripts/team_runs.sh mixed`, on 8 November: Haiku 5.5 as the lead and sub-agents, Sonnet 5.5 as the verifier (`TASKORG_MODEL_NAME_VERIFY`), on seeds 108 and 110 with the rerun's settings, the told crew and Genet. Each call records the model that answered and is priced at that model's rate (`compare --price`). 120 trials cost $2.39, against an estimate of $2.20 and caps of $3.80. The other way round, Sonnet reading and Haiku checking, would have cost about $8.14 by the tapes, close to Sonnet alone, so it was not run.
+
+| 120 trials | Right | Finished wrong | Stopped | Cost |
+|---|---|---|---|---|
+| Haiku alone | 108 | 5 | 7 | $0.74 |
+| Haiku authors, Sonnet checking | 102 | 2 | 16 | $2.39 |
+| Sonnet alone | 116 | 0 | 4 | $9.53 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Finished wrong | at most 1 | **2**, misses |
+| Right | at least 105 | **102**, misses |
+
+- **By the rule written first, the reading needs Sonnet.** A stronger checker over Haiku's authors cut wrong answers from 5 to 2, but it did not get Sonnet's result, and it cost right answers.
+- **It stopped what it could not trust, right or wrong.** Of Haiku's 5 wrong answers on these trials, 3 came out right and 1 stopped; one stayed wrong, and one new wrong answer appeared. But stops more than doubled, to 16. Some were fair: products that said "partial" or "pending" after a rework. Some were right totals the Sonnet verifier failed (1082.2, 1027.3, 1047.0), as it had on Sonnet's own runs.
+- **The authors are the ones to strengthen.** The errors start where a true figure sits next to a prior-year line or a look-alike's note, and the author sets it aside. A checker can only send that back, and Haiku's reworks did not fix it, here or in the gap check.
+
+### Opus 5.5 on seed 108
+
+`bash scripts/team_runs.sh opus`, on 8 November: three models on the same 66 trials, with the rerun's settings. A calibration of 4 trials came first: all right, no stop on size, a malformed reply or the API, the longest 59 of its 600 seconds, $1.17. The 66 trials then cost $11.78, against an estimate of $10.49 and caps of $16.00.
+
+| Seed 108 | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
+|---|---|---|---|
+| 10 companies, told crew, of 24 | 22 right, 1 wrong | 24 right | 23 right, 1 wrong |
+| 10 companies, Genet, of 24 | 23 right | 24 right | 24 right |
+| 20 companies, one agent, of 6 | 0, 1 wrong | 0 | 0 |
+| 20 companies, told crew, of 6 | 5 | 6 | 6 |
+| 20 companies, Genet, of 6 | 2, 2 wrong | 5 | 6 |
+| All, of 66 | 52 right, 4 wrong | 59 right, 0 wrong | 59 right, 1 wrong |
+| Cost, and a right answer | $0.46, $0.009 | $5.82, $0.099 | $11.78, $0.200 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Opus finishes wrong | at most 1 of 66 | **1**, holds |
+| Splitting at 20 companies | crew and Genet right on at least 9 of 12, one agent on at most 1 of 6 | **12 and 0**, holds |
+
+- **Both bars held.** Opus was right on as many as Sonnet, at twice the price. Its one wrong answer was a sum off by 0.1 (469.9 for 469.8), not a figure set aside; on Genet's aggregate-2 at 20 companies, where Haiku took a look-alike's figure and Sonnet's verifier failed the right total, Opus answered 886.1 and passed.
+- **The design holds across three models.** On all three, one agent cannot do the 20-company work at this limit, and the told crew and Genet can: 7, 11 and 12 of 12. The wrong answers that remain are the smallest model's.
+- **Genet at 20 companies tracked the model: 2, 5 and 6 of 6.** The lead's plan was the weak part on Haiku; with a stronger reader it matched the crew.
+
 ## 7 and 8 November 2026: how many agents a task needs
 
 `bash scripts/team_runs.sh agents`, on Haiku 5.5. Genet began as a question about teams of hundreds of agents: does each one do new work? This sweep asks it directly. The kernel split the files a question names into 2, 4, 10 or 20 parts (`split-N`: one sub-agent a part, no planning call, no gates, the lead merges), against one agent, the told crew and Genet. Questions over all 20 companies, 6 on each of seeds 113 and 114, which no tape had used. Twice: at a call limit of 8,000 tokens, where the 20 files (about 17,500 tokens) do not fit one call, and at 64,000, where they do. Every strategy got 80 calls. 168 trials cost $2.09, against an estimate of $2.20 and caps of $6.00; no part failed on a rate limit. Genet's cap of 4 sub-agents became a setting for this (`Engine(max_workers=...)`, 4 by default); every run before replays the same.
@@ -760,6 +802,35 @@ The tapes are `agents-s113-8000`, `-s113-64000`, `-s114-8000` and `-s114-64000`.
 - **Caching stays off: both bars it needed missed.** One by a hair, one by an answer.
 - **Most of the sweep's cost gap was the missing cache.** Cached, one agent cost 1.12 times what 4 parts did, against 1.63 times uncached in this run's terms. So, with caching, the should-we rule would need no cost term. 4 parts gained nothing from it: a part reads in one or two rounds, and the write costs more than the reads save.
 - **But the cached single agent read less and was wrong more.** It made 5.8 calls a trial against 7.5, and finished 3 answers wrong where uncached it finished none, one of them a look-alike (Halvorsen Freight Labs). Genet, also one agent here, made fewer calls too and kept its 11. Twelve trials cannot tell the block format from chance, so before caching is used, the uncached and cached single agent need running again side by side.
+
+### The sweep on Sonnet 5.5
+
+`bash scripts/team_runs.sh sonnetsweep`, on 8 November: the sweep's 8,000 questions again, seeds 113 and 114, on Sonnet 5.5, to see whether "about four" holds on a stronger reader. One agent, 4, 10 and 20 parts and Genet, 80 calls each, Haiku's bars. 60 trials cost $10.76, against an estimate of $9.40 and caps of $12.00.
+
+| Call limit 8,000, of 12 | Right, Sonnet | Right answer, Sonnet | Tokens a question, Sonnet | Right, Haiku | Tokens a question, Haiku |
+|---|---|---|---|---|---|
+| One agent | 0 | 0 | 54,203 | 1 | 54,122 |
+| 4 parts | 11 | 12 | 38,770 | 10 | 51,630 |
+| 10 parts | 12 | 12 | 60,607 | 11 | 64,612 |
+| 20 parts | 12 | 12 | 91,285 | 9 | 97,744 |
+| Genet | 11 | 12 | 41,347 | 9 | 54,087 |
+
+"Right answer" counts the product's answer whatever the verifier said; "right" also needs it verified.
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Splitting is needed | best split at least 6 more right than one agent | **12 against 0**, holds |
+| Past a handful, more agents do not pay | 20 parts no more right than the better of 4 and 10, at 1.3 times its tokens or more | **12 against 12, 1.51 times**, holds |
+| Genet's own plan | within 1 of the best split, at most 1.2 times its tokens | **11 against 12, 0.68 times**, holds |
+
+- **On Sonnet the count changed the cost, not the answer.** Every split got the right answer on all 12 questions, at 4, 10 and 20 parts alike. Nothing finished wrong in 60 trials. The two that stopped were right totals (1106.0) the Sonnet verifier failed, one under 4 parts and one under Genet, as it did on seeds 108 and 110.
+- **About four still holds, now on cost alone.** 4 parts spent 38,770 tokens a question, 10 parts 1.56 times that and 20 parts 2.35 times, for no more right answers. At Sonnet's price that is $0.114, $0.190 and $0.297 a question.
+- **Twenty agents' wrong answers on Haiku were the smaller model's.** Haiku's 20-part merges left a company out or took a look-alike's figure; Sonnet's added the same 20 reports right every time. The cost of twenty does not depend on the model; the risk does.
+- **Genet's own plan held its bar here, where on Haiku it missed by one.** Its leads staffed 4 parts every time (Haiku's 11 of 12), none refused, at 1.07 times the fixed 4 parts' tokens.
+- **One agent failed honestly.** It could not read 20 files at this limit on either model. On Sonnet, 10 of its 12 answers said they were incomplete, provisional or partial, and the verifier stopped all 12, including the two that named a wrong company from the files it had read without saying so. The limit is the one we set, so this says only that splitting works when the work does not fit one call.
+- **What this does not show.** The same 12 questions as Haiku's, so the pairing is exact but small. One call limit; the 64,000 half was not rerun.
+
+The tapes are `sonnetsweep-s113-8000` and `sonnetsweep-s114-8000`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

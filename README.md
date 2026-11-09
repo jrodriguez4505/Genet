@@ -28,7 +28,7 @@ Quality of process over quantity of agents: possibly more efficient, and possibl
 | 10 parts | 11 (65k) | 12 (64k) |
 | 20 parts | 9 (98k) | 9 (100k) |
 
-About four agents was right. Twenty did worse at about twice the cost: each saw one file, so none could tell a company from its look-alike, and the lead had twenty reports to merge. On two question sets run on both Haiku 5.5 and Sonnet 5.5, Sonnet finished no answer wrong against Haiku's 6, at about 13 times the cost. The limits: one kind of synthetic task, at reduced scale, on two models so far.
+About four agents was right. On Haiku, twenty did worse at about twice the cost: each saw one file, so none could tell a company from its look-alike, and the lead had twenty reports to merge. On Sonnet 5.5 the same 8,000 questions got the right answer at 4, 10 and 20 parts alike, so the count changed only the cost: 10 parts 1.56 times the tokens of 4, and 20 parts 2.35 times. On the same trials across three models, Sonnet and Opus 5.5 were each right on 59 of 66 against Haiku's 52, with 0 and 1 wrong against Haiku's 4, Opus at twice Sonnet's cost. One agent could not do the 20-company work at this limit on any of them. The limits: one kind of synthetic task, at reduced scale.
 
 ## The team
 
