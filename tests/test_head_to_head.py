@@ -350,6 +350,20 @@ def test_the_judge_scores_each_answer_once_blind_to_who_gave_it():
     assert out[1]["answer_right"] and "judge_score" not in out[3]
 
 
+def test_right_is_a_score_of_80_not_loongs_100():
+    loong = [{"id": "abcdef12-0", "prompt_template": "{docs}{instruction} {question}", "question": "Q?",
+              "instruction": "I.", "answer": "gold"}]
+    rows = []
+    for answer, score in (("a", 97), ("b", 80), ("c", 79), ("d", 100)):
+        sdk = _SDK(text=f"Matches, with a detail I cannot check.\nRating: [[{score}]]")
+        rows += judge_rows([{"task_id": "loong-abcdef12", "strategy": "genet", "answer": answer, "expected": "gold",
+                             "status": "complete"}], loong, RawClient(call_limit=16_000, sdk_client=sdk, effort=None),
+                           "claude-sonnet-5-5")
+    assert [r["correct"] for r in rows] == [True, True, False, True]
+    assert [r["answer_right"] for r in rows] == [True, True, False, True]
+    assert [r["full"] for r in rows] == [False, False, False, True]
+
+
 # --- the command line ---
 
 def _hotpot_file(tmp_path):

@@ -2,7 +2,12 @@
 
 The judge sees the question, the gold answer and one answer: never which contender gave it. The same answer
 to the same question is judged once and its score shared, so the scores do not depend on the order trials ran
-in. An answer that is missing scores 0 without a call. Right is a score of 100, Loong's perfect rate.
+in. An answer that is missing scores 0 without a call.
+
+Right is a score of at least RIGHT_SCORE, not Loong's perfect rate of 100. On the calibration of 9 November, before
+the main run had results, Sonnet 5.5 gave 92 to 97 to answers that matched the gold one, one of them word for word,
+docking points for detail it could not check, so no answer reached 100. Right answers there scored 80 to 97 and
+wrong ones 2 to 35. 'full' keeps Loong's own count.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from .benchmarks import judge_prompt, judge_score, loong_judge_question
 from .rawcall import RawClient
 
 PERFECT = 100.0
+RIGHT_SCORE = 80.0
 JUDGE_REPLY = 1_024  # Loong asks for no more than 100 words of evidence and a rating
 
 
@@ -40,6 +46,6 @@ def judge_rows(results: list[dict], loong_rows: list[dict], client: RawClient, m
                 progress(f"[{n}/{len(results)}] {res['task_id']} {res.get('strategy', '')}: {seen[pair][0]}")
         score, text = seen[pair]
         out.append(dict(res) | {"judge_score": score, "judge_text": text,
-                                "answer_right": score == PERFECT,
-                                "correct": score == PERFECT and res.get("status") == "complete"})
+                                "answer_right": score >= RIGHT_SCORE, "full": score >= PERFECT,
+                                "correct": score >= RIGHT_SCORE and res.get("status") == "complete"})
     return out

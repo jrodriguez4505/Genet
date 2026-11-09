@@ -30,6 +30,13 @@ Quality of process over quantity of agents: possibly more efficient, and possibl
 
 About four agents was right. On Haiku, twenty did worse at about twice the cost: each saw one file, so none could tell a company from its look-alike, and the lead had twenty reports to merge. On Sonnet 5.5 the same 8,000 questions got the right answer at 4, 10 and 20 parts alike, so the count changed only the cost: 10 parts 1.56 times the tokens of 4, and 20 parts 2.35 times. On the same trials across three models, Sonnet and Opus 5.5 were each right on 59 of 66 against Haiku's 52, with 0 and 1 wrong against Haiku's 4, Opus at twice Sonnet's cost. One agent could not do the 20-company work at this limit on any of them. The limits: one kind of synthetic task, at reduced scale.
 
+**Against another framework.** On 9 November Genet met CrewAI 1.15.30 on public questions: Loong's 40 over real SEC filings, and HotpotQA's 20 short ones. Both ran on Haiku 5.5 with the same limits, and Sonnet judged Loong's answers ([docs/HEAD_TO_HEAD.md](docs/HEAD_TO_HEAD.md)).
+- **Loong:** CrewAI was right on 25, one agent on 22, Genet on 20, so Genet missed its accuracy bar. It used fewer tokens a question (88k against 127k) and finished wrong less (12 against 15).
+- **Where the loss came from:** Genet split on 13 questions and was right on 4 of them, where one agent and CrewAI each got 7. On the 27 it kept single, it matched one agent.
+- **HotpotQA:** Genet stayed one agent on all 20 and matched one agent's score.
+
+Where Genet stayed one agent it did as well as one agent; where it split, its team did worse than both one agent and CrewAI. The limits: one benchmark subset, one call limit, one model, 40 questions.
+
 ## The team
 
 Genet is built for a small, cohesive team:

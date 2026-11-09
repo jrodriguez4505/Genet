@@ -1,6 +1,6 @@
 # Head-to-head plan: Genet against CrewAI on public documents
 
-Status: built and rehearsed at $0 on 9 November 2026; not yet run on a model. The questions are downloaded and CrewAI is installed, both on the operator's say-so. The live run (`bash scripts/team_runs.sh headtohead`) waits for the operator's y, twice.
+Status: run on 9 November 2026, $2.85 in all. CrewAI was right on 25 of Loong's 40, Genet on 20, so Genet misses the accuracy bar; it holds the other four. The results and what is behind them are in [LIVE_TESTS.md](LIVE_TESTS.md#9-november-2026-a-head-to-head-with-crewai-on-public-documents). Before the main run had results, "right" on Loong was changed from a judge score of 100 to a score of at least 80, for the reason the calibration gives.
 
 ## The question
 
@@ -81,7 +81,7 @@ With those, the stand-in reader proposing one part a file: Genet stayed one agen
    - HotpotQA: each paragraph becomes a file named by its Wikipedia title.
 3. **A judge,** run after the trials, on its own.
    - Loong's own prompt (Apache-2.0), which scores 1 to 100, run by Sonnet 5.5, not the model under test, and blind to which contender answered.
-   - "Right" is Loong's perfect rate, a score of 100, with the average reported beside it.
+   - "Right" was to be Loong's perfect rate, a score of 100. The calibration showed the judge does not give 100 to answers that match, so right is a score of at least 80 in a finished run; Loong's average and the count at 100 are reported beside it.
    - The judge's calls are taped and capped like the rest, and 20 of its verdicts are read by hand before results are written.
 4. **The CrewAI harness,** in its own virtual environment outside the project's: the adapter-backed `BaseLLM`, the tool wrappers and the settings above. It is checked against the pinned version's source, not the docs, since the research found places where the two differ.
 5. **A rehearsal** of every contender on both sets against the simulated reader and the fake Messages endpoint, at $0, to check plumbing, tapes and the caps.
@@ -103,9 +103,26 @@ A rough estimate before calibration, on Haiku 5.5 at $0.10 and $0.50 a million t
 
 The calibration stops the run if any contender stops on size, a malformed reply, the API or a crash on more than one of its 4 trials, or if the estimate it prints passes $15 or either side's Loong estimate passes 90% of its cap. The main run waits for a second y. About $99 of the month's credit is left.
 
+## The calibration (9 November, $0.26)
+
+Four Loong questions, one of each kind, under each contender, then the judge: $0.16 for one agent, the told crew and Genet, $0.05 for CrewAI, $0.05 for the judge. No contender stopped on size, a malformed reply, the API or a crash; one agent's grouping answer stopped at its checker. The gate's estimate for the main run was about $3, not $10 to $16: these questions ran on fewer tokens than the rough estimate allowed.
+
+| Judge score | one agent | told crew | Genet | CrewAI |
+|---|---|---|---|---|
+| Spotlight (one figure) | 92 | 95 | 93 | 92 |
+| Comparison | 97 | 95 | 92 | 92 |
+| Clustering | 88, stopped at its checker | 80 | 2 | 92 |
+| Chain | 2 | 30 | 35 | 22 |
+| Average | 69.8 | 75.0 | 55.5 | 74.5 |
+
+What it showed:
+- **The judge does not give full marks to answers that match.** Sonnet 5.5 scored answers that matched the gold one 92 to 97, one of them word for word identical (97), each time docking points for detail it said it could not check, although Loong's prompt says a fully correct answer gets 100. Under Loong's rule all 16 answers were wrong, and every bar would have compared zeros. Right answers scored 80 to 97 and wrong ones 2 to 35, with nothing between, so right became a score of at least 80 in a finished run. This was fixed in `data/exp/h2h_read.py` before the main run had results; the judge's own `correct` field keeps the 100 rule, and the reader shows both.
+- **Loong's chain question labels years by filing.** Its gold answer gives growth "from 2023 to 2024" using the two 10-Ks filed in 2023 and 2024, which report fiscal 2022 and 2023. All four contenders read the fiscal years, said 2024 was not covered, and scored 2 to 35; three of them gave the right figures under the right years. This is in the questions, not in any contender, and it may lower every contender's chain score alike.
+- **Genet stayed one agent on 3 of 4,** its lead proposing no split; the gates refused nothing. On the clustering question it read 466,000 tokens alone, then said the line asked about is not in the filings. The others answered from the nearest line (a change in retained earnings or accumulated deficit) and scored 80 to 92.
+
 ## The bars, written before the run
 
-On Loong's 40 questions, where right is a judge score of 100:
+On Loong's 40 questions, where right is a judge score of at least 80 in a finished run (first written as 100; changed after the calibration and before the main run had results, see below):
 
 | Bar | Needed |
 |---|---|
@@ -144,6 +161,6 @@ All in `data/h2h/`, which git ignores, with SHA-256 sums in `data/h2h/SHA256SUMS
 
 ## Still waiting on a say-so
 
-1. The calibration: `bash scripts/team_runs.sh headtohead`, on the operator's y.
-2. The main run, on a second y.
+1. The calibration: ran 9 November on the operator's y.
+2. The main run: ran 9 November on their second y; results in LIVE_TESTS.md.
 3. Publishing the tapes: kept local until checked. SEC filings are public records and Loong's repository is Apache-2.0. HotpotQA's paragraphs are CC BY-SA 4.0, so published excerpts need attribution and the same licence.

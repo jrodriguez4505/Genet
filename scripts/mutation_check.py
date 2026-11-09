@@ -551,7 +551,9 @@ M = [
     ("rawcall.py", "a replayed call is spent again", "        if self.player is None:\n            self.spend.add(model, usage)", "        if True:\n            self.spend.add(model, usage)"),
     ("rawcall.py", "the reply cap is in the key", 'body = {k: v for k, v in params.items() if k != "max_tokens"}', "body = dict(params)"),
     ("judge.py", "each trial is judged again", "        if pair not in seen:", "        if True:"),
-    ("judge.py", "a stopped trial counts as right", '"correct": score == PERFECT and res.get("status") == "complete"}', '"correct": score == PERFECT}'),
+    ("judge.py", "a stopped trial counts as right", '"correct": score >= RIGHT_SCORE and res.get("status") == "complete"}', '"correct": score >= RIGHT_SCORE}'),
+    ("judge.py", "right is Loong's 100 again", '"correct": score >= RIGHT_SCORE and res.get("status")', '"correct": score >= PERFECT and res.get("status")'),
+    ("judge.py", "a score under 80 counts as right", 'RIGHT_SCORE = 80.0\n', 'RIGHT_SCORE = 75.0\n'),
 ]
 
 

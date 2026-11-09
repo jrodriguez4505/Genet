@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room, two benches and the verifier on real merges (3 November), the verifier's rule on new questions (3 November), two benches and a whole run (4 November), its rerun and a test of one more verifier sentence (5 and 6 November), a narrower sentence and a check in code (7 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: those of 3 to 6 November as [tapes-20261106](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261106), 3 November's earlier runs as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room, two benches and the verifier on real merges (3 November), the verifier's rule on new questions (3 November), two benches and a whole run (4 November), its rerun and a test of one more verifier sentence (5 and 6 November), a narrower sentence and a check in code (7 November), how many agents a task needs on three models (7 and 8 November), a head-to-head with CrewAI on public documents (9 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: those of 3 to 6 November as [tapes-20261106](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261106), 3 November's earlier runs as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -831,6 +831,73 @@ The tapes are `agents-s113-8000`, `-s113-64000`, `-s114-8000` and `-s114-64000`.
 - **What this does not show.** The same 12 questions as Haiku's, so the pairing is exact but small. One call limit; the 64,000 half was not rerun.
 
 The tapes are `sonnetsweep-s113-8000` and `sonnetsweep-s114-8000`.
+
+## 9 November 2026: a head-to-head with CrewAI on public documents
+
+`bash scripts/team_runs.sh headtohead`: Genet against CrewAI 1.15.30 on two public benchmarks, with the plan and its bars written first in [HEAD_TO_HEAD.md](HEAD_TO_HEAD.md).
+- **Model and limits:** Haiku 5.5 at effort low. Each trial got a call limit of 100,000 tokens, 80 calls, 1,200 seconds and pages of 16,000 characters. Genet's agents get 6 tool rounds.
+- **CrewAI's setup:** hierarchical, a manager and 4 readers, on CrewAI's own Anthropic provider with native tool calls. Genet's raw client sits underneath it, so every call was sized, capped, priced and taped the same way.
+- **Loong:** 40 questions over 2024 SEC filings, 10 each of spotlight, comparison, clustering and chain. Each question carries 240,000 to 517,000 characters of filings. Sonnet 5.5 judged the answers with Loong's own prompt.
+- **HotpotQA:** 20 distractor questions, scored by exact match.
+- **Cost:** the calibration cost $0.26. The main run cost $2.59: Loong $1.92, HotpotQA $0.19 and the judge $0.48. The rough estimate before calibration was $10 to $16.
+
+One rule changed after the calibration and before the main run had results. Right on Loong became a judge score of at least 80 in a finished run, where the plan had said 100. Sonnet gave 92 to 97 to calibration answers that matched the gold one, one of them word for word, so no answer reached 100 (see HEAD_TO_HEAD.md).
+
+| Loong, of 40 | One agent | Told crew | Genet | CrewAI |
+|---|---|---|---|---|
+| Right | 22 | 20 | 20 | **25** |
+| Right answer, stopped or not | 25 | 22 | 21 | 25 |
+| Finished wrong | 15 | 14 | 12 | 15 |
+| Stopped by the checker | 3 | 6 | 8 | none; CrewAI has no checker |
+| Loong's average score | 68.7 | 59.8 | 59.4 | 66.7 |
+| Score of 100 | 2 | 2 | 1 | 0 |
+| Split | 0 | 40 | 13 | 40 |
+| Tokens a question | 74,697 | 94,722 | 87,694 | 127,338 |
+| Cost a right answer | $0.016 | $0.025 | $0.022 | $0.024 |
+
+| HotpotQA, of 20 | One agent | Told crew | Genet | CrewAI |
+|---|---|---|---|---|
+| Right, exact match | 12 | 9 | 12 | 8 |
+| Split | 0 | 20 | 0 | 20 |
+| Tokens a question | 8,329 | 18,625 | 10,010 | 12,798 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Loong accuracy | Genet at least the best of the others less 3 | **20 against CrewAI's 25**, misses |
+| Loong cost | Genet's tokens a question and cost a right answer at most CrewAI's | **87,694 and $0.022 against 127,338 and $0.024**, holds |
+| Loong wrong finishes | Genet at most CrewAI's | **12 against 15**, holds |
+| HotpotQA, one agent is enough | Genet one agent on at least 18 of 20 | **20 of 20**, holds |
+| HotpotQA at its cost | Genet within 1 right of one agent, at most 1.3 times its tokens | **12 against 12, 1.20 times**, holds |
+
+- **CrewAI was right on 5 more Loong questions than Genet.** Its answers, read side by side, account for the gap:
+  - 3 were Genet's own misses: a count of 1 where the answer was 2, and two "cannot be determined", one of them after a split.
+  - 1 was a right answer stopped by Genet's checker.
+  - 1 came, net, from the judge scoring the same content differently: 62 against 80 and 72 against 82 went against Genet, 80 against 72 went for it.
+- **The loss is where Genet split.** Its lead proposed on 14 questions; the gates refused one part, and Genet split on 13. On those 13 Genet was right on 4, and its checker stopped 5. One agent and CrewAI were right on 7 each, and the told crew on 4. On the 27 questions Genet kept single, it was right on 16, against one agent's 15. So the gate kept what one agent does. Genet's own team did worse than CrewAI's crew and one agent wherever it ran, whether the lead was told to split (the told crew) or the gates decided (Genet). That team is the lead, the parts, the merge and the checker.
+- **One agent came close to CrewAI.** It was right on 22 against 25, at 59% of CrewAI's tokens. With a 100,000-token call and paged reads, most of these questions fit one agent.
+- **The checker trades both ways.** It stopped right answers: 3 of one agent's, 2 of the told crew's and 1 of Genet's. Its contenders finished wrong 12 to 15 times, CrewAI 15.
+- **The cut-off decides the accuracy bar.** The judge docks points for detail it cannot check, and CrewAI's answers carry more of it. At a score of 95 or more, one agent has 17 right and CrewAI 7.
+
+  | Cut-off | One agent | Told crew | Genet | CrewAI | Bar |
+  |---|---|---|---|---|---|
+  | 70 | 22 | 20 | 21 | 26 | misses |
+  | 80, the rule set before results | 22 | 20 | 20 | 25 | misses |
+  | 90 | 21 | 17 | 19 | 19 | would hold |
+
+  The rule was set from the calibration before results, so the bar misses.
+- **Chain questions failed for everyone,** 0 to 2 right of 10. Loong's gold answers label years by when a filing was made, so their "2023 to 2024" is fiscal 2022 to 2023. Every contender read the fiscal years correctly.
+- **On HotpotQA the gate kept short work single.** Genet stayed one agent on all 20 questions and matched one agent's 12 right at 1.20 times its tokens.
+  - CrewAI's 8 by exact match is 12 in substance. Four right answers came wrapped in `<answer>` tags, because its agents took our own instruction, "ANSWER: &lt;answer&gt;", literally.
+  - Exact match is strict for everyone: "Rob Sitch" for Robert Ian "Rob" Sitch counts as wrong.
+- **Every tape replays exactly:** 256 trials and 176 verdicts, with no request missing from its tape. 20 verdicts read by hand agree with the answers they score.
+- **The run took about 5 hours by the clock, against 1.4 hours of trial time.** It paused between trials, probably while the Mac slept. No trial stopped on time or on the API.
+- **What this does not show:**
+  - One subset of one benchmark, at one call limit, on one model, so a difference of 3 or fewer of 40 is noise.
+  - CrewAI as we configured it, not as an expert would.
+  - A judge whose wording moves a score by a few points either way.
+  - Prompts that ask for "ANSWER: &lt;answer&gt;", which is our wording.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai` and `h2h-loong-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
