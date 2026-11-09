@@ -897,6 +897,32 @@ One rule changed after the calibration and before the main run had results. Righ
   - A judge whose wording moves a score by a few points either way.
   - Prompts that ask for "ANSWER: &lt;answer&gt;", which is our wording.
 
+### Why Genet's splits lost: the tapes read again
+
+Every Genet-side Loong trial was replayed from its tape with its whole record kept: the plan, each part's report, every merge, and the checker's verdicts. No calls were made. The script is `data/exp/h2h_splits_read.py`.
+- **The lead's choice to stay single was sound.** It was asked to plan on all 40 questions, since no question fits one call. It kept 26 to one agent, saying one agent could search each filing in turn. On those it was right on 16, against one agent's 15.
+- **Splits lost on line names.** Loong's questions use generic line names such as 'Total Operating Revenue', 'long-term borrowings' and 'Cash and Cash Equivalents at End of Period'. Its instruction says to ignore content not found in the statements. On 9 questions, a split run's parts reported that the named line is not in their filing, and gave the closest one: "no line labeled 'Total Operating Revenue'; the closest is 'Revenue'". On those 9:
+
+  | Of the 9 questions | Right |
+  |---|---|
+  | One agent | 6 |
+  | CrewAI | 6 |
+  | Genet | 3 |
+  | Told crew | 3 |
+
+  That is the whole of Genet's deficit against one agent on the questions it split, and 3 of its 5 against CrewAI.
+- **How each of Genet's three losses went.** The parts each flagged the missing name. The lead's merge carried the flags up as a hedge: "cannot be determined", "3, or 2 on a strict reading", "undetermined". The checker failed it as not an answer, and the rework went one of three ways:
+  - Still hedged, on total operating revenue.
+  - Strict and wrong, on the cash count: it counted only exact labels and answered 1 for 2.
+  - Right, but failed again as resting on an estimate, on long-term borrowings.
+
+  One agent and CrewAI's manager used the nearest line without comment. A single agent reads every filing itself, so a name that does not match never reaches the lead as three separate caveats.
+- **Without such a flag, splits mostly worked.** On the questions that are not chain questions, the told crew was right on 18 of 22 and Genet on 3 of 5.
+- **The checker failed products on 11 of Genet's 40 trials** (19 FAILs), 8 of the told crew's (14) and 10 of one agent's (13). It stopped right answers 1, 2 and 3 times.
+- **What would test the fix, not yet built or approved:**
+  - Tell the parts and the lead that a filing may not use the question's name for a line. They should then take the line that measures the same thing, say which, and answer.
+  - Rerun the 9 questions, then the 40, under the told crew and Genet.
+
 The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai` and `h2h-loong-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
