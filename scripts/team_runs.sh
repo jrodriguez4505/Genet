@@ -212,6 +212,23 @@
 #       times its tokens a question.
 #     - Genet's own plan is right on at most 1 fewer than the best split, for at most 1.2 times its tokens.
 #     If the second holds on Sonnet as on Haiku, about four is not a limit of the smaller model.
+#   bash scripts/team_runs.sh headtohead   Genet against CrewAI on public questions (docs/HEAD_TO_HEAD.md), on Haiku 5.5.
+#     Loong's English SEC filings, 40 questions (10 of each kind) and 4 for calibration; HotpotQA, 20 questions. One agent,
+#     the told crew, Genet, and CrewAI 1.15.30 (a manager and 4 readers), every call of every contender through Genet's
+#     counting, caps and tapes. A call limit of 100,000 tokens, 80 calls and 1,200 seconds a trial, 6 tool rounds for
+#     Genet's agents (CrewAI's own 25 steps an agent), pages of 16,000 characters. Loong is scored by Loong's own judge
+#     prompt on Sonnet 5.5; HotpotQA by exact match. Two steps, a y each. The calibration, about $1.20, stops itself if a
+#     contender stops on size, a malformed reply, the API or a crash on more than 1 of its 4, or if the estimate passes
+#     $15. Then the rest, caps $8.00 for each side on Loong, $0.50 on HotpotQA, $1.50 for the judge.
+#     The bars, written before the run. On Loong, right is a judge score of 100 in a run that finished:
+#     - Accuracy. Genet right on at least the best of one agent, CrewAI and the told crew, less 3.
+#     - Cost. Genet's tokens a question, and its cost a right answer, at most CrewAI's.
+#     - Wrong finishes. Genet finishes wrong no more often than CrewAI.
+#     On HotpotQA:
+#     - One agent is enough. Genet stays one agent on at least 18 of 20.
+#     - At its cost. Genet right on at least one agent's less 1, at most 1.3 times its tokens.
+#     Reported with no bar: agents a question, CrewAI's answers with no ANSWER line, split rate and accuracy by kind,
+#     accuracy against spend. If Genet misses the accuracy bar, Genet's rule costs answers on real documents.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -222,8 +239,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -240,6 +257,8 @@ if [ "$mode" = opus ]; then
   echo "  3) claude-opus-5-5     \$4 / \$20        calibration about \$1.10 (cap \$2.50); then seed 108, about \$11.60 (caps \$16.00)"
 elif [ "$mode" = sonnetsweep ]; then
   echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$9.40 in all, each seed capped at \$6.00"
+elif [ "$mode" = headtohead ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   calibration about \$1.20; then about \$10 to \$16 with the judge on Sonnet (caps \$18.50)"
 elif [ "$mode" = cache ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.25 in all, each seed capped at \$0.50"
 elif [ "$mode" = mixed ]; then
@@ -341,7 +360,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -420,6 +439,126 @@ EOF
   held opus-s108-20 8.00 compare --seed 108 $twenty --per-family 3 --strategies single,always-told,genet $shared
   echo
   echo "Done. Results: data/compare/opus-*.json   Tapes: data/tapes/opus-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = headtohead ]; then
+  H=data/h2h
+  CREW_PY="$H/venv-crewai/bin/python"
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial" "$H/hotpotqa/questions.jsonl" "$CREW_PY"; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md says how it was fetched). Nothing was run."; exit 1; }
+  done
+  if ! PYTHONPATH=. "$CREW_PY" -c "import crewai, taskorg.rawcall" 2>/dev/null; then
+    echo "The CrewAI environment cannot import crewai and taskorg. Nothing was run."; exit 1
+  fi
+  echo
+  echo ">>> Genet against CrewAI on public questions, on $model (docs/HEAD_TO_HEAD.md). Two steps."
+  echo "    1. Calibration: 4 Loong questions under one agent, the told crew, Genet and CrewAI, and the judge on them:"
+  echo "       about \$1.20. A contender that stops on size, a malformed reply, the API or a crash on more than 1 of 4,"
+  echo "       or an estimate past \$15, and nothing more runs."
+  echo "    2. Loong's 40 and HotpotQA's 20 under all four, then the judge: a firm estimate after step 1, and a second y."
+  echo "    Written before it ran: Genet right on at least the best of the others less 3, at no more tokens a question"
+  echo "    and cost a right answer than CrewAI. The full bars are at the top of this script."
+  read -r -p "Run step 1 now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000"
+  loong="--questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial"
+  hotpot="--questions $H/hotpotqa/questions.jsonl"
+  # CrewAI's runs: the same checks as held(), through the CrewAI environment's Python and Genet's raw client.
+  crew_held() {  # name, cap, the harness's words
+    local name=$1 cap=$2
+    shift 2
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name"
+      PYTHONPATH=. "$CREW_PY" scripts/h2h_crewai.py --model "$model" --price-in "$pin" --price-out "$pout" --max-spend "$cap" \
+        "$@" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" </dev/null 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\[|^\| |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+    fi
+    echo
+    if [ ! -f "data/compare/$name.json" ]; then
+      echo "$name did not finish, so nothing more was run. What finished is kept. To go on: bash scripts/team_runs.sh $mode"
+      exit 1
+    fi
+    if grep -q '"stopped_after"' "data/compare/$name.json"; then
+      echo "$name stopped early, at its cap or by you, so nothing more was run. What finished is kept."
+      exit 1
+    fi
+  }
+  judge_held() {  # name, cap, results files
+    local name=$1 cap=$2
+    shift 2
+    local files=()
+    for f in "$@"; do files+=(--results "data/compare/$f.json"); done
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+      "$PY" -m taskorg.cli h2h-judge "${files[@]}" --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 \
+        --price-in 2 --price-out 10 --max-spend "$cap" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+    fi
+    [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  }
+  held h2h-calib-genet 1.00 compare --benchmark loong --which calibration $loong --strategies single,always-told,genet \
+    $limits --tool-rounds 6
+  crew_held h2h-calib-crewai 1.00 --benchmark loong --which calibration $loong --call-limit 100000 --max-calls 80 \
+    --max-seconds 1200 --page-chars 16000
+  judge_held h2h-calib-judged 0.30 h2h-calib-genet h2h-calib-crewai
+  if ! "$PY" -I - "$pin" "$pout" <<'EOF'
+import json, sys
+from collections import defaultdict
+pin, pout = float(sys.argv[1]), float(sys.argv[2])
+rows = json.load(open("data/compare/h2h-calib-judged.json"))["results"]
+by = defaultdict(list)
+for r in rows:
+    by[r["strategy"]].append(r)
+    c = (r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6
+    print(f"  {r['strategy']:<11} {r['task_id']:<15} {r['status']:<8} {r['code'] or '-':<7} {r['calls']:>2} calls "
+          f"{r['tokens']:>9,} tokens ${c:.3f} {r['latency_s']:>5.0f}s w={r['workers']} judge {r.get('judge_score')}")
+bad = {s: [r["task_id"] for r in rs if r["code"] in ("BUDGET", "SCHEMA", "LIVE", "CRASH")] for s, rs in by.items()}
+bad = {s: ids for s, ids in bad.items() if len(ids) > 1}
+per_q = {s: sum((r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6 for r in rs) / len(rs) for s, rs in by.items()}
+genet_side = sum(v for s, v in per_q.items() if s != "crewai") * 40
+crew_side = per_q.get("crewai", 0) * 40
+# HotpotQA: about a tenth of a Loong trial, by its size; the judge: about $0.004 an answer on Sonnet.
+estimate = genet_side + crew_side + (genet_side + crew_side) / 10 + 160 * 0.004
+print(f"step 2 about ${estimate:.2f}: Loong ${genet_side:.2f} for one agent, the told crew and Genet (cap $8.00), "
+      f"${crew_side:.2f} for CrewAI (cap $8.00); HotpotQA and the judge the rest")
+if bad:
+    print("step 1 found a contender that stopped on more than 1 of 4, so step 2 was not run:", bad)
+    sys.exit(3)
+if estimate > 15 or genet_side > 7.2 or crew_side > 7.2:
+    print("step 2 would likely pass its caps, so it was not run")
+    sys.exit(4)
+EOF
+  then
+    echo "Results: data/compare/h2h-calib-*.json"
+    exit 0
+  fi
+  read -r -p "Run step 2, Loong's 40 and HotpotQA's 20 under all four, then the judge, at the estimate above? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Step 2 not run."; exit 0 ;;
+  esac
+  held h2h-loong-genet 8.00 compare --benchmark loong --which main $loong --strategies single,always-told,genet \
+    $limits --tool-rounds 6
+  crew_held h2h-loong-crewai 8.00 --benchmark loong --which main $loong --call-limit 100000 --max-calls 80 \
+    --max-seconds 1200 --page-chars 16000
+  held h2h-hotpot-genet 0.50 compare --benchmark hotpot $hotpot --strategies single,always-told,genet $limits --tool-rounds 6
+  crew_held h2h-hotpot-crewai 0.50 --benchmark hotpot $hotpot --call-limit 100000 --max-calls 80 --max-seconds 1200 \
+    --page-chars 16000
+  judge_held h2h-loong-judged 1.50 h2h-loong-genet h2h-loong-crewai
+  echo
+  echo "Done. Results: data/compare/h2h-*.json   Tapes: data/tapes/h2h-*.jsonl"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then

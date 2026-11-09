@@ -7,6 +7,8 @@ data/policy/
 data/compare/
 data/tapes/
 data/release/
+# Downloaded benchmarks and the CrewAI environment for the head-to-head (docs/HEAD_TO_HEAD.md)
+data/h2h/
 Data2/
 
 # Python

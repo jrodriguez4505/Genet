@@ -437,8 +437,32 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--then-live", action="store_true",
                      help="with --replay and --record: answer from the tape until the gap check sends a product back, "
                           "then send that trial's later requests to the model (--adapter anthropic) and record them")
+    p_c.add_argument("--benchmark", default=None, choices=["loong", "hotpot"],
+                     help="a public benchmark's questions in place of the generated suite (docs/HEAD_TO_HEAD.md): loong needs "
+                          "--questions and --docs, hotpot --questions; --families and the suite options are then not used")
+    p_c.add_argument("--questions", default=None, help="the benchmark's question file (JSON lines)")
+    p_c.add_argument("--docs", default=None, help="Loong's doc/financial folder")
+    p_c.add_argument("--which", default="main", choices=["main", "calibration"],
+                     help="Loong's planned sample: 40 main questions, or the 4 for calibration")
+    p_c.add_argument("--page-chars", type=_whole(1000), default=None,
+                     help="read long files a page of this many characters at a time (read:PATH@N). Off by default")
+    p_c.add_argument("--max-seconds", type=_finite(1, strict=False), default=600.0,
+                     help="per-trial wall-clock cap, same for every strategy")
     p_c.add_argument("--dry-run", action="store_true", help="print the plan and call ceiling; call no model")
     p_c.set_defaults(func=cmd_compare)
+
+    p_j = sub.add_parser("h2h-judge", help="score Loong answers with Loong's own judge prompt (docs/HEAD_TO_HEAD.md)")
+    p_j.add_argument("--results", action="append", required=True, help="a results JSON (compare's or the CrewAI harness's); repeat")
+    p_j.add_argument("--questions", required=True, help="Loong's question file")
+    p_j.add_argument("--model", default="claude-sonnet-5-5", help="the judge, a model other than the one under test")
+    p_j.add_argument("--call-limit", type=_whole(2000), default=16_000)
+    p_j.add_argument("--price-in", type=_finite(0, strict=False), default=None, help="$ per 1M input tokens, the judge's")
+    p_j.add_argument("--price-out", type=_finite(0, strict=False), default=None)
+    p_j.add_argument("--max-spend", type=_finite(0, strict=True), default=None, help="$ cap (needs --price-in and --price-out)")
+    p_j.add_argument("--record", default=None, help="save every judge exchange to this raw tape")
+    p_j.add_argument("--replay", default=None, help="score from this raw tape: no key, no spend")
+    p_j.add_argument("--out", required=True, help="the judged results JSON")
+    p_j.set_defaults(func=cmd_h2h_judge)
 
     p_v = sub.add_parser("verify-bench", help="does the verifier catch a wrong product? products with planted errors")
     p_v.add_argument("--adapter", default="sim", choices=["stub", "sim", "live", "anthropic"],
@@ -668,6 +692,69 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
     return factory, player, recorder
 
 
+def _benchmark_suite(args: argparse.Namespace):
+    """A public benchmark's questions (taskorg/benchmarks.py), from files the operator downloaded."""
+    from . import benchmarks
+
+    if not args.questions:
+        raise InvariantError("COMPARE", f"--benchmark {args.benchmark} needs --questions")
+    if args.benchmark == "loong":
+        if not args.docs:
+            raise InvariantError("COMPARE", "--benchmark loong needs --docs, Loong's doc/financial folder")
+        return benchmarks.loong_suite(args.questions, args.docs, args.which)
+    return benchmarks.hotpot_suite(args.questions)
+
+
+def cmd_h2h_judge(args: argparse.Namespace) -> int:
+    from collections import defaultdict
+
+    from . import atomic
+    from .benchmarks import read_jsonl
+    from .compare import stderr
+    from .judge import judge_rows
+    from .rawcall import RawClient, RawPlayer, RawTape, Spend
+
+    if (args.price_in is None) != (args.price_out is None):
+        raise InvariantError("H2H", "give both --price-in and --price-out, or neither")
+    if args.max_spend is not None and args.price_in is None:
+        raise InvariantError("H2H", "--max-spend needs --price-in and --price-out")
+    if args.record and args.replay:
+        raise InvariantError("H2H", "--record or --replay, not both")
+    rows: list[dict] = []
+    for path in args.results:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        rows += [r | {"source": str(path)} for r in data["results"]]
+    spend = Spend(default=(args.price_in or 0.0, args.price_out or 0.0))
+    config = {"model": args.model, "results": args.results, "call_limit": args.call_limit}
+    if args.replay:
+        client = RawClient(call_limit=args.call_limit, player=RawPlayer(args.replay), spend=spend, effort=None)
+        config["replay"] = args.replay
+    else:
+        tape = RawTape(args.record, {"adapter": "anthropic-raw", "model": args.model, "purpose": "h2h-judge"}) if args.record else None
+        client = RawClient.live(call_limit=args.call_limit, tape=tape, spend=spend, max_spend=args.max_spend, effort=None)
+        config["record"] = args.record
+    try:
+        judged = judge_rows(rows, read_jsonl(args.questions), client, args.model, progress=stderr)
+    finally:
+        if client.tape:
+            client.tape.close()
+    atomic.write_text(Path(args.out), json.dumps({"config": config, "results": judged}, indent=2, ensure_ascii=False))
+    table: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+    for r in judged:
+        if "judge_score" in r:
+            t = table[r.get("strategy", "?")]
+            t[0] += 1
+            t[1] += bool(r["correct"])
+            t[2] += bool(r["answer_right"])
+            t[3] += int(r["judge_score"] or 0)
+    print("| strategy | judged | right | right answer | mean score |\n|---|---|---|---|---|")
+    for name, (n, right, answer, total) in sorted(table.items()):
+        print(f"| {name} | {n} | {right} | {answer} | {total / n:.1f} |")
+    print(f"judge calls sent: {spend.calls}" + (f", ${spend.dollars:.4f}" if args.price_in is not None else ""))
+    print(f"saved {args.out}")
+    return 0
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     import time
 
@@ -693,10 +780,16 @@ def cmd_compare(args: argparse.Namespace) -> int:
         raise InvariantError("COMPARE", "--price needs --price-in and --price-out, for tokens no model is named for")
     if args.record and args.replay and not args.then_live:
         raise InvariantError("COMPARE", "--record or --replay, not both, unless --then-live")
+    from .tools import PAGE_MAX
+    if args.page_chars is not None and args.page_chars > PAGE_MAX:
+        raise InvariantError("COMPARE", f"--page-chars is at most {PAGE_MAX:,}")
     try:
-        suite = build_suite(seed=args.seed, per_family=args.per_family, families=families,
-                            entities=args.entities, distractors=args.distractors, filed=args.filed)
-    except ValueError as e:
+        if args.benchmark:
+            suite = _benchmark_suite(args)
+        else:
+            suite = build_suite(seed=args.seed, per_family=args.per_family, families=families,
+                                entities=args.entities, distractors=args.distractors, filed=args.filed)
+    except (ValueError, OSError) as e:
         raise InvariantError("COMPARE", str(e)) from None
     trials = len(suite.tasks) * len(strategies) * args.repeat
     config = {
@@ -708,6 +801,17 @@ def cmd_compare(args: argparse.Namespace) -> int:
         "rework_reason": args.rework_reason, "author_rule": args.author_rule, "gap_check": args.gap_check,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
+    # Only a benchmark run names these, so a generated-suite run's config, and its tape, read as before.
+    bench_keys = ("benchmark", "which", "page_chars", "max_seconds") if args.benchmark else ()
+    if args.benchmark:
+        config |= {"benchmark": args.benchmark, "which": args.which if args.benchmark == "loong" else None,
+                   "page_chars": args.page_chars, "max_seconds": args.max_seconds,
+                   "task_ids": [t.id for t in suite.tasks]}
+        for k in ("families", "per_family", "seed", "entities", "distractors", "filed"):
+            config[k] = None
+    elif args.page_chars is not None or args.max_seconds != 600.0:
+        config |= {"page_chars": args.page_chars, "max_seconds": args.max_seconds}
+        bench_keys = ("page_chars", "max_seconds")
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
     if args.max_spend is not None:
@@ -721,7 +825,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         args, config, "compare", "COMPARE",
         ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors", "filed",
          "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources", "verify_rule",
-         "rework_reason", "author_rule", "gap_check"),
+         "rework_reason", "author_rule", "gap_check") + bench_keys,
     )
     if args.corpus:
         suite.write_corpus(args.corpus)
@@ -731,7 +835,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
             factory,
             strategies=strategies,
             repeats=args.repeat,
-            budget_factory=lambda: comparison_budget(args.max_calls, args.context),
+            budget_factory=lambda: comparison_budget(args.max_calls, args.context, args.max_seconds),
             tool_rounds=args.tool_rounds,
             corpus_dir=Path(args.corpus) if args.corpus else None,
             progress=stderr,
@@ -741,6 +845,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
             verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
                     "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
                     "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check},
+            page_chars=args.page_chars,
         )
     finally:
         if recorder:

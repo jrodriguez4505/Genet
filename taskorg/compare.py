@@ -75,7 +75,10 @@ CREW_GROUP_NOTE = (
 
 def task_context(task: Task) -> str:
     """The shared context, plus the figures already filed for this question. They are in the context, so
-    every agent has them, and a sub-agent for one of them would repeat finished work."""
+    every agent has them, and a sub-agent for one of them would repeat finished work. A benchmark's question
+    brings its own."""
+    if task.context:
+        return task.context
     if not task.filed:
         return CONTEXT
     q = re.search(r"FY2026 (Q[1-4])", task.question).group(1)
@@ -219,19 +222,23 @@ def run_trial(
     repeat: int = 0,
     store_root: Path | None = None,
     verify: dict | None = None,
+    page_chars: int | None = None,
 ) -> TrialResult:
     """One task under one strategy. verify: the verifier's view, sources and rule (Engine's verify_view,
-    verify_sources and verify_note), the same for every strategy."""
+    verify_sources and verify_note), the same for every strategy. page_chars: read long files a page at a
+    time (Toolbox); a benchmark question's files are in its own workspace under corpus_dir."""
     with tempfile.TemporaryDirectory() as tmp:
         store = MemoryStore(store_root or Path(tmp))
-        run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=PURPOSE, done_when=DONE_WHEN)
+        run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=task.purpose or PURPOSE,
+                      done_when=task.done_when or DONE_WHEN)
         run.state.success_criteria = ["ANSWER:"]
         if task.filed:
             # Parts already done: the run's world covers them, as --exists does for a live run.
             run.world = World(existing_channels=[slug(n) for n in task.filed])
         engine = STRATEGIES[strategy](
             store, adapter=adapter, budget=budget,
-            toolbox=Toolbox(roots=[corpus_dir]), max_tool_rounds=tool_rounds, **(verify or {}),
+            toolbox=Toolbox(roots=[corpus_dir / task.workspace if task.workspace else corpus_dir], page_chars=page_chars),
+            max_tool_rounds=tool_rounds, **(verify or {}),
         )
         code = ""
         started = time.perf_counter()
@@ -294,6 +301,7 @@ def run_comparison(
     progress: Callable[[str], None] | None = None,
     stop_when: Callable[[list[TrialResult]], str] | None = None,
     verify: dict | None = None,
+    page_chars: int | None = None,
 ) -> list[TrialResult]:
     """Every task under every strategy, interleaved so drift in the endpoint hits all strategies alike.
 
@@ -313,7 +321,7 @@ def run_comparison(
                                 progress(f"stopped after {len(results)} of {total} trials: {reason}")
                             return results
                         res = run_trial(task, strategy, adapter_factory(), root, budget=budget_factory(), tool_rounds=tool_rounds,
-                                        repeat=r, verify=verify)
+                                        repeat=r, verify=verify, page_chars=page_chars)
                         results.append(res)
                         if progress:
                             mark = "ok " if res.correct else ("~  " if res.answer_right else "x  ")

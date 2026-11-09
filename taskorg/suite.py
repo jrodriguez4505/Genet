@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import random
 import re
+import string
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -113,9 +114,15 @@ class Task:
     family: str
     question: str
     answer: str
-    kind: str  # "number" | "name"
+    kind: str  # "number" | "name" | "text" (exact match after normalising) | "judge" (scored after the run)
     entities: list[str] = field(default_factory=list)
     filed: dict[str, float] = field(default_factory=dict)  # entities whose figure is already filed, and the figure
+    # A public benchmark's question brings its own files and words (taskorg/benchmarks.py). Empty: the generated
+    # suite's shared corpus and compare's CONTEXT, PURPOSE and DONE_WHEN, as every run before it.
+    workspace: str = ""  # the corpus subdirectory that holds this question's files
+    context: str = ""
+    purpose: str = ""
+    done_when: str = ""
 
 
 @dataclass
@@ -129,6 +136,7 @@ class Suite:
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
         for name, text in self.corpus.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
             (root / name).write_text(text, encoding="utf-8")
         return root
 
@@ -249,9 +257,36 @@ def _norm_name(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9& ]+", " ", text.lower())).strip()
 
 
+def normalize_text(text: str) -> str:
+    """The usual short-answer normalising (SQuAD, HotpotQA): lower case, no punctuation, no a/an/the, single spaces."""
+    text = "".join(ch for ch in text.lower() if ch not in _PUNCTUATION)
+    return " ".join(re.sub(r"\b(a|an|the)\b", " ", text).split())
+
+
+def text_f1(answer: str | None, gold: str) -> float:
+    """Word overlap of a short answer with the gold one; yes, no and noanswer must match exactly."""
+    got, want = normalize_text(answer or ""), normalize_text(gold)
+    if (got in _YES_NO or want in _YES_NO) and got != want:
+        return 0.0
+    a, b = got.split(), want.split()
+    common = sum(min(a.count(w), b.count(w)) for w in set(a))
+    if not common:
+        return 0.0
+    precision, recall = common / len(a), common / len(b)
+    return 2 * precision * recall / (precision + recall)
+
+
+_PUNCTUATION = frozenset(string.punctuation)
+_YES_NO = ("yes", "no", "noanswer")
+
+
 def grade(answer: str | None, task: Task) -> bool:
     if not answer:
         return False
+    if task.kind == "judge":
+        return False  # scored after the run, by the benchmark's judge
+    if task.kind == "text":
+        return normalize_text(answer) == normalize_text(task.answer)
     if task.kind == "number":
         # Period labels are not values, and "a + b = c" answers c. A range or a list is not one answer.
         value = _PERIOD.sub(" ", answer.replace("$", "")).rsplit("=", 1)[-1]
