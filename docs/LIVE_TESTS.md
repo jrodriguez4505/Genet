@@ -919,7 +919,7 @@ Every Genet-side Loong trial was replayed from its tape with its whole record ke
   One agent and CrewAI's manager used the nearest line without comment. A single agent reads every filing itself, so a name that does not match never reaches the lead as three separate caveats.
 - **Without such a flag, splits mostly worked.** On the questions that are not chain questions, the told crew was right on 18 of 22 and Genet on 3 of 5.
 - **The checker failed products on 11 of Genet's 40 trials** (19 FAILs), 8 of the told crew's (14) and 10 of one agent's (13). It stopped right answers 1, 2 and 3 times.
-- **The fix, built on the operator's go-ahead and waiting to run.** `--author-rule wording` tells every writer, but not the plan or the checker, that a filing may name a line differently from the goal. Where no line carries the goal's name, they use the line that measures the same thing, say which, and answer.
+- **The fix, built on the operator's go-ahead and run on the 9 questions (below).** `--author-rule wording` tells every writer, but not the plan or the checker, that a filing may name a line differently from the goal. Where no line carries the goal's name, they use the line that measures the same thing, say which, and answer.
   - `bash scripts/team_runs.sh wording` reruns the told crew and Genet with that note, a y for each step:
     1. The 9 questions, about $0.35.
     2. All 40, about $1.25.
@@ -929,7 +929,33 @@ Every Genet-side Loong trial was replayed from its tape with its whole record ke
     - Genet wrong at most 15 times.
   - The scorer is `data/exp/wording_read.py`.
 
-The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai` and `h2h-loong-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+### The wording note on the 9 questions
+
+`bash scripts/team_runs.sh wording`, step 1, on 9 November. The told crew and Genet reran the 9 questions with `--author-rule wording`, on the same model, limits and judge. The run cost $0.26: $0.21 for 18 trials and $0.05 for the judge.
+
+| The 9 questions | Right | Finished wrong | Stopped by the checker | Tokens a question |
+|---|---|---|---|---|
+| Told crew, 9 November | 3 | 3 | 3 | 120,814 |
+| Told crew, with the note | 4 | 3 | 2 | 80,645 |
+| Genet, 9 November | 3 | 1 | 5 | 143,672 |
+| Genet, with the note | 4 | 3 | 2 | 91,126 |
+| One agent, 9 November | 6 | 2 | 1 | 89,773 |
+| CrewAI, 9 November | 6 | 3 | 0 | 99,287 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Together right | at least 9 of 18 | **8**, misses |
+| Together finished wrong | at most 4 | **6**, misses |
+
+By the rule written first, step 2 did not run, and the note stays off.
+- **The writers did what the note asked.** Parts named the line they used and answered with it. Merges gave an answer in place of "cannot be determined". The checker's stops fell from 8 to 4, and the two teams used about a third fewer tokens.
+- **Long-term borrowings was fixed for both.** Each team named Broad Street Realty, and the checker passed it.
+- **The checker had not been told.** It failed products for using a nearest line, as the note asked: "substitutes closest-match lines". On total operating revenue, Genet's answer was right (88) and stopped. Its rework compared a figure from the wrong quarter, and the checker caught that.
+- **"The line that measures the same thing" also reached too far.** On the cash count both teams counted Cross Timbers' "Cash and short-term investments" and answered 3. Loong's answer is 2, which one agent gave. On undistributed profits, a proxy line led Genet to a wrong company, and the checker passed it on rework.
+- **Stops became wrong finishes.** Four of the old stops now finish with a wrong answer: total profit for both teams, undistributed profits for Genet, and a grouping by change in cash for the told crew. Two of the told crew's old wrong finishes now stop instead. That is why wrong finishes rose from 4 to 6.
+- **Reading.** Telling writers to substitute fixes the hedging. Without a rule for when a nearby line is the same measure, it trades stops for wrong answers. The checker then disagrees with the writers about substitution, in both directions. Both tapes replay exactly: 18 trials and 18 verdicts.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine` and `h2h-wording-nine-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
