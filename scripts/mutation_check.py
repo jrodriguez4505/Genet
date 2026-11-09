@@ -553,6 +553,11 @@ M = [
     ("judge.py", "each trial is judged again", "        if pair not in seen:", "        if True:"),
     ("judge.py", "a stopped trial counts as right", '"correct": score >= RIGHT_SCORE and res.get("status") == "complete"}', '"correct": score >= RIGHT_SCORE}'),
     ("judge.py", "right is Loong's 100 again", '"correct": score >= RIGHT_SCORE and res.get("status")', '"correct": score >= PERFECT and res.get("status")'),
+    ("checks.py", "the wording note is not offered", ', "wording": WORDING_RULE.strip()}', '}'),
+    ("checks.py", "the wording note gives no line to use", '"measures the same thing, say which line you used, and answer with it: a different name is not a gap."', '"is missing."'),
+    ("cli.py", "ids are ignored", '        suite.tasks = [t for t in suite.tasks if t.id in set(wanted)]\n', ''),
+    ("cli.py", "an unknown id is let through", '        if unknown or not wanted:\n', '        if False:\n'),
+    ("cli.py", "ids without a benchmark are let through", '    if args.ids and not args.benchmark:\n', '    if False:\n'),
     ("judge.py", "a score under 80 counts as right", 'RIGHT_SCORE = 80.0\n', 'RIGHT_SCORE = 75.0\n'),
 ]
 

@@ -229,6 +229,19 @@
 #     - At its cost. Genet right on at least one agent's less 1, at most 1.3 times its tokens.
 #     Reported with no bar: agents a question, CrewAI's answers with no ANSWER line, split rate and accuracy by kind,
 #     accuracy against spend. If Genet misses the accuracy bar, Genet's rule costs answers on real documents.
+#   bash scripts/team_runs.sh wording   the wording note on Loong (docs/LIVE_TESTS.md, 9 November), on Haiku 5.5, with the
+#     head-to-head's limits and judge: the told crew and Genet with --author-rule wording, every writer told that a filing
+#     may name a line differently and to use the line that measures the same thing, say which, and answer. Two steps, a
+#     y each. Step 1: the 9 questions where a split's parts said the named line was not in their filing, about $0.35.
+#     Step 2: all 40, about $1.25. One agent and CrewAI are not rerun.
+#     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
+#     - Step 1, the 9. The told crew and Genet together right on at least 9 of 18 (3 and 3 on 9 November), and together
+#       finished wrong at most 4 times (3 and 1). If it misses, step 2 is not run.
+#     - Step 2, accuracy. Genet right on at least 22 of 40 (20 on 9 November; one agent 22; CrewAI 25 less 3).
+#     - Step 2, no harm elsewhere. On the other 31, the told crew and Genet each right on at least 16 (17 each).
+#     - Step 2, wrong finishes. Genet at most 15 (CrewAI's; Genet had 12).
+#     Reported with no bar: the told crew's total, parts that still say a named line is missing, the checker's stops, cost.
+#     If the bars hold, the split losses were the wording, and the note goes into Genet's writers by default.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -239,8 +252,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -259,6 +272,8 @@ elif [ "$mode" = sonnetsweep ]; then
   echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$9.40 in all, each seed capped at \$6.00"
 elif [ "$mode" = headtohead ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   calibration about \$1.20; then about \$10 to \$16 with the judge on Sonnet (caps \$18.50)"
+elif [ "$mode" = wording ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.25 in all, each seed capped at \$0.50"
 elif [ "$mode" = mixed ]; then
@@ -360,7 +375,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -559,6 +574,86 @@ EOF
   judge_held h2h-loong-judged 1.50 h2h-loong-genet h2h-loong-crewai
   echo
   echo "Done. Results: data/compare/h2h-*.json   Tapes: data/tapes/h2h-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = wording ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial" data/compare/h2h-loong-judged.json; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  nine="loong-25d28410,loong-28b770d3,loong-612f5816,loong-62d35f36,loong-7b470b0f,loong-a79e07a2,loong-c0c4d8ea,loong-de58f2e7,loong-fead16dd"
+  echo
+  echo ">>> The wording note on Loong, on $model: the told crew and Genet, every writer told that a filing may name a line"
+  echo "    differently and to use the line that measures the same thing (docs/LIVE_TESTS.md, 9 November). Two steps."
+  echo "    1. The 9 questions where a split's parts said the named line is not in their filing: about \$0.35, the judge"
+  echo "       with it, stopping itself before \$0.60 and \$0.10. Bar: together right on at least 9 of 18 (6 on 9 November)."
+  echo "    2. All 40, after a second y: about \$1.25, caps \$2.00 and \$0.40. The full bars are at the top of this script."
+  read -r -p "Run step 1 now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6 --author-rule wording"
+  loong="--benchmark loong --which main --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial"
+  judge_held() {  # name, cap, results files
+    local name=$1 cap=$2
+    shift 2
+    local files=()
+    for f in "$@"; do files+=(--results "data/compare/$f.json"); done
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+      "$PY" -m taskorg.cli h2h-judge "${files[@]}" --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 \
+        --price-in 2 --price-out 10 --max-spend "$cap" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+    fi
+    [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  }
+  held h2h-wording-nine 0.60 compare $loong --ids "$nine" --strategies always-told,genet $limits
+  judge_held h2h-wording-nine-judged 0.10 h2h-wording-nine
+  if ! "$PY" -I - "$pin" "$pout" "$nine" <<'EOF'
+import json, sys
+pin, pout, nine = float(sys.argv[1]), float(sys.argv[2]), sys.argv[3].split(",")
+new = json.load(open("data/compare/h2h-wording-nine-judged.json"))["results"]
+old = [r for r in json.load(open("data/compare/h2h-loong-judged.json"))["results"]
+       if r["task_id"] in nine and r["strategy"] in ("always-told", "genet")]
+right = lambda r: (r.get("judge_score") or 0) >= 80 and r["status"] == "complete"
+wrong = lambda r: r["status"] == "complete" and not right(r)
+for label, rows in (("9 November", old), ("with the note", new)):
+    print(f"  {label:<14}" + "   ".join(f"{s}: right {sum(right(r) for r in rows if r['strategy'] == s)}, "
+                                        f"wrong {sum(wrong(r) for r in rows if r['strategy'] == s)}, "
+                                        f"stopped {sum(r['status'] != 'complete' for r in rows if r['strategy'] == s)}"
+                                        for s in ("always-told", "genet")))
+spent = sum((r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6 for r in new)
+estimate = spent * 3.1 + 80 * 0.004  # on 9 November the 40 cost 3.1 times the 9 ($0.95 and $0.31)
+print(f"step 1 spent ${spent:.2f} on the trials; step 2 about ${estimate:.2f} with the judge (caps $2.00 and $0.40)")
+ok = sum(map(right, new)) >= 9 and sum(map(wrong, new)) <= 4
+print(f"bar: together right on {sum(map(right, new))} of 18 (needs 9) and wrong {sum(map(wrong, new))} (at most 4) -> "
+      + ("holds" if ok else "MISSES"))
+if not ok:
+    print("step 1 missed its bar, so step 2 was not run")
+    sys.exit(3)
+if estimate > 2.0:
+    print("step 2 would likely pass its cap, so it was not run")
+    sys.exit(4)
+EOF
+  then
+    echo "Results: data/compare/h2h-wording-nine*.json"
+    exit 0
+  fi
+  read -r -p "Run step 2, all 40 under the told crew and Genet, then the judge, at the estimate above? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Step 2 not run."; exit 0 ;;
+  esac
+  held h2h-wording-all 2.00 compare $loong --strategies always-told,genet $limits
+  judge_held h2h-wording-all-judged 0.40 h2h-wording-all
+  echo
+  echo "Done. Results: data/compare/h2h-wording-*.json   Tapes: data/tapes/h2h-wording-*.jsonl   Read: data/exp/wording_read.py"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then

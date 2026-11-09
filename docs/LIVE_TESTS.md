@@ -919,9 +919,15 @@ Every Genet-side Loong trial was replayed from its tape with its whole record ke
   One agent and CrewAI's manager used the nearest line without comment. A single agent reads every filing itself, so a name that does not match never reaches the lead as three separate caveats.
 - **Without such a flag, splits mostly worked.** On the questions that are not chain questions, the told crew was right on 18 of 22 and Genet on 3 of 5.
 - **The checker failed products on 11 of Genet's 40 trials** (19 FAILs), 8 of the told crew's (14) and 10 of one agent's (13). It stopped right answers 1, 2 and 3 times.
-- **What would test the fix, not yet built or approved:**
-  - Tell the parts and the lead that a filing may not use the question's name for a line. They should then take the line that measures the same thing, say which, and answer.
-  - Rerun the 9 questions, then the 40, under the told crew and Genet.
+- **The fix, built on the operator's go-ahead and waiting to run.** `--author-rule wording` tells every writer, but not the plan or the checker, that a filing may name a line differently from the goal. Where no line carries the goal's name, they use the line that measures the same thing, say which, and answer.
+  - `bash scripts/team_runs.sh wording` reruns the told crew and Genet with that note, a y for each step:
+    1. The 9 questions, about $0.35.
+    2. All 40, about $1.25.
+  - The bars are at the top of that script, written before the run. On the 9, together right on at least 9 of 18, against 6, with at most 4 wrong. On the 40:
+    - Genet right on at least 22;
+    - each team right on at least 16 of the other 31;
+    - Genet wrong at most 15 times.
+  - The scorer is `data/exp/wording_read.py`.
 
 The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai` and `h2h-loong-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 

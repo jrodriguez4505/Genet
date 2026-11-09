@@ -63,6 +63,13 @@ HEADING_RULE = (
     " A file's heading applies to its lines: a line that gives no year takes the year in the heading, unless it "
     "says otherwise."
 )
+# A source that words a line differently is no gap. On Loong (9 November), split runs' parts each reported that the
+# line a question names is not in their filing; the lead merged three such caveats into "cannot be determined" or a
+# strict count, where one agent and CrewAI used the nearest line: 3 of 9 right against 6 (docs/LIVE_TESTS.md).
+WORDING_RULE = (
+    " A file may name a line differently from the goal. Where no line carries the goal's name, use the line that "
+    "measures the same thing, say which line you used, and answer with it: a different name is not a gap."
+)
 # A product that names its own gap is no answer. On the rerun of 5 November, 5 of the 6 wrong answers that finished had
 # set a named company aside ("contributes 0", "unresolved") and were passed under the sample rule, which says a figure
 # no file covers is no fault (docs/LIVE_TESTS.md).
@@ -107,7 +114,7 @@ def gap_said(claim: str) -> str:
 VERIFY_RULE = SAMPLE_RULE + HEADING_RULE
 # What the lead and sub-agents can be told about an undated line (--author-rule). Off until a run shows it pays: on the
 # held-out seeds, 23 of 33 wrong answers were an author refusing a figure its file holds, on a line with no year.
-AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip()}
+AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip(), "wording": WORDING_RULE.strip()}
 
 _READ_HEAD = re.compile(r"\[read ([^\]\n]+)\](?:\n| already in full above)")
 _MATCH_LINE = re.compile(r"^([^\[\n:][^\n:]*):\d+: ", re.MULTILINE)

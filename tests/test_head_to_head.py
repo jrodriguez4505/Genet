@@ -387,6 +387,28 @@ def test_compare_runs_a_benchmark_and_says_so_in_its_config(tmp_path, capsys):
     assert len(data["results"]) == 2
 
 
+def test_ids_pick_questions_of_the_sample(tmp_path, capsys):
+    from taskorg.cli import main
+
+    out = tmp_path / "r.json"
+    assert main(["compare", "--adapter", "stub", "--benchmark", "hotpot", "--questions", str(_hotpot_file(tmp_path)),
+                 "--strategies", "single", "--ids", "hotpot-5a100000", "--out", str(out)]) == 0
+    data = json.loads(out.read_text())
+    assert data["config"]["task_ids"] == ["hotpot-5a100000"] and [r["task_id"] for r in data["results"]] == ["hotpot-5a100000"]
+
+
+@pytest.mark.parametrize("extra, words", [
+    (["--ids", "hotpot-ffffffff"], "names no question of this sample: hotpot-ffffffff"),
+    (["--ids", " , "], "names no question"),
+])
+def test_ids_refuse_a_question_not_in_the_sample(tmp_path, capsys, extra, words):
+    from taskorg.cli import main
+
+    assert main(["compare", "--adapter", "stub", "--dry-run", "--benchmark", "hotpot",
+                 "--questions", str(_hotpot_file(tmp_path)), *extra]) != 0
+    assert words in capsys.readouterr().out
+
+
 def test_a_generated_suite_run_names_no_benchmark_keys(tmp_path, capsys):
     from taskorg.cli import main
 
@@ -399,6 +421,7 @@ def test_a_generated_suite_run_names_no_benchmark_keys(tmp_path, capsys):
     (["--benchmark", "loong", "--questions", "q.jsonl"], "needs --docs"),
     (["--benchmark", "hotpot"], "needs --questions"),
     (["--page-chars", "70000"], "at most 64,000"),
+    (["--ids", "loong-1a2b3c4d"], "picks questions of a --benchmark sample"),
 ])
 def test_compare_refuses_a_benchmark_it_cannot_load(argv, words, capsys):
     from taskorg.cli import main

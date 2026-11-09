@@ -444,6 +444,8 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--docs", default=None, help="Loong's doc/financial folder")
     p_c.add_argument("--which", default="main", choices=["main", "calibration"],
                      help="Loong's planned sample: 40 main questions, or the 4 for calibration")
+    p_c.add_argument("--ids", default=None,
+                     help="with --benchmark: only these questions of the sample, by task id (loong-1a2b3c4d), comma separated")
     p_c.add_argument("--page-chars", type=_whole(1000), default=None,
                      help="read long files a page of this many characters at a time (read:PATH@N). Off by default")
     p_c.add_argument("--max-seconds", type=_finite(1, strict=False), default=600.0,
@@ -701,8 +703,18 @@ def _benchmark_suite(args: argparse.Namespace):
     if args.benchmark == "loong":
         if not args.docs:
             raise InvariantError("COMPARE", "--benchmark loong needs --docs, Loong's doc/financial folder")
-        return benchmarks.loong_suite(args.questions, args.docs, args.which)
-    return benchmarks.hotpot_suite(args.questions)
+        suite = benchmarks.loong_suite(args.questions, args.docs, args.which)
+    else:
+        suite = benchmarks.hotpot_suite(args.questions)
+    if args.ids:
+        wanted = [i.strip() for i in args.ids.split(",") if i.strip()]
+        known = {t.id for t in suite.tasks}
+        unknown = [i for i in wanted if i not in known]
+        if unknown or not wanted:
+            named = ", ".join(unknown) if unknown else repr(args.ids)
+            raise InvariantError("COMPARE", f"--ids names no question of this sample: {named}")
+        suite.tasks = [t for t in suite.tasks if t.id in set(wanted)]
+    return suite
 
 
 def cmd_h2h_judge(args: argparse.Namespace) -> int:
@@ -783,6 +795,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
     from .tools import PAGE_MAX
     if args.page_chars is not None and args.page_chars > PAGE_MAX:
         raise InvariantError("COMPARE", f"--page-chars is at most {PAGE_MAX:,}")
+    if args.ids and not args.benchmark:
+        raise InvariantError("COMPARE", "--ids picks questions of a --benchmark sample")
     try:
         if args.benchmark:
             suite = _benchmark_suite(args)

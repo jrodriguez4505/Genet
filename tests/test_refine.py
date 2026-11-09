@@ -335,6 +335,18 @@ def test_authors_are_told_when_asked_and_a_plan_and_the_verifier_are_not(tmp_pat
     assert note not in told._brief(run, "verifier", extra="P", mode="verify").packet.replace(checks.SOURCE_RULE, "")
 
 
+def test_the_wording_note_reaches_authors_and_not_a_plan_or_the_verifier(tmp_path: Path):
+    note = checks.AUTHOR_RULES["wording"]
+    assert note == checks.WORDING_RULE.strip() and "measures the same thing" in note and "not a gap" in note
+    run = _run()
+    told = Engine(MemoryStore(tmp_path / "w"), author_note=note)
+    told.store.remember_working(run.id, "context", "c")
+    for mode in ("work", "integrate", "rework"):
+        assert told._brief(run, "lead", extra="WORK.", mode=mode).packet.count(note) == 1, mode
+    assert note not in told._brief(run, "lead", extra="PLAN.", mode="plan").packet
+    assert note not in told._brief(run, "verifier", extra="P", mode="verify").packet
+
+
 def test_a_sub_agent_is_told_too(tmp_path: Path):
     suite = build_suite(seed=101, per_family=1, families=("aggregate",), entities=10, distractors=6)
     corpus = suite.write_corpus(tmp_path / "corpus")
@@ -350,6 +362,11 @@ def test_a_sub_agent_is_told_too(tmp_path: Path):
     workers = [b for b in seen if b.slot_function == "worker"]
     assert workers and all(note in b.packet for b in workers)
     assert not any(note in b.packet for b in seen if b.mode == "plan" or b.slot_function == "verifier")
+    wording, seen[:] = checks.AUTHOR_RULES["wording"], []
+    run_trial(suite.tasks[0], "always-told", Sees(), corpus, budget=comparison_budget(40, 8_000), verify={"author_note": wording, "verify_note": ""})
+    workers = [b for b in seen if b.slot_function == "worker"]
+    assert workers and all(wording in b.packet and note not in b.packet for b in workers)
+    assert not any(wording in b.packet for b in seen if b.mode == "plan" or b.slot_function == "verifier")
 
 
 def _engines(monkeypatch):
@@ -390,6 +407,9 @@ def test_compare_takes_both_switches_and_records_them(tmp_path: Path, monkeypatc
     assert seen[1]["rework_reason"] is False and seen[1]["author_note"] == checks.AUTHOR_RULES["headed"]
     a, b = (json.loads((tmp_path / f"{n}.json").read_text())["config"] for n in "ab")
     assert (a["rework_reason"], a["author_rule"]) == (True, "none") and (b["rework_reason"], b["author_rule"]) == (False, "headed")
+    assert main([*base, "--author-rule", "wording", "--out", str(tmp_path / "c.json")]) == 0
+    assert seen[2]["author_note"] == checks.AUTHOR_RULES["wording"]
+    assert json.loads((tmp_path / "c.json").read_text())["config"]["author_rule"] == "wording"
 
 
 def test_replaying_a_tape_says_when_the_switches_differ(tmp_path: Path, capsys):

@@ -391,6 +391,54 @@ def test_the_sonnet_sweep_runs_both_seeds_at_8000_on_sonnet(tmp_path: Path):
         assert f"--record data/tapes/sonnetsweep-s{seed}-8000.jsonl" in call and call.endswith(f"key={KEY}")
 
 
+NINE = ("loong-25d28410,loong-28b770d3,loong-612f5816,loong-62d35f36,loong-7b470b0f,loong-a79e07a2,loong-c0c4d8ea,"
+        "loong-de58f2e7,loong-fead16dd")
+
+
+def _wording_tree(tmp_path: Path, **stub_env) -> tuple[Path, dict]:
+    log, env = _held_tree(tmp_path, **stub_env)
+    (tmp_path / "data/h2h/loong-questions").mkdir(parents=True)
+    (tmp_path / "data/h2h/loong-questions/loong.jsonl").write_text("")
+    (tmp_path / "data/h2h/loong-docs/doc/financial").mkdir(parents=True)
+    (tmp_path / "data/compare").mkdir(parents=True)
+    (tmp_path / "data/compare/h2h-loong-judged.json").write_text("{}")
+    return log, env
+
+
+def test_the_wording_run_tries_the_nine_then_waits_for_a_second_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "wording") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\nn\n", "wording")
+    nine, judge, gate = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.35" in out and "Step 2 not run." in out and KEY not in out
+    assert f"--ids {NINE} " in nine and "--strategies always-told,genet " in nine and "--author-rule wording " in nine
+    assert "--benchmark loong --which main " in nine and "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000" in nine
+    assert "--price-in 0.10 --price-out 0.50 --max-spend 0.60 " in nine and "--record data/tapes/h2h-wording-nine.jsonl" in nine
+    assert "h2h-judge --results data/compare/h2h-wording-nine.json " in judge and "--model claude-sonnet-5-5" in judge
+    assert "--max-spend 0.10 " in judge and "--record data/tapes/h2h-wording-nine-judged.jsonl" in judge
+    assert gate.startswith(f"args=-I - 0.10 0.50 {NINE}")
+    out = _session(tmp_path, env, f"{KEY}\ny\ny\n", "wording")
+    rest = _calls(log)[3:]
+    assert "h2h-wording-nine: already done" in out and "Done." in out
+    gate, every, judge = rest
+    assert "--ids" not in every and "--strategies always-told,genet " in every and "--author-rule wording " in every
+    assert "--max-spend 2.00 " in every and "--record data/tapes/h2h-wording-all.jsonl" in every
+    assert "--results data/compare/h2h-wording-all.json " in judge and "--max-spend 0.40 " in judge
+    assert all(c.endswith(f"key={KEY}") for c in _calls(log))
+
+
+def test_the_wording_run_stops_after_nine_that_miss(tmp_path: Path):
+    log, env = _wording_tree(tmp_path, STUB_GATE="3")
+    out = _session(tmp_path, env, f"{KEY}\ny\ny\n", "wording")
+    assert len(_calls(log)) == 3 and "h2h-wording-all" not in " ".join(_calls(log)) and "Run step 2" not in out
+
+
+def test_the_wording_run_needs_its_files(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "wording")
+    assert "Missing data/h2h/loong-questions/loong.jsonl" in out and _calls(log) == []
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")
