@@ -63,6 +63,27 @@ HEADING_RULE = (
     " A file's heading applies to its lines: a line that gives no year takes the year in the heading, unless it "
     "says otherwise."
 )
+# A source that words a line differently is no gap. On Loong (9 November), split runs' parts each reported that the
+# line a question names is not in their filing; the lead merged three such caveats into "cannot be determined" or a
+# strict count, where one agent and CrewAI used the nearest line: 3 of 9 right against 6 (docs/LIVE_TESTS.md).
+WORDING_RULE = (
+    " A file may name a line differently from the goal. Where no line carries the goal's name, use the line that "
+    "measures the same thing, say which line you used, and answer with it: a different name is not a gap."
+)
+# The wording note narrowed, and the checker told the same. On Loong's 9 questions (9 November) the wording note ended
+# the hedging, but the checker, not told, failed the nearest lines the writers used, and "the line that measures the
+# same thing" reached too far: cash and short-term investments counted as cash and cash equivalents.
+SAME_RULE = (
+    " A file may name a line differently from the goal. Where no line carries the goal's name, use a line that is the "
+    "same measure under another name, such as 'Net sales' for 'Revenue', say which line you used, and answer with it: "
+    "a different name is not a gap. A line that adds or leaves out items is a different measure, such as 'Cash and "
+    "short-term investments' for 'Cash': do not use it; say the file has no line for the goal's measure."
+)
+SAME_VERIFY = (
+    " A product may answer with a line that is the same measure the goal names under another name, if it says which "
+    "line it used: that is an answer, so do not FAIL it for the name alone. FAIL a product that uses a line that adds "
+    "or leaves out items the goal's measure does not, as a different measure."
+)
 # A product that names its own gap is no answer. On the rerun of 5 November, 5 of the 6 wrong answers that finished had
 # set a named company aside ("contributes 0", "unresolved") and were passed under the sample rule, which says a figure
 # no file covers is no fault (docs/LIVE_TESTS.md).
@@ -70,12 +91,45 @@ NAMED_RULE = (
     " A product that leaves out, sets aside or counts as zero anything the goal names, whatever reason it gives, has "
     "not answered the goal: FAIL it and name what is missing."
 )
+# The named rule narrowed to what a product says of itself. On the gap test of 6 November the named rule caught all 37
+# wrong merges but failed 22 more right ones, most of which only listed figures for some companies, or said look-alike
+# names or other years' figures were kept out. All 6 wrong ones it alone caught said a named company had no figure,
+# contributed 0 or was set aside.
+ASIDE_RULE = (
+    " A product that says something the goal names has no figure, could not be found, counts as zero or was set "
+    "aside has not answered the goal: FAIL it and name what is missing. Keeping out look-alike names or other "
+    "periods' figures is not this, and a product need not list every figure it used."
+)
+# A product's own words that it has no figure for something, adds 0 for it, or set it aside (--gap-check). Fixed on
+# 7 November from the gap test's merges, before any other product was read against it, and not changed after: on 318
+# merges no rule was written from, it matched 3 of the 5 wrong products the default rule passes, and 8 right ones.
+GAP_SAID = re.compile(
+    r"has no (?:FY20\d\d )?(?:Q[1-4] )?(?:revenue |churn )?figure|has no FY20\d\d|no (?:FY20\d\d )?Q[1-4] figure|"
+    r"contribut\w* (?:0|zero|nothing|\$0)|counted (?:as|at) (?:0|zero)|amount is not included|is not included|"
+    r"(?:figure|\$[\d.]+ ?M?) (?:is|was) (?:excluded|set aside|left out)|(?:set|sets) aside|not (?:retrieved|found)\b|"
+    r"cannot be (?:settled|resolved|confirmed)|unresolved", re.I)
+GAP_SAID_CHARS = 300
+
+
+def gap_said(claim: str) -> str:
+    """The sentence of the product in which it says it has no figure for something, adds 0 for it or set it aside;
+    empty if none. The kernel's check, not the model's: it reads the product's own words and nothing else."""
+    found = GAP_SAID.search(claim or "")
+    if not found:
+        return ""
+    start = max(claim.rfind(". ", 0, found.start()) + 2, claim.rfind("\n", 0, found.start()) + 1, 0)
+    ends = [i for i in (claim.find(". ", found.end()), claim.find("\n", found.end())) if i >= 0]
+    end = min(ends) + 1 if ends else len(claim)
+    return " ".join(claim[start:end].split())[:GAP_SAID_CHARS]
+
+
 # What the verifier is told after the source rule unless a run names another. On five seeds no tape had used, right
 # answers failed fell from 69 of 220 to 6, and wrong answers caught went from 36 of 39 to 37 (docs/LIVE_TESTS.md).
 VERIFY_RULE = SAMPLE_RULE + HEADING_RULE
 # What the lead and sub-agents can be told about an undated line (--author-rule). Off until a run shows it pays: on the
 # held-out seeds, 23 of 33 wrong answers were an author refusing a figure its file holds, on a line with no year.
-AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip()}
+AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip(), "wording": WORDING_RULE.strip(),
+                                 "same": SAME_RULE.strip()}
 
 _READ_HEAD = re.compile(r"\[read ([^\]\n]+)\](?:\n| already in full above)")
 _MATCH_LINE = re.compile(r"^([^\[\n:][^\n:]*):\d+: ", re.MULTILINE)

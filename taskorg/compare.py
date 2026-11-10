@@ -25,10 +25,10 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from . import atomic
+from . import atomic, checks
 from .adapters import ModelAdapter
 from .budget import Budget
 from .errors import InvariantError
@@ -75,7 +75,10 @@ CREW_GROUP_NOTE = (
 
 def task_context(task: Task) -> str:
     """The shared context, plus the figures already filed for this question. They are in the context, so
-    every agent has them, and a sub-agent for one of them would repeat finished work."""
+    every agent has them, and a sub-agent for one of them would repeat finished work. A benchmark's question
+    brings its own."""
+    if task.context:
+        return task.context
     if not task.filed:
         return CONTEXT
     q = re.search(r"FY2026 (Q[1-4])", task.question).group(1)
@@ -117,7 +120,7 @@ class AlwaysSplit(Engine):
                 a.refuse("can_someone_else", f"channel {subtask.channel_id} proposed twice")
             elif problem:
                 a.refuse("could_we", problem)
-            elif staffed >= MAX_WORKERS:
+            elif staffed >= self.max_workers:
                 a.refuse("could_we", "worker cap: no room for this sub-agent")
             else:
                 staffed += 1
@@ -136,6 +139,33 @@ class ToldCrew(AlwaysSplit):
         return base + self._size_note(run, base, group=CREW_GROUP_NOTE)
 
 
+class FixedSplit(AlwaysSplit):
+    """The agent-count sweep: the kernel splits the files the question names into `parts` groups, as even as it can,
+    one sub-agent each, and the lead merges what they report. No planning call and no gates, so the number of parts
+    is the one thing that differs between arms. One part is the single baseline, so split-N starts at 2."""
+
+    def __init__(self, *args, parts: int = 2, **kwargs):
+        super().__init__(*args, max_workers=parts, **kwargs)
+        self.parts = parts
+
+    def _propose(self, run: Run, again: str = "") -> list[Subtask]:
+        files = checks.named_in(run.state.goal, self.toolbox.shown_files())
+        n = max(1, min(self.parts, len(files)))
+        size, extra = divmod(len(files), n)
+        out, i = [], 0
+        for k in range(n):
+            group = files[i:i + size + (k < extra)]
+            i += len(group)
+            named = ", ".join(group[:-1]) + (" and " if len(group) > 1 else "") + group[-1] if group else ""
+            out.append(Subtask(channel_id=f"part-{k + 1:02d}", skill="retrieve",
+                               named_failure=f"report what the goal asks for from {named}"))
+        run._record("fixed_split", {"parts": n, "files": len(files)})
+        return out
+
+
+SWEEP = (2, 4, 10, 20)
+CACHE_WRITE, CACHE_READ = 1.25, 0.1  # of the input price, for prompt cache writes (five-minute entries) and reads  # the parts compare's split-N strategies use
+
 # genet uses the measured "should we"; genet-stated accepts the lead's reasons, for comparison.
 BASELINES = ("single", "always")
 STRATEGIES: dict[str, Callable[..., Engine]] = {
@@ -145,7 +175,7 @@ STRATEGIES: dict[str, Callable[..., Engine]] = {
     "genet": Engine,
     "genet-stated": functools.partial(Engine, split_policy="stated"),
     "genet-cards": functools.partial(Engine, cards=True),
-}
+} | {f"split-{n}": functools.partial(FixedSplit, parts=n) for n in SWEEP}
 
 
 @dataclass
@@ -170,6 +200,10 @@ class TrialResult:
     proposed: int = 0    # parts the gates judged
     refused: int = 0     # of those, parts the gates refused
     covered: int = 0     # parts whose sub-agent failed or handed them back, for the lead to cover
+    cache_write_tokens: int = 0  # of prompt_tokens, written to a prompt cache (1.25 times the input price)
+    cache_read_tokens: int = 0   # of prompt_tokens, read from one (a tenth of it)
+    # model -> [prompt, completion, cache write, cache read] tokens, for a team that mixes models
+    by_model: dict = field(default_factory=dict)
 
 
 def _last_product(run: Run) -> str:
@@ -188,19 +222,23 @@ def run_trial(
     repeat: int = 0,
     store_root: Path | None = None,
     verify: dict | None = None,
+    page_chars: int | None = None,
 ) -> TrialResult:
     """One task under one strategy. verify: the verifier's view, sources and rule (Engine's verify_view,
-    verify_sources and verify_note), the same for every strategy."""
+    verify_sources and verify_note), the same for every strategy. page_chars: read long files a page at a
+    time (Toolbox); a benchmark question's files are in its own workspace under corpus_dir."""
     with tempfile.TemporaryDirectory() as tmp:
         store = MemoryStore(store_root or Path(tmp))
-        run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=PURPOSE, done_when=DONE_WHEN)
+        run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=task.purpose or PURPOSE,
+                      done_when=task.done_when or DONE_WHEN)
         run.state.success_criteria = ["ANSWER:"]
         if task.filed:
             # Parts already done: the run's world covers them, as --exists does for a live run.
             run.world = World(existing_channels=[slug(n) for n in task.filed])
         engine = STRATEGIES[strategy](
             store, adapter=adapter, budget=budget,
-            toolbox=Toolbox(roots=[corpus_dir]), max_tool_rounds=tool_rounds, **(verify or {}),
+            toolbox=Toolbox(roots=[corpus_dir / task.workspace if task.workspace else corpus_dir], page_chars=page_chars),
+            max_tool_rounds=tool_rounds, **(verify or {}),
         )
         code = ""
         started = time.perf_counter()
@@ -227,7 +265,20 @@ def run_trial(
         proposed=sum(e.event == "gate" for e in run.since_last_plan()),
         refused=sum(e.event == "gate" and not e.detail.get("legal") for e in run.since_last_plan()),
         covered=sum(e.event in ("part_failed", "part_reported") for e in run.log),
+        cache_write_tokens=sum(c.get("cache_write_tokens") or 0 for c in run.calls),
+        cache_read_tokens=sum(c.get("cache_read_tokens") or 0 for c in run.calls),
+        by_model=_by_model(run.calls),
     )
+
+
+def _by_model(calls: list[dict]) -> dict:
+    out: dict = {}
+    for c in calls:
+        if c.get("model"):
+            row = out.setdefault(c["model"], [0, 0, 0, 0])
+            for i, key in enumerate(("prompt_tokens", "completion_tokens", "cache_write_tokens", "cache_read_tokens")):
+                row[i] += int(c.get(key) or 0)
+    return out
 
 
 def comparison_budget(max_calls: int = 40, context: int = 16_000, max_seconds: float = 600.0) -> Budget:
@@ -250,6 +301,7 @@ def run_comparison(
     progress: Callable[[str], None] | None = None,
     stop_when: Callable[[list[TrialResult]], str] | None = None,
     verify: dict | None = None,
+    page_chars: int | None = None,
 ) -> list[TrialResult]:
     """Every task under every strategy, interleaved so drift in the endpoint hits all strategies alike.
 
@@ -269,7 +321,7 @@ def run_comparison(
                                 progress(f"stopped after {len(results)} of {total} trials: {reason}")
                             return results
                         res = run_trial(task, strategy, adapter_factory(), root, budget=budget_factory(), tool_rounds=tool_rounds,
-                                        repeat=r, verify=verify)
+                                        repeat=r, verify=verify, page_chars=page_chars)
                         results.append(res)
                         if progress:
                             mark = "ok " if res.correct else ("~  " if res.answer_right else "x  ")
@@ -284,15 +336,48 @@ def run_comparison(
     return results
 
 
-def trial_cost(r: TrialResult, price_in: float, price_out: float) -> float:
-    return (r.prompt_tokens * price_in + r.completion_tokens * price_out) / 1e6
+def _priced(prompt: int, completion: int, write: int, read: int, price_in: float, price_out: float) -> float:
+    return ((prompt - write - read + CACHE_WRITE * write + CACHE_READ * read) * price_in + completion * price_out) / 1e6
 
 
-def spend_cap(max_spend: float, price_in: float, price_out: float) -> Callable[[list[TrialResult]], str]:
+def trial_cost(r: TrialResult, price_in: float, price_out: float, prices: dict | None = None) -> float:
+    """What a trial cost: cache writes and reads at their own rates, and with prices (model -> (in, out)) each model's
+    tokens at that model's rate; tokens no call attributes to a model at price_in and price_out."""
+    write, read = getattr(r, "cache_write_tokens", 0), getattr(r, "cache_read_tokens", 0)
+    by = getattr(r, "by_model", None) or {}
+    if not prices or not by:
+        return _priced(r.prompt_tokens, r.completion_tokens, write, read, price_in, price_out)
+    total = sum(_priced(*row, *prices.get(model, (price_in, price_out))) for model, row in by.items())
+    rest = [r.prompt_tokens - sum(v[0] for v in by.values()), r.completion_tokens - sum(v[1] for v in by.values()),
+            write - sum(v[2] for v in by.values()), read - sum(v[3] for v in by.values())]
+    return total + _priced(*rest, price_in, price_out)
+
+
+def live_spend_cap(spend, max_spend: float, price_in: float, price_out: float) -> Callable[[list[TrialResult]], str]:
+    """spend_cap for a replay that goes live part way (tape.Continuing): counts only what went to the model, and stops
+    before a trial that could take it past the cap, judged by the costliest trial's live part so far."""
+    parts: list[float] = []
+    last = [0.0]
+
+    def stop(done: list[TrialResult]) -> str:
+        now = spend.cost(price_in, price_out)
+        if done:
+            parts.append(now - last[0])
+            last[0] = now
+        if now >= max_spend:
+            return f"spend cap: ${now:.4f} sent to the model, of ${max_spend:.2f}"
+        if parts and now + max(parts) > max_spend:
+            return f"spend cap: ${now:.4f} sent to the model, and the next trial could cost ${max(parts):.4f}, past ${max_spend:.2f}"
+        return ""
+
+    return stop
+
+
+def spend_cap(max_spend: float, price_in: float, price_out: float, prices: dict | None = None) -> Callable[[list[TrialResult]], str]:
     """Stops before a trial that could take spending past the cap, judged by the costliest trial so far."""
 
     def stop(done: list[TrialResult]) -> str:
-        costs = [trial_cost(r, price_in, price_out) for r in done]
+        costs = [trial_cost(r, price_in, price_out, prices) for r in done]
         spent = sum(costs)
         if spent >= max_spend:
             return f"spend cap: ${spent:.4f} spent of ${max_spend:.2f}"
@@ -306,7 +391,7 @@ def spend_cap(max_spend: float, price_in: float, price_out: float) -> Callable[[
 # --- report ---
 
 
-def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | None) -> dict:
+def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | None, prices: dict | None = None) -> dict:
     n = len(rows)
     out = {
         "n": n,
@@ -323,18 +408,19 @@ def _rollup(rows: list[TrialResult], price_in: float | None, price_out: float | 
         "tokens_estimated": any(r.tokens_estimated for r in rows),
     }
     if price_in is not None and price_out is not None:
-        cost = sum(trial_cost(r, price_in, price_out) for r in rows)
+        cost = sum(trial_cost(r, price_in, price_out, prices) for r in rows)
         out["cost_total"] = round(cost, 4)
         out["cost_per_correct"] = round(cost / max(1, sum(r.correct for r in rows)), 4)
     return out
 
 
-def summarize(results: list[TrialResult], *, price_in: float | None = None, price_out: float | None = None) -> dict:
+def summarize(results: list[TrialResult], *, price_in: float | None = None, price_out: float | None = None,
+              prices: dict | None = None) -> dict:
     strategies = list(dict.fromkeys(r.strategy for r in results))
     families = list(dict.fromkeys(r.family for r in results))
-    overall = {s: _rollup([r for r in results if r.strategy == s], price_in, price_out) for s in strategies}
+    overall = {s: _rollup([r for r in results if r.strategy == s], price_in, price_out, prices) for s in strategies}
     by_family = {
-        f: {s: _rollup([r for r in results if r.strategy == s and r.family == f], price_in, price_out) for s in strategies}
+        f: {s: _rollup([r for r in results if r.strategy == s and r.family == f], price_in, price_out, prices) for s in strategies}
         for f in families
     }
     verdict = {}

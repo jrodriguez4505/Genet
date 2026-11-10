@@ -116,8 +116,15 @@ def test_each_rule_adds_its_words_after_the_source_rule(tmp_path: Path):
     assert checks.SOURCE_RULE + checks.SAMPLE_RULE + checks.HEADING_RULE in mb.with_rule(m.brief, "both").packet
     named = mb.with_rule(m.brief, "named").packet
     assert checks.SOURCE_RULE + checks.SAMPLE_RULE + checks.NAMED_RULE + checks.HEADING_RULE in named
+    aside = mb.with_rule(m.brief, "aside").packet
+    assert checks.SOURCE_RULE + checks.SAMPLE_RULE + checks.ASIDE_RULE + checks.HEADING_RULE in aside
+    assert checks.NAMED_RULE not in aside and checks.ASIDE_RULE not in named
+    # A tape recorded under aside reviewed under both loses the sentence, and is not left with it doubled.
+    back = mb.with_rule(mb.with_rule(m.brief, "aside"), "both").packet
+    assert checks.ASIDE_RULE not in back and back.count(checks.SOURCE_RULE) == 1
     # The rule a run is told by default is both, until a run shows the named rule pays.
     assert checks.VERIFY_RULE == mb.RULES["both"] and checks.NAMED_RULE not in checks.VERIFY_RULE
+    assert checks.ASIDE_RULE not in checks.VERIFY_RULE
     assert m.brief.packet.count(checks.SOURCE_RULE) == 1 and checks.SAMPLE_RULE not in m.brief.packet
 
 

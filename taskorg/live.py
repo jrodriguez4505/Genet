@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from .adapters import Brief, ModelAdapter
+from .adapters import TOOL_RESULTS, Brief, ModelAdapter
 from .errors import InvariantError
 from .models import SKILLS, Artifact
 from .skills import brief as skill_brief
@@ -199,6 +199,22 @@ def user_message(brief: Brief) -> str:
         "tools": list(brief.tools or []),
         "success_criteria": list(brief.success_criteria or []),
     })
+
+
+def user_blocks(brief: Brief) -> list[str]:
+    """user_message cut where a tool round begins, for prompt caching: what came before each round, each round, and
+    the fields after the packet. Joined, the pieces are user_message exactly, so the model reads the same text."""
+    hole = "\u0001PACKET\u0001"
+    full = user_message(Brief(**{**brief.__dict__, "packet": hole}))
+    head, tail = full.split(json.dumps(hole)[1:-1], 1)
+    marker = json.dumps(f"\n{TOOL_RESULTS}\n")[1:-1]
+    first, *rounds = json.dumps(brief.packet)[1:-1].split(marker)
+    return [head + first, *(marker + r for r in rounds), tail]
+
+
+def message_text(content) -> str:
+    """A message's text, whether sent as one string or as blocks."""
+    return content if isinstance(content, str) else "".join(b.get("text", "") for b in content)
 
 
 def env_timeout(default: int) -> int:

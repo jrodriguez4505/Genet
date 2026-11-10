@@ -26,6 +26,7 @@ from . import atomic
 from .adapters import Brief, ModelAdapter
 from .compare import comparison_budget, trial_cost
 from .errors import InvariantError
+from .live import message_text
 from .factory import new_run
 from .loop import REWORK_HEAD, Engine, rework_said
 from .memory_store import MemoryStore
@@ -96,7 +97,7 @@ def reworks_from(path: Path) -> list[Rework]:
     for row, line in enumerate(lines[1:], 1):
         exchange = json.loads(line)
         try:
-            sent = json.loads(exchange["request"]["messages"][0]["content"])
+            sent = json.loads(message_text(exchange["request"]["messages"][0]["content"]))
         except (KeyError, IndexError, ValueError):
             continue
         if sent.get("function") == "verifier":

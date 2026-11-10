@@ -51,6 +51,9 @@ class Run:
     stop_reason: str = ""
     last_verify: dict | None = None
     roster_at_start: list[str] = field(default_factory=list)
+    # The most sub-agents this run may staff. Not a saved field: the engine sets it for the run (compare's fixed splits
+    # sweep it), and a run loaded from disk keeps the default.
+    worker_cap = MAX_WORKERS
     adapter_name: str = ""
     world: object | None = None
     # A blameless review of what went wrong, written by the kernel at the end of a run that had a failure.
@@ -171,8 +174,8 @@ class Run:
         new_workers = [s for s in new_slots if s.function == "worker"]
         added = [s for s in new_workers if s.id not in old_workers or old_workers[s.id] != s.channel_id]
 
-        if len(new_workers) > MAX_WORKERS:
-            raise InvariantError("CAP", f"worker cap is {MAX_WORKERS}")
+        if len(new_workers) > self.worker_cap:
+            raise InvariantError("CAP", f"worker cap is {self.worker_cap}")
 
         if added:
             if len(added) > 1:

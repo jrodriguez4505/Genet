@@ -1,7 +1,8 @@
 """Sandboxed tools a specialist may ask for.
 
 A model asks by putting requests in its artifact: "read:<path>",
-"retrieve:<query>", "observe" or "observe:<subdir>". The kernel checks the
+"retrieve:<query>", "observe" or "observe:<subdir>". With paging on (page_chars),
+"read:<path>@<n>" reads page n of a file too long for one. The kernel checks the
 slot's allowlist first (Run.assert_tools), then runs the tool here and
 hands the result back in the next brief. Every round is a budgeted call.
 
@@ -25,6 +26,10 @@ RUNNABLE = ("read", "retrieve", "observe")
 ALIASES = {"search": "retrieve"}
 
 READ_CAP = 4000          # chars returned by one read
+PAGE_MIN = 1000          # the smallest page a paged toolbox will cut
+PAGE_MAX = 64_000        # and the largest
+MAX_PAGES = 10_000      # pages one file may have; a request for more is not a page
+_PAGE = re.compile(r"^(.+)@([0-9]{1,5})$")
 MATCH_CAP = 20           # lines returned by one retrieve
 LIST_CAP = 50            # paths returned by one observe
 WALK_CAP = 2000          # files visited per walk
@@ -101,17 +106,37 @@ def _snippet(line: str, pattern: re.Pattern, width: int = 300) -> str:
     return ("…" if start else "") + line[start:end] + ("…" if end < len(line) else "")
 
 
+def pages(text: str, size: int) -> list[tuple[int, int]]:
+    """Where each page of text starts and ends. A page ends at the last line break in its final fifth, so a line
+    is rarely cut, else at size characters. The same text always cuts the same way, so a tape replays."""
+    out, start = [], 0
+    while start < len(text) and len(out) < MAX_PAGES:
+        end = min(len(text), start + size)
+        if end < len(text):
+            brk = text.rfind("\n", start + size * 4 // 5, end)
+            if brk > start:
+                end = brk + 1
+        out.append((start, end))
+        start = end
+    return out or [(0, 0)]
+
+
 class Toolbox:
     def __init__(self, roots: list[str | Path] | None = None, files: list[str | Path] | None = None,
-                 only: set[Path] | None = None):
+                 only: set[Path] | None = None, page_chars: int | None = None):
         self.roots = [Path(r).resolve() for r in roots or []]
         self.files = {Path(f).resolve() for f in files or []}
         # A sub-agent's toolbox: the same workspace, with only these files open to it.
         self.only = {Path(f).resolve() for f in only} if only is not None else None
+        # Paging: a read of a file longer than one page returns its first page, and read:<path>@<n> any other.
+        # Off (None) by default: a read then returns the first READ_CAP characters, as every tape so far recorded.
+        if page_chars is not None and not (isinstance(page_chars, int) and PAGE_MIN <= page_chars <= PAGE_MAX):
+            raise ValueError(f"page_chars must be a whole number from {PAGE_MIN} to {PAGE_MAX}, got {page_chars!r}")
+        self.page_chars = page_chars
 
     def scoped(self, paths) -> "Toolbox":
         """The same workspace, open only at these files: a sub-agent's share and nothing of its siblings'."""
-        return Toolbox(roots=self.roots, files=self.files, only=set(paths))
+        return Toolbox(roots=self.roots, files=self.files, only=set(paths), page_chars=self.page_chars)
 
     # --- sandbox ---
 
@@ -242,13 +267,17 @@ class Toolbox:
         path = self._resolve(raw)
         return self._text(path) if path is not None and path.is_file() else None
 
+    def _readable_chars(self, text: str) -> int:
+        """What reading a file brings into calls: one read's worth unpaged, the whole file when pages reach all of it."""
+        return len(text) if self.page_chars else min(len(text), READ_CAP)
+
     def file_sizes(self) -> list[int]:
-        """Estimated tokens of each workspace file, four characters a token, as much as one read returns."""
+        """Estimated tokens of each workspace file, four characters a token, as much as reading it brings in."""
         sizes = []
         for path in self._walk():
             text = self._text(path)
             if text is not None:
-                sizes.append(min(len(text), READ_CAP) // 4)
+                sizes.append(self._readable_chars(text) // 4)
         return sizes
 
     def material(self, channel: str, note: str = "") -> dict[str, int] | None:
@@ -270,7 +299,7 @@ class Toolbox:
             if path.stem.lower() in wanted or path.name.lower() in wanted or path in loose:
                 text = self._text(path)
                 if text is not None:
-                    found[str(path.resolve())] = min(len(text), READ_CAP) // 4  # what one read returns
+                    found[str(path.resolve())] = self._readable_chars(text) // 4  # what reading it brings in
         return found or None
 
     # --- tools ---
@@ -293,9 +322,17 @@ class Toolbox:
         return f"[{name[:ECHO_CAP]}] not a runnable tool; put the result in the artifact"
 
     def read(self, raw: str, have: set[Path] | None = None) -> str:
+        page = None
+        if self.page_chars:
+            m = _PAGE.match(raw.strip())
+            # A name that is itself a file wins over a page of a shorter name.
+            if m and (self._resolve(raw) is None or not self._resolve(raw).is_file()):
+                raw, page = m.group(1), int(m.group(2))
         path = self._resolve(raw)
         if path is None or not path.is_file():
             return f"[read {raw[:ECHO_CAP]}] not found in the workspace"
+        if self.page_chars:
+            return self._read_page(path, page, have)
         if have is not None and path in have:
             return f"[read {self._shown(path)}] already in full above"
         text = self._text(path)
@@ -305,6 +342,26 @@ class Toolbox:
         if have is not None and not more:  # only a whole file makes its lines redundant
             have.add(path)
         return f"[read {self._shown(path)}]\n{text[:READ_CAP]}{more}"
+
+    def _read_page(self, path: Path, page: int | None, have: set[Path] | None) -> str:
+        """One page of a file. A file that fits one page reads whole, as an unpaged read of a short file does."""
+        shown = self._shown(path)
+        if have is not None and path in have:
+            return f"[read {shown}] already in full above"
+        text = self._text(path)
+        if text is None:
+            return f"[read {shown}] binary or too large"
+        bounds = pages(text, self.page_chars)
+        if len(bounds) == 1 and page in (None, 1):
+            if have is not None:
+                have.add(path)
+            return f"[read {shown}]\n{text}"
+        n = page or 1
+        if not 1 <= n <= len(bounds):
+            return f"[read {shown}] has {len(bounds)} page(s); ask for read:{shown}@1 to @{len(bounds)}"
+        start, end = bounds[n - 1]
+        nxt = f"; read:{shown}@{n + 1} for the next" if n < len(bounds) else "; the last page"
+        return f"[read {shown} page {n} of {len(bounds)}]\n{text[start:end]}\n[page {n} of {len(bounds)}{nxt}]"
 
     def retrieve(self, query: str, have: set[Path] | None = None) -> str:
         """Lines that carry every term; a term also counts when it is in the file name.

@@ -91,6 +91,168 @@
 #     - Right answers. Named fails at most 5 more of the right products than both does.
 #     If both hold, named becomes the verifier's default. If not, it stays off and the harm stays an open problem.
 #     Reported with no bar: the 6 that finished wrong, one by one, and right products that admit a gap.
+#   bash scripts/team_runs.sh aside   the named sentence narrowed to what a product says of itself: a product that says
+#     something the goal names has no figure, could not be found, counts as zero or was set aside has not answered it, and
+#     keeping out look-alike names or other periods' figures is not that. The gap test failed named because it also failed
+#     22 right products, most of which only listed some companies' figures or said look-alikes were kept out.
+#     Two steps, one y:
+#     1. The gap test's 224 merges under aside. The sentence was written from reading these, so this cannot decide; it only
+#        saves the second step's spend. If aside passes more than 1 of the 37 wrong products, or fails more than 8 of the 187
+#        right ones (both failed 3 there; 5 more), nothing more is run.
+#     2. The deciding step: 318 merges whose products were not read for the sentence, from the held-out run (seeds 101 to
+#        105) and the whole run (seeds 106 and 107), 274 right and 44 wrong. Each was recorded under both, and replays under
+#        both with no misses, so both's verdict is the recorded one and only aside is paid for. The bars, written before
+#        the run:
+#        - It cannot say unless both passed at least 4 of the wrong products here. It passed 5.
+#        - Wrong answers. Aside passes at most 1 of the 44 wrong products, and fewer than both did.
+#        - Right answers. Aside fails at most 5 more of the 274 right products than both did.
+#        If both hold, aside becomes the verifier's default. If not, it stays off and the harm stays an open problem.
+#     The same kind of files with new figures, and a FAIL sends the work back for rework, so whether fewer runs finish wrong
+#     is not measured here.
+#   bash scripts/team_runs.sh gapcheck   a check in code, not a sentence for the model (--gap-check): a product the verifier
+#     passed that says itself it has no figure for something, adds 0 for it or set it aside goes back once, with the
+#     kernel's reason, and a product sent back for that which still says so stops the run. The narrower sentence (aside)
+#     missed even on the merges it was written from. Each trial replays from its tape, and only a trial the check sends
+#     back goes to the model from that point (--then-live). A free dry run of the rerun and held-out tapes, about 1,000
+#     trials, found 19 such trials: 10 that finished wrong and 9 that finished right. Nothing else changes. Three rounds,
+#     since one rework is one draw: 11 tapes each time. The bars, written before the run, on the mean of the three rounds:
+#     - Wrong answers. Of the 10 that finished wrong, at most 3 still finish wrong.
+#     - Right answers. Of the 9 that finished right, at most 2 no longer finish right.
+#     If both hold, --gap-check becomes the default. If not, it stays off and the harm stays open.
+#     The pattern was written from the rerun's merges, so 11 of the 19 trials are in sample for it; 8 are on the held-out
+#     tapes. What a lead does with the reason was read from neither.
+#   bash scripts/team_runs.sh sonnet   Claude Sonnet 5.5 on seed 108, the seed with the most of Haiku's finished-wrong
+#     answers, with the rerun's settings, so each trial pairs with Haiku's on the same question. What is left of the harm on
+#     Haiku is reading: a true figure next to a prior-year sentence or a look-alike's note, set aside. The gap check showed
+#     that no rework put one right in 30 tries. Two steps, a y each:
+#     1. Calibration: 4 trials at 20 companies (one aggregate and one breadth question, the told crew and Genet), about
+#        $0.60 to $1.10, stopping itself before $1.50. The kernel's sizes and reply room were measured on Haiku. If any
+#        trial stops on size, a malformed reply or the API (BUDGET, SCHEMA, LIVE), or takes over 450 of its 600 seconds,
+#        nothing more runs. Otherwise it prints a firm estimate for step 2.
+#     2. Seed 108: 24 questions at 10 companies under the told crew and Genet, and 6 at 20 under single, the told crew and
+#        Genet: 66 trials, each size capped at $6.00. Haiku on the same trials (rerun-s108-10 and -20): right 22 and 23 at
+#        10, 0, 5 and 2 at 20; finished wrong 4 (the told crew's compare-6 at 10; single's breadth-2 and Genet's aggregate-2
+#        and aggregate-3 at 20); $0.47.
+#     The bars, written before the run:
+#     - Reading. Sonnet finishes wrong at most 1 time in 66, and is right on at least 3 of the 4 trials Haiku finished wrong.
+#       If both hold, the harm counts as a limit of Haiku's reading, and the next test is a mixed team, Sonnet where the
+#       reading is done. If not, the harm is not only the model's, and stays open as it is.
+#     - Reported with no bar: right answers by strategy against Haiku's, tokens and cost a right answer, stops at 20.
+#     One seed can show a large difference, not a small one.
+#   bash scripts/team_runs.sh sonnettwo   the same on seed 110, with the rerun's settings, no calibration: it passed for these
+#     settings on 7 November. On seed 108 Sonnet finished nothing wrong (Haiku 4), but was right on 2 of the 4 trials Haiku
+#     finished wrong, where the bar asked 3: both misses were stops, one a verifier failing a right total. That bar stays
+#     missed whatever this run shows. Haiku on seed 110 (rerun-s110-10 and -20): right 23 and 23 at 10, 1, 5 and 5 at 20;
+#     finished wrong 2, the told crew's and Genet's breadth-6 at 10; $0.43. About $5.40, each size capped at $6.00.
+#     The bars, written before the run:
+#     - Sonnet finishes wrong at most 1 time in 66.
+#     - Sonnet is right on both trials Haiku finished wrong.
+#     If both hold, the next test is a mixed team, to find which role needs Sonnet: across two seeds it would have finished
+#     nothing wrong. If either misses, Sonnet makes the same mistake, and a mixed team is not worth building for it.
+#   bash scripts/team_runs.sh agents   how many agents a task needs: the same questions split by the kernel into 2, 4, 10 or
+#     20 parts (split-N, one sub-agent a part, the lead merges), against one agent, the told crew and Genet. Questions over
+#     all 20 companies (aggregate and breadth, 6 a seed) on seeds 113 and 114, which no tape has used, on Haiku 5.5. Twice:
+#     at a call limit of 8,000 tokens, where the 20 files (about 17,500 tokens) do not fit one call, and at 64,000, where
+#     they do. 168 trials, every strategy given 80 calls, about $2.20 and 2.5 hours; each of 4 steps stops itself before
+#     $1.50. Twenty sub-agents call at once, so a rate limit can fail parts: those are counted on their own.
+#     The bars, written before the run, each over the 12 questions of both seeds:
+#     Where the work does not fit one call (8,000):
+#     - Splitting is needed. The best split-N is right on at least 6 more questions than one agent.
+#     - Past a handful, more agents do not pay. Split-20 is right on no more questions than the better of split-4 and
+#       split-10, and spends at least 1.3 times its tokens a question. If split-20 matches it for no more tokens, the cap
+#       of 4 sub-agents is too low.
+#     - Genet's own plan is right on at most 1 question fewer than the best split-N, for at most 1.2 times its tokens. If
+#       not, the lead's plan is the weak part, not the count.
+#     Where it fits (64,000):
+#     - One is enough. No split-N is right on more than 1 question more than one agent.
+#     - Genet stays one agent on at least 10 of the 12.
+#     Reported with no bar: whether a split costs fewer tokens than one agent even where the work fits (in the simulator
+#     4 parts do, because one agent re-sends what it has read every round); if so, the should-we rule needs a cost term.
+#     This is still a small model of large work: 20 files of about 900 tokens each.
+#   bash scripts/team_runs.sh cache   prompt caching (TASKORG_MODEL_CACHE=1): a call that may go on to tool rounds is sent in
+#     blocks cut where each round begins, so a round reads what came before it from the cache at a tenth of the price.
+#     The agent-count sweep found that where the work fits one call (64,000), one agent spent twice what 4 parts did,
+#     because it sends everything it has read again every round. Does caching close that? The sweep's 64,000 questions
+#     again (seeds 113 and 114), one agent, 4 parts and Genet, cached: 36 trials on Haiku 5.5, about $0.25, each seed
+#     stopping itself before $0.50. Uncached, a question cost: one agent $0.0129 (11 right of 12), 4 parts $0.0079 (12),
+#     Genet $0.0140 (11), priced from the sweep's tapes.
+#     The bars, written before the run:
+#     - Answers hold. Each strategy is right within 1 of its uncached count.
+#     - Caching pays. One agent's cost a question falls by at least 30%.
+#     - The gap. Cached, one agent costs at most 1.25 times what 4 parts do a question, cached. If so, the should-we rule
+#       needs no cost term while caching is on. If not, it does.
+#     If the first two hold, caching becomes the default.
+#   bash scripts/team_runs.sh mixed   a mixed team: Haiku's lead and sub-agents, Sonnet's verifier (TASKORG_MODEL_NAME_VERIFY),
+#     on seeds 108 and 110 with the rerun's settings, the told crew and Genet: 120 trials, each paired with Haiku's and
+#     Sonnet's own. By the tapes the verifier is 14 to 20% of the tokens, so this costs about $2.20, against $9.59 for
+#     Sonnet alone and $0.75 for Haiku alone on the same trials. The other way round, Sonnet reading and Haiku checking,
+#     would cost about $8.14, close to Sonnet alone, so it is not run.
+#     The bars, written before the run:
+#     - Wrong answers. It finishes wrong at most 1 time in 120 (Haiku alone 5, Sonnet alone 0).
+#     - Right answers. At least 105 of 120 (Haiku alone 108, Sonnet alone 116): a stricter checker may stop a few more.
+#     If both hold, the team to use is Haiku's authors with Sonnet checking, at about a quarter of Sonnet's cost. If the
+#     wrong-answer bar misses, the authors' reading needs Sonnet, and Sonnet alone is the choice.
+#   bash scripts/team_runs.sh opus   Claude Opus 5.5 on seed 108 with the rerun's settings, so each trial pairs with Haiku's and
+#     Sonnet's own: three models on the same 66 trials. Two steps, a y each, as for Sonnet. A calibration of 4 trials at 20
+#     companies, about $1.10, stopping itself before $2.50; a stop on size, a malformed reply or the API, or a trial over 450
+#     of its 600 seconds, and nothing more runs. Then the 66 trials, at about twice Sonnet's $5.82 by the price, each size
+#     capped at $8.00. On seed 108 Haiku was right on 52 and finished wrong 4 times; Sonnet right on 59, wrong 0.
+#     The bars, written before the run:
+#     - Opus finishes wrong at most 1 time in 66.
+#     - Splitting holds. At 20 companies the told crew and Genet together are right on at least 9 of 12, and one agent on
+#       at most 1 of 6 (Haiku 7 and 0, Sonnet 11 and 0).
+#     - Reported with no bar: right answers against Haiku's and Sonnet's, cost a right answer, the verifier's stops.
+#     If the first holds, the wrong answers are a limit of the smallest model, not of Genet's design.
+#   bash scripts/team_runs.sh sonnetsweep   the agent-count sweep at a call limit of 8,000 on Sonnet 5.5: seeds 113 and 114,
+#     one agent, 4, 10 and 20 parts and Genet, 60 trials, about $9.40, each seed capped at $6.00. Does "about four" hold
+#     on a stronger reader?
+#     The bars, written before the run, Haiku's at 8,000:
+#     - Splitting is needed. The best split is right on at least 6 more of 12 than one agent.
+#     - Past a handful, more agents do not pay. 20 parts right on no more than the better of 4 and 10, for at least 1.3
+#       times its tokens a question.
+#     - Genet's own plan is right on at most 1 fewer than the best split, for at most 1.2 times its tokens.
+#     If the second holds on Sonnet as on Haiku, about four is not a limit of the smaller model.
+#   bash scripts/team_runs.sh headtohead   Genet against CrewAI on public questions (docs/HEAD_TO_HEAD.md), on Haiku 5.5.
+#     Loong's English SEC filings, 40 questions (10 of each kind) and 4 for calibration; HotpotQA, 20 questions. One agent,
+#     the told crew, Genet, and CrewAI 1.15.30 (a manager and 4 readers), every call of every contender through Genet's
+#     counting, caps and tapes. A call limit of 100,000 tokens, 80 calls and 1,200 seconds a trial, 6 tool rounds for
+#     Genet's agents (CrewAI's own 25 steps an agent), pages of 16,000 characters. Loong is scored by Loong's own judge
+#     prompt on Sonnet 5.5; HotpotQA by exact match. Two steps, a y each. The calibration, about $1.20, stops itself if a
+#     contender stops on size, a malformed reply, the API or a crash on more than 1 of its 4, or if the estimate passes
+#     $15. Then the rest, caps $8.00 for each side on Loong, $0.50 on HotpotQA, $1.50 for the judge.
+#     The bars, written before the run. On Loong, right is a judge score of 100 in a run that finished:
+#     - Accuracy. Genet right on at least the best of one agent, CrewAI and the told crew, less 3.
+#     - Cost. Genet's tokens a question, and its cost a right answer, at most CrewAI's.
+#     - Wrong finishes. Genet finishes wrong no more often than CrewAI.
+#     On HotpotQA:
+#     - One agent is enough. Genet stays one agent on at least 18 of 20.
+#     - At its cost. Genet right on at least one agent's less 1, at most 1.3 times its tokens.
+#     Reported with no bar: agents a question, CrewAI's answers with no ANSWER line, split rate and accuracy by kind,
+#     accuracy against spend. If Genet misses the accuracy bar, Genet's rule costs answers on real documents.
+#   bash scripts/team_runs.sh wording   the wording note on Loong (docs/LIVE_TESTS.md, 9 November), on Haiku 5.5, with the
+#     head-to-head's limits and judge: the told crew and Genet with --author-rule wording, every writer told that a filing
+#     may name a line differently and to use the line that measures the same thing, say which, and answer. Two steps, a
+#     y each. Step 1: the 9 questions where a split's parts said the named line was not in their filing, about $0.35.
+#     Step 2: all 40, about $1.25. One agent and CrewAI are not rerun.
+#     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
+#     - Step 1, the 9. The told crew and Genet together right on at least 9 of 18 (3 and 3 on 9 November), and together
+#       finished wrong at most 4 times (3 and 1). If it misses, step 2 is not run.
+#     - Step 2, accuracy. Genet right on at least 22 of 40 (20 on 9 November; one agent 22; CrewAI 25 less 3).
+#     - Step 2, no harm elsewhere. On the other 31, the told crew and Genet each right on at least 16 (17 each).
+#     - Step 2, wrong finishes. Genet at most 15 (CrewAI's; Genet had 12).
+#     Reported with no bar: the told crew's total, parts that still say a named line is missing, the checker's stops, cost.
+#     If the bars hold, the split losses were the wording, and the note goes into Genet's writers by default.
+#   bash scripts/team_runs.sh samenote   the same-measure note on Loong questions no earlier run used, on Haiku 5.5, with the
+#     head-to-head's limits and judge. 12 questions drawn before the run (benchmarks.loong_fresh, seed 1109): 6 comparison
+#     and 6 clustering. The told crew and Genet, once with today's briefs and once with --author-rule same --verify-rule
+#     same: writers use a line that is the same measure under another name and say which, and not a line that adds or
+#     leaves out items; the checker does not fail the first and fails the second. One y, about $0.70.
+#     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
+#     - With the note, the told crew and Genet together right on at least 2 more of 24 than without.
+#     - With the note, together finished wrong no more often than without.
+#     Reported with no bar: each arm by team, the checker's stops, parts that say a named line is missing, tokens.
+#     If both hold, the note goes to the 40 of the head-to-head, then to the default. 12 questions are few: a difference
+#     of 2 of 24 can be noise, so a hold is a reason for the larger run, not a result.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -101,8 +263,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -115,7 +277,31 @@ unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL ANTHROPIC_PROFIL
 
 # Estimates from the sim's token counts, scaled by what Claude's counts ran to on 28 and 29 October.
 echo "Genet team runs on Claude. Prices per million tokens, input / output:"
-if [ "$mode" = gaprule ]; then
+if [ "$mode" = opus ]; then
+  echo "  3) claude-opus-5-5     \$4 / \$20        calibration about \$1.10 (cap \$2.50); then seed 108, about \$11.60 (caps \$16.00)"
+elif [ "$mode" = sonnetsweep ]; then
+  echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$9.40 in all, each seed capped at \$6.00"
+elif [ "$mode" = headtohead ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   calibration about \$1.20; then about \$10 to \$16 with the judge on Sonnet (caps \$18.50)"
+elif [ "$mode" = samenote ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.70 with the judge on Sonnet (caps \$1.10)"
+elif [ "$mode" = wording ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
+elif [ "$mode" = cache ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.25 in all, each seed capped at \$0.50"
+elif [ "$mode" = mixed ]; then
+  echo "  1) claude-haiku-5-5 with claude-sonnet-5-5 checking   about \$2.20 in all, each step capped (\$3.80 in all)"
+elif [ "$mode" = agents ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$2.20 in all, each of 4 steps capped at \$1.50"
+elif [ "$mode" = sonnettwo ]; then
+  echo "  2) claude-sonnet-5-5   \$2 / \$10        seed 110, about \$5.40 (caps \$12.00)"
+elif [ "$mode" = sonnet ]; then
+  echo "  2) claude-sonnet-5-5   \$2 / \$10        calibration about \$0.60 to \$1.10 (cap \$1.50); then seed 108, about \$5 to \$10 (caps \$12.00)"
+elif [ "$mode" = gapcheck ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.15 in all, each of 33 steps capped at \$0.03 (\$1.00 at most)"
+elif [ "$mode" = aside ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.54 in all, each step capped (\$0.75 in all)"
+elif [ "$mode" = gaprule ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.42, capped at \$0.50"
 elif [ "$mode" = rerun ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.82 in all, each run capped (\$3.00 in all)"
@@ -147,17 +333,28 @@ fi
 if [ -n "${GENET_LIVE_SESSION:-}" ] && [ -n "${TASKORG_ANTHROPIC_KEY:-}" ]; then
   # scripts/live_session.sh holds the key for a sitting. With no smoke test, nothing is spent before this run's y.
   session=1
-  model=claude-haiku-5-5; pin=0.10; pout=0.50
+  if [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = sonnetsweep ]; then
+    model=claude-sonnet-5-5; pin=2; pout=10
+  elif [ "$mode" = opus ]; then
+    model=claude-opus-5-5; pin=4; pout=20
+  else
+    model=claude-haiku-5-5; pin=0.10; pout=0.50
+  fi
   echo "Using the key this window holds, on $model. No smoke test: nothing is spent before your y."
 else
   session=""
   pick=""
+  want=1; { [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = sonnetsweep ]; } && want=2; [ "$mode" = opus ] && want=3
   while [ -z "$pick" ]; do
-    read -r -p "Model, type 1: " pick
+    read -r -p "Model, type $want: " pick
   done
-  case "$pick" in
-    1) model=claude-haiku-5-5; pin=0.10; pout=0.50 ;;
-    *) echo "Only Haiku runs from this script. Nothing was run."; exit 1 ;;
+  case "$mode:$pick" in
+    sonnet:2|sonnettwo:2|sonnetsweep:2) model=claude-sonnet-5-5; pin=2; pout=10 ;;
+    sonnet:*|sonnettwo:*|sonnetsweep:*) echo "This run is on Sonnet: type 2. Nothing was run."; exit 1 ;;
+    opus:3) model=claude-opus-5-5; pin=4; pout=20 ;;
+    opus:*) echo "This run is on Opus: type 3. Nothing was run."; exit 1 ;;
+    *:1) model=claude-haiku-5-5; pin=0.10; pout=0.50 ;;
+    *) echo "Only Haiku runs from this script, but for its sonnet run. Nothing was run."; exit 1 ;;
   esac
   read -r -s -p "Anthropic API key (typing is hidden; paste and press Enter): " key
   echo
@@ -191,7 +388,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -217,6 +414,551 @@ if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$m
       exit 1
     fi
   }
+fi
+if [ "$mode" = opus ]; then
+  echo
+  echo ">>> Claude Opus 5.5 on seed 108, with the rerun's settings, so each trial pairs with Haiku's and Sonnet's. Two steps."
+  echo "    1. Calibration, 4 trials at 20 companies: about \$1.10, stopping itself before \$2.50. A stop on size, a malformed"
+  echo "       reply or the API, or a trial near its time limit, and nothing more runs."
+  echo "    2. Seed 108, 66 trials: a firm estimate is shown after step 1, and it waits for a second y."
+  echo "    Written before it ran: Opus finishes wrong at most 1 time in 66 (Haiku 4, Sonnet 0), and at 20 companies splitting"
+  echo "    holds. The full bars are at the top of this script."
+  read -r -p "Run step 1 now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  shared="--context 8000 --tool-rounds 4 --author-rule headed"
+  twenty="--families aggregate,breadth --entities 20 --distractors 6"
+  held opus-calib 2.50 compare --seed 108 $twenty --per-family 1 --strategies always-told,genet $shared
+  # As for Sonnet: stops on settings measured on Haiku end it here; otherwise a firm estimate at this model's prices.
+  if ! "$PY" -I - "$pin" "$pout" <<'EOF'
+import json, sys
+pin, pout = float(sys.argv[1]), float(sys.argv[2])
+rows = json.load(open("data/compare/opus-calib.json"))["results"]
+cost = [(r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6 for r in rows]
+for r, c in zip(rows, cost):
+    print(f"  {r['strategy']:<11} {r['task_id']:<12} {r['status']:<8} {r['code'] or '-':<7} {r['calls']:>2} calls "
+          f"{r['tokens']:>7,} tokens ${c:.3f} {r['latency_s']:>5.0f}s right={r.get('answer_right')}")
+bad = [r for r in rows if r["code"] in ("BUDGET", "SCHEMA", "LIVE") or r["latency_s"] > 450]
+mean = sum(cost) / max(1, len(cost))
+# Haiku's trial at 10 companies cost 0.373 of its trial at 20 on seed 108 (rerun-s108-10 and -20).
+estimate = mean * 18 + mean * 0.373 * 48
+print(f"step 1: ${sum(cost):.3f}; a trial at 20 companies ${mean:.3f}; step 2 about ${estimate:.2f} (caps $8.00 and $8.00)")
+if bad:
+    print("step 1 found stops on settings measured on Haiku, so step 2 was not run:", [(r["task_id"], r["code"]) for r in bad])
+    sys.exit(3)
+if estimate > 15:
+    print("step 2 would likely pass its caps, so it was not run")
+    sys.exit(4)
+EOF
+  then
+    echo "Results: data/compare/opus-calib.json"
+    exit 0
+  fi
+  read -r -p "Run step 2, seed 108 on Opus, at the estimate above? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Step 2 not run."; exit 0 ;;
+  esac
+  held opus-s108-10 8.00 compare --seed 108 --families lookup,aggregate,compare,breadth --per-family 6 --entities 10 \
+    --distractors 6 --strategies always-told,genet $shared
+  held opus-s108-20 8.00 compare --seed 108 $twenty --per-family 3 --strategies single,always-told,genet $shared
+  echo
+  echo "Done. Results: data/compare/opus-*.json   Tapes: data/tapes/opus-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = headtohead ]; then
+  H=data/h2h
+  CREW_PY="$H/venv-crewai/bin/python"
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial" "$H/hotpotqa/questions.jsonl" "$CREW_PY"; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md says how it was fetched). Nothing was run."; exit 1; }
+  done
+  if ! PYTHONPATH=. "$CREW_PY" -c "import crewai, taskorg.rawcall" 2>/dev/null; then
+    echo "The CrewAI environment cannot import crewai and taskorg. Nothing was run."; exit 1
+  fi
+  echo
+  echo ">>> Genet against CrewAI on public questions, on $model (docs/HEAD_TO_HEAD.md). Two steps."
+  echo "    1. Calibration: 4 Loong questions under one agent, the told crew, Genet and CrewAI, and the judge on them:"
+  echo "       about \$1.20. A contender that stops on size, a malformed reply, the API or a crash on more than 1 of 4,"
+  echo "       or an estimate past \$15, and nothing more runs."
+  echo "    2. Loong's 40 and HotpotQA's 20 under all four, then the judge: a firm estimate after step 1, and a second y."
+  echo "    Written before it ran: Genet right on at least the best of the others less 3, at no more tokens a question"
+  echo "    and cost a right answer than CrewAI. The full bars are at the top of this script."
+  read -r -p "Run step 1 now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000"
+  loong="--questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial"
+  hotpot="--questions $H/hotpotqa/questions.jsonl"
+  # CrewAI's runs: the same checks as held(), through the CrewAI environment's Python and Genet's raw client.
+  crew_held() {  # name, cap, the harness's words
+    local name=$1 cap=$2
+    shift 2
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name"
+      PYTHONPATH=. "$CREW_PY" scripts/h2h_crewai.py --model "$model" --price-in "$pin" --price-out "$pout" --max-spend "$cap" \
+        "$@" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" </dev/null 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\[|^\| |stopped|interrupted|^tape|^saved" | grep --line-buffered -v "^| strategy\|^|---"
+    fi
+    echo
+    if [ ! -f "data/compare/$name.json" ]; then
+      echo "$name did not finish, so nothing more was run. What finished is kept. To go on: bash scripts/team_runs.sh $mode"
+      exit 1
+    fi
+    if grep -q '"stopped_after"' "data/compare/$name.json"; then
+      echo "$name stopped early, at its cap or by you, so nothing more was run. What finished is kept."
+      exit 1
+    fi
+  }
+  judge_held() {  # name, cap, results files
+    local name=$1 cap=$2
+    shift 2
+    local files=()
+    for f in "$@"; do files+=(--results "data/compare/$f.json"); done
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+      "$PY" -m taskorg.cli h2h-judge "${files[@]}" --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 \
+        --price-in 2 --price-out 10 --max-spend "$cap" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+    fi
+    [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  }
+  held h2h-calib-genet 1.00 compare --benchmark loong --which calibration $loong --strategies single,always-told,genet \
+    $limits --tool-rounds 6
+  crew_held h2h-calib-crewai 1.00 --benchmark loong --which calibration $loong --call-limit 100000 --max-calls 80 \
+    --max-seconds 1200 --page-chars 16000
+  judge_held h2h-calib-judged 0.30 h2h-calib-genet h2h-calib-crewai
+  if ! "$PY" -I - "$pin" "$pout" <<'EOF'
+import json, sys
+from collections import defaultdict
+pin, pout = float(sys.argv[1]), float(sys.argv[2])
+rows = json.load(open("data/compare/h2h-calib-judged.json"))["results"]
+by = defaultdict(list)
+for r in rows:
+    by[r["strategy"]].append(r)
+    c = (r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6
+    print(f"  {r['strategy']:<11} {r['task_id']:<15} {r['status']:<8} {r['code'] or '-':<7} {r['calls']:>2} calls "
+          f"{r['tokens']:>9,} tokens ${c:.3f} {r['latency_s']:>5.0f}s w={r['workers']} judge {r.get('judge_score')}")
+bad = {s: [r["task_id"] for r in rs if r["code"] in ("BUDGET", "SCHEMA", "LIVE", "CRASH")] for s, rs in by.items()}
+bad = {s: ids for s, ids in bad.items() if len(ids) > 1}
+per_q = {s: sum((r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6 for r in rs) / len(rs) for s, rs in by.items()}
+genet_side = sum(v for s, v in per_q.items() if s != "crewai") * 40
+crew_side = per_q.get("crewai", 0) * 40
+# HotpotQA: about a tenth of a Loong trial, by its size; the judge: about $0.004 an answer on Sonnet.
+estimate = genet_side + crew_side + (genet_side + crew_side) / 10 + 160 * 0.004
+print(f"step 2 about ${estimate:.2f}: Loong ${genet_side:.2f} for one agent, the told crew and Genet (cap $8.00), "
+      f"${crew_side:.2f} for CrewAI (cap $8.00); HotpotQA and the judge the rest")
+if bad:
+    print("step 1 found a contender that stopped on more than 1 of 4, so step 2 was not run:", bad)
+    sys.exit(3)
+if estimate > 15 or genet_side > 7.2 or crew_side > 7.2:
+    print("step 2 would likely pass its caps, so it was not run")
+    sys.exit(4)
+EOF
+  then
+    echo "Results: data/compare/h2h-calib-*.json"
+    exit 0
+  fi
+  read -r -p "Run step 2, Loong's 40 and HotpotQA's 20 under all four, then the judge, at the estimate above? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Step 2 not run."; exit 0 ;;
+  esac
+  held h2h-loong-genet 8.00 compare --benchmark loong --which main $loong --strategies single,always-told,genet \
+    $limits --tool-rounds 6
+  crew_held h2h-loong-crewai 8.00 --benchmark loong --which main $loong --call-limit 100000 --max-calls 80 \
+    --max-seconds 1200 --page-chars 16000
+  held h2h-hotpot-genet 0.50 compare --benchmark hotpot $hotpot --strategies single,always-told,genet $limits --tool-rounds 6
+  crew_held h2h-hotpot-crewai 0.50 --benchmark hotpot $hotpot --call-limit 100000 --max-calls 80 --max-seconds 1200 \
+    --page-chars 16000
+  judge_held h2h-loong-judged 1.50 h2h-loong-genet h2h-loong-crewai
+  echo
+  echo "Done. Results: data/compare/h2h-*.json   Tapes: data/tapes/h2h-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = wording ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial" data/compare/h2h-loong-judged.json; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  nine="loong-25d28410,loong-28b770d3,loong-612f5816,loong-62d35f36,loong-7b470b0f,loong-a79e07a2,loong-c0c4d8ea,loong-de58f2e7,loong-fead16dd"
+  echo
+  echo ">>> The wording note on Loong, on $model: the told crew and Genet, every writer told that a filing may name a line"
+  echo "    differently and to use the line that measures the same thing (docs/LIVE_TESTS.md, 9 November). Two steps."
+  echo "    1. The 9 questions where a split's parts said the named line is not in their filing: about \$0.35, the judge"
+  echo "       with it, stopping itself before \$0.60 and \$0.10. Bar: together right on at least 9 of 18 (6 on 9 November)."
+  echo "    2. All 40, after a second y: about \$1.25, caps \$2.00 and \$0.40. The full bars are at the top of this script."
+  read -r -p "Run step 1 now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6 --author-rule wording"
+  loong="--benchmark loong --which main --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial"
+  judge_held() {  # name, cap, results files
+    local name=$1 cap=$2
+    shift 2
+    local files=()
+    for f in "$@"; do files+=(--results "data/compare/$f.json"); done
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+      "$PY" -m taskorg.cli h2h-judge "${files[@]}" --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 \
+        --price-in 2 --price-out 10 --max-spend "$cap" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+    fi
+    [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  }
+  held h2h-wording-nine 0.60 compare $loong --ids "$nine" --strategies always-told,genet $limits
+  judge_held h2h-wording-nine-judged 0.10 h2h-wording-nine
+  if ! "$PY" -I - "$pin" "$pout" "$nine" <<'EOF'
+import json, sys
+pin, pout, nine = float(sys.argv[1]), float(sys.argv[2]), sys.argv[3].split(",")
+new = json.load(open("data/compare/h2h-wording-nine-judged.json"))["results"]
+old = [r for r in json.load(open("data/compare/h2h-loong-judged.json"))["results"]
+       if r["task_id"] in nine and r["strategy"] in ("always-told", "genet")]
+right = lambda r: (r.get("judge_score") or 0) >= 80 and r["status"] == "complete"
+wrong = lambda r: r["status"] == "complete" and not right(r)
+for label, rows in (("9 November", old), ("with the note", new)):
+    print(f"  {label:<14}" + "   ".join(f"{s}: right {sum(right(r) for r in rows if r['strategy'] == s)}, "
+                                        f"wrong {sum(wrong(r) for r in rows if r['strategy'] == s)}, "
+                                        f"stopped {sum(r['status'] != 'complete' for r in rows if r['strategy'] == s)}"
+                                        for s in ("always-told", "genet")))
+spent = sum((r["prompt_tokens"] * pin + r["completion_tokens"] * pout) / 1e6 for r in new)
+estimate = spent * 3.1 + 80 * 0.004  # on 9 November the 40 cost 3.1 times the 9 ($0.95 and $0.31)
+print(f"step 1 spent ${spent:.2f} on the trials; step 2 about ${estimate:.2f} with the judge (caps $2.00 and $0.40)")
+ok = sum(map(right, new)) >= 9 and sum(map(wrong, new)) <= 4
+print(f"bar: together right on {sum(map(right, new))} of 18 (needs 9) and wrong {sum(map(wrong, new))} (at most 4) -> "
+      + ("holds" if ok else "MISSES"))
+if not ok:
+    print("step 1 missed its bar, so step 2 was not run")
+    sys.exit(3)
+if estimate > 2.0:
+    print("step 2 would likely pass its cap, so it was not run")
+    sys.exit(4)
+EOF
+  then
+    echo "Results: data/compare/h2h-wording-nine*.json"
+    exit 0
+  fi
+  read -r -p "Run step 2, all 40 under the told crew and Genet, then the judge, at the estimate above? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Step 2 not run."; exit 0 ;;
+  esac
+  held h2h-wording-all 2.00 compare $loong --strategies always-told,genet $limits
+  judge_held h2h-wording-all-judged 0.40 h2h-wording-all
+  echo
+  echo "Done. Results: data/compare/h2h-wording-*.json   Tapes: data/tapes/h2h-wording-*.jsonl   Read: data/exp/wording_read.py"
+  exit 0
+fi
+if [ "$mode" = samenote ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial"; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  echo
+  echo ">>> The same-measure note on 12 Loong questions no earlier run used (6 comparison, 6 clustering), on $model."
+  echo "    The told crew and Genet, once without the note and once with it: writers use a line that is the same measure"
+  echo "    under another name and say which; the checker does not fail that, and fails a line that adds or leaves out items."
+  echo "    48 trials and the judge: about \$0.70, each part stopping itself (caps \$0.40, \$0.40, \$0.15, \$0.15)."
+  echo "    Written before it ran: with the note, together right on at least 2 more of 24, and finished wrong no more often."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6"
+  loong="--benchmark loong --which fresh --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial"
+  judge_held() {  # name, cap, results files
+    local name=$1 cap=$2
+    shift 2
+    local files=()
+    for f in "$@"; do files+=(--results "data/compare/$f.json"); done
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+      "$PY" -m taskorg.cli h2h-judge "${files[@]}" --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 \
+        --price-in 2 --price-out 10 --max-spend "$cap" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+    fi
+    [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  }
+  held h2h-fresh-plain 0.40 compare $loong --strategies always-told,genet $limits
+  held h2h-fresh-same 0.40 compare $loong --strategies always-told,genet $limits --author-rule same --verify-rule same
+  judge_held h2h-fresh-plain-judged 0.15 h2h-fresh-plain
+  judge_held h2h-fresh-same-judged 0.15 h2h-fresh-same
+  echo
+  echo "Done. Results: data/compare/h2h-fresh-*.json   Tapes: data/tapes/h2h-fresh-*.jsonl   Read: data/exp/same_read.py"
+  exit 0
+fi
+if [ "$mode" = sonnetsweep ]; then
+  echo
+  echo ">>> The agent-count sweep on $model: seeds 113 and 114 at a call limit of 8,000, one agent, 4, 10 and 20 parts and"
+  echo "    Genet. 60 trials, about \$9.40 and an hour; each seed stops itself before \$6.00."
+  echo "    Written before it ran: Haiku's bars at 8,000. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 113 114; do
+    held "sonnetsweep-s$seed-8000" 6.00 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+      --distractors 6 --strategies single,split-4,split-10,split-20,genet --context 8000 --tool-rounds 4 --max-calls 80
+  done
+  echo
+  echo "Done. Results: data/compare/sonnetsweep-*.json   Tapes: data/tapes/sonnetsweep-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = cache ]; then
+  echo
+  echo ">>> Prompt caching on the sweep's 64,000 questions: one agent, 4 parts and Genet, seeds 113 and 114, on $model."
+  echo "    36 trials, about \$0.25 and 30 minutes; each seed stops itself before \$0.50."
+  echo "    Written before it ran: answers within 1 of uncached; one agent's cost a question falls by at least 30%; cached,"
+  echo "    one agent costs at most 1.25 times 4 parts. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  export TASKORG_MODEL_CACHE=1
+  for seed in 113 114; do
+    held "cache-s$seed-64000" 0.50 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+      --distractors 6 --strategies single,split-4,genet --context 64000 --tool-rounds 4 --max-calls 80
+  done
+  echo
+  echo "Done. Results: data/compare/cache-*.json   Tapes: data/tapes/cache-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = mixed ]; then
+  echo
+  echo ">>> A mixed team: Haiku's lead and sub-agents, Sonnet's verifier, on seeds 108 and 110 with the rerun's settings."
+  echo "    The told crew and Genet, 120 trials, about \$2.20 and an hour; each step stops itself at its cap (\$3.80 in all)."
+  echo "    Written before it ran: it finishes wrong at most 1 time in 120 (Haiku alone 5), and is right on at least 105"
+  echo "    (Haiku alone 108). The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  export TASKORG_MODEL_NAME_VERIFY=claude-sonnet-5-5
+  shared="--context 8000 --tool-rounds 4 --author-rule headed --price claude-sonnet-5-5=2/10"
+  for seed in 108 110; do
+    held "mixed-s$seed-10" 1.20 compare --seed "$seed" --families lookup,aggregate,compare,breadth --per-family 6 \
+      --entities 10 --distractors 6 --strategies always-told,genet $shared
+    held "mixed-s$seed-20" 0.70 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+      --distractors 6 --strategies always-told,genet $shared
+  done
+  echo
+  echo "Done. Results: data/compare/mixed-*.json   Tapes: data/tapes/mixed-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = agents ]; then
+  echo
+  echo ">>> How many agents a task needs: the same 20-company questions split by the kernel into 2, 4, 10 or 20 parts,"
+  echo "    against one agent, the told crew and Genet, on $model. Seeds 113 and 114, at call limits of 8,000 (the files do"
+  echo "    not fit one call) and 64,000 (they do). 168 trials, about \$2.20 and 2.5 hours; each of 4 steps stops itself"
+  echo "    before \$1.50. The bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 113 114; do
+    for cap in 8000 64000; do
+      held "agents-s$seed-$cap" 1.50 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+        --distractors 6 --strategies single,split-2,split-4,split-10,split-20,always-told,genet --context "$cap" \
+        --tool-rounds 4 --max-calls 80
+    done
+  done
+  echo
+  echo "Done. Results: data/compare/agents-*.json   Tapes: data/tapes/agents-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = sonnettwo ]; then
+  echo
+  echo ">>> Claude Sonnet 5.5 on seed 110, with the rerun's settings, so each trial pairs with Haiku's. 66 trials, about"
+  echo "    \$5.40 and 30 minutes; each size stops itself before \$6.00."
+  echo "    Written before it ran: Sonnet finishes wrong at most 1 time in 66 (Haiku 2), and is right on both trials Haiku"
+  echo "    finished wrong. If so, the next test is a mixed team. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  shared="--context 8000 --tool-rounds 4 --author-rule headed"
+  held sonnet-s110-10 6.00 compare --seed 110 --families lookup,aggregate,compare,breadth --per-family 6 --entities 10 \
+    --distractors 6 --strategies always-told,genet $shared
+  held sonnet-s110-20 6.00 compare --seed 110 --families aggregate,breadth --entities 20 --distractors 6 --per-family 3 \
+    --strategies single,always-told,genet $shared
+  echo
+  echo "Done. Results: data/compare/sonnet-s110-*.json   Tapes: data/tapes/sonnet-s110-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = sonnet ]; then
+  echo
+  echo ">>> Claude Sonnet 5.5 on seed 108, with the rerun's settings, so each trial pairs with Haiku's. Two steps, a y each."
+  echo "    1. Calibration, 4 trials at 20 companies: about \$0.60 to \$1.10, stopping itself before \$1.50. A stop on size,"
+  echo "       a malformed reply or the API, or a trial near its time limit, and nothing more runs."
+  echo "    2. Seed 108, 66 trials: a firm estimate is shown after step 1, and it waits for a second y."
+  echo "    Written before it ran: Sonnet finishes wrong at most 1 time in 66 (Haiku 4), and is right on at least 3 of the 4"
+  echo "    trials Haiku finished wrong. The full bars are at the top of this script."
+  read -r -p "Run step 1 now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  shared="--context 8000 --tool-rounds 4 --author-rule headed"
+  twenty="--families aggregate,breadth --entities 20 --distractors 6"
+  held sonnet-calib 1.50 compare --seed 108 $twenty --per-family 1 --strategies always-told,genet $shared
+  # Stops on our settings, not the model's answers, end it here; otherwise a firm estimate from what Sonnet spent.
+  if ! "$PY" -I - <<'EOF'
+import json, sys
+rows = json.load(open("data/compare/sonnet-calib.json"))["results"]
+cost = [(r["prompt_tokens"] * 2 + r["completion_tokens"] * 10) / 1e6 for r in rows]
+for r, c in zip(rows, cost):
+    print(f"  {r['strategy']:<11} {r['task_id']:<12} {r['status']:<8} {r['code'] or '-':<7} {r['calls']:>2} calls "
+          f"{r['tokens']:>7,} tokens ${c:.3f} {r['latency_s']:>5.0f}s right={r.get('answer_right')}")
+bad = [r for r in rows if r["code"] in ("BUDGET", "SCHEMA", "LIVE") or r["latency_s"] > 450]
+mean = sum(cost) / max(1, len(cost))
+# Haiku's trial at 10 companies cost 0.373 of its trial at 20 on seed 108 (rerun-s108-10 and -20).
+estimate = mean * 18 + mean * 0.373 * 48
+print(f"step 1: ${sum(cost):.3f}; a trial at 20 companies ${mean:.3f}; step 2 about ${estimate:.2f} (caps $6.00 and $6.00)")
+if bad:
+    print("step 1 found stops on settings measured on Haiku, so step 2 was not run:", [(r["task_id"], r["code"]) for r in bad])
+    sys.exit(3)
+if estimate > 11:
+    print("step 2 would likely pass its caps, so it was not run")
+    sys.exit(4)
+EOF
+  then
+    echo "Results: data/compare/sonnet-calib.json"
+    exit 0
+  fi
+  read -r -p "Run step 2, seed 108 on Sonnet, at the estimate above? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Step 2 not run."; exit 0 ;;
+  esac
+  held sonnet-s108-10 6.00 compare --seed 108 --families lookup,aggregate,compare,breadth --per-family 6 --entities 10 \
+    --distractors 6 --strategies always-told,genet $shared
+  held sonnet-s108-20 6.00 compare --seed 108 $twenty --per-family 3 --strategies single,always-told,genet $shared
+  echo
+  echo "Done. Results: data/compare/sonnet-*.json   Tapes: data/tapes/sonnet-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = gapcheck ]; then
+  echo
+  echo ">>> A check in code: a product the verifier passed that says it has no figure for something, adds 0 for it or set"
+  echo "    it aside goes back once with the kernel's reason. Each trial replays from its tape; only the 19 the check sends"
+  echo "    back go to $model, three times each. About \$0.15 and 15 minutes; each of 33 steps stops itself before \$0.03."
+  echo "    Written before it ran, on the mean of three rounds: of the 10 that finished wrong, at most 3 still do; of the 9"
+  echo "    that finished right, at most 2 no longer do. If so, it becomes the default. The full bars are at the top."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  # Each tape with its recorded settings, so every request before the check is the tape's own.
+  shared="--context 8000 --tool-rounds 4 --max-calls 40 --verify-view independent --verify-sources layered --verify-rule both"
+  ten="--families lookup,aggregate,compare,breadth --per-family 6 --entities 10 --distractors 6"
+  twenty="--families aggregate,breadth --per-family 3 --entities 20 --distractors 6 --strategies single,always-told,genet"
+  for round in 1 2 3; do
+    while IFS='|' read -r tape words; do
+      held "gapcheck-r$round-$tape" 0.03 compare $words $shared --gap-check --then-live \
+        --replay "data/tapes/$tape.jsonl" </dev/null
+    done <<EOF
+rerun-s108-10|--seed 108 $ten --strategies always-told,genet --author-rule headed
+rerun-s108-20|--seed 108 $twenty --author-rule headed
+rerun-s109-10|--seed 109 $ten --strategies always-told,genet --author-rule headed
+rerun-s109-20|--seed 109 $twenty --author-rule headed
+rerun-s110-10|--seed 110 $ten --strategies always-told,genet --author-rule headed
+rerun-s112-20|--seed 112 $twenty --author-rule headed
+heldout-s101-10|--seed 101 $ten --strategies single,always-told,genet --no-rework-reason
+heldout-s102-10|--seed 102 $ten --strategies single,always-told,genet --no-rework-reason
+heldout-s103-10|--seed 103 $ten --strategies single,always-told,genet --no-rework-reason
+heldout-s103-20|--seed 103 $twenty --no-rework-reason
+heldout-s105-10|--seed 105 $ten --strategies single,always-told,genet --no-rework-reason
+EOF
+  done
+  echo
+  echo "Done. Results: data/compare/gapcheck-r*.json   Tapes, what went to the model: data/tapes/gapcheck-r*.jsonl"
+  exit 0
+fi
+if [ "$mode" = aside ]; then
+  echo
+  echo ">>> The named sentence narrowed: a product that says something the goal names has no figure, could not be found,"
+  echo "    counts as zero or was set aside has not answered it. On $model, about 15 minutes, about \$0.54 in two steps."
+  echo "    1. The gap test's 224 merges, about \$0.22, stops itself before \$0.30. The sentence was written from these, so"
+  echo "       this only checks it is worth the second step: past 1 wrong passed or 8 right failed, nothing more is run."
+  echo "    2. 318 merges not read for it, about \$0.32, stops itself before \$0.45. Written before it ran: aside passes at"
+  echo "       most 1 wrong product and fewer than both, and fails at most 5 more right ones than both. If so, it becomes the"
+  echo "       verifier's default. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  tapes=""
+  for name in s107-10 s107-20 s108-10 s108-20 s109-10 s109-20 s110-10 s110-20 s112-20; do
+    tapes="$tapes${tapes:+,}data/tapes/rerun-$name.jsonl"
+  done
+  held aside-insample 0.30 merge-bench --workers 4 --rules aside --tapes "$tapes"
+  # The first step against the gap test's own both: past its limits, the second is not worth paying for.
+  if ! "$PY" -I - <<'EOF'
+import json, sys
+def counts(path, rule):
+    rows = [r for r in json.load(open(path))["results"] if r["rule"] == rule]
+    return (sum(1 for r in rows if not r["right"] and r["verdict"] == "PASS"),
+            sum(1 for r in rows if r["right"] and r["verdict"] == "FAIL"))
+wrong_passed, right_failed = counts("data/compare/aside-insample.json", "aside")
+_, both_failed = counts("data/compare/gaprule-merges.json", "both")
+print(f"step 1: aside passed {wrong_passed} wrong (limit 1), failed {right_failed} right (both {both_failed}, limit {both_failed + 5})")
+sys.exit(0 if wrong_passed <= 1 and right_failed <= both_failed + 5 else 3)
+EOF
+  then
+    echo "Step 1 missed its limits, so step 2 was not run. Results: data/compare/aside-insample.json"
+    exit 0
+  fi
+  tapes=""
+  for name in heldout-s101-10 heldout-s101-20 heldout-s102-10 heldout-s102-20 heldout-s103-10 heldout-s103-20 \
+              heldout-s104-10 heldout-s104-20 heldout-s105-10 heldout-s105-20 whole-s106-10 whole-s106-20 whole-s107-10; do
+    tapes="$tapes${tapes:+,}data/tapes/$name.jsonl"
+  done
+  held aside-heldout 0.45 merge-bench --workers 4 --rules aside --tapes "$tapes"
+  echo
+  echo "Done. Results: data/compare/aside-insample.json and aside-heldout.json   Tapes: data/tapes/aside-*.jsonl"
+  exit 0
 fi
 if [ "$mode" = gaprule ]; then
   echo

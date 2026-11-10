@@ -116,7 +116,8 @@ def test_usage_counts_cache_reads_and_records_thinking():
                                             "cache_creation_input_tokens": None,
                                             "output_tokens_details": types.SimpleNamespace(thinking_tokens=30)}))
     a.act(_brief())
-    assert a.last_usage == {"prompt_tokens": 107, "completion_tokens": 50, "thinking_tokens": 30}
+    # The read is in the prompt's count, and kept apart too, since it costs a tenth.
+    assert a.last_usage == {"prompt_tokens": 107, "completion_tokens": 50, "cache_read_tokens": 7, "thinking_tokens": 30}
 
 
 def test_missing_usage_is_estimated_and_says_so():

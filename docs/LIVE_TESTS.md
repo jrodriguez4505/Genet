@@ -1,6 +1,6 @@
 # Live test log
 
-Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room, two benches and the verifier on real merges (3 November), the verifier's rule on new questions (3 November), two benches and a whole run (4 November), its rerun and a test of one more verifier sentence (5 and 6 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: those of 3 to 6 November as [tapes-20261106](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261106), 3 November's earlier runs as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
+Genet's runs against real models: the first comparison pilot on Claude, two reruns with fixes, 16-trial runs on Haiku 5.5 and Sonnet 5.5, three runs at a tight cap, and the concept experiments (27 October 2026), the aggregate rerun and the verify bench (28 and 29 October), reporting up, the cards, the verifier arms, three follow-ups, a side-by-side run, a told crew and a check of the fixes (2 November), a check of a sub-agent's room, two benches and the verifier on real merges (3 November), the verifier's rule on new questions (3 November), two benches and a whole run (4 November), its rerun and a test of one more verifier sentence (5 and 6 November), a narrower sentence and a check in code (7 November), how many agents a task needs on three models (7 and 8 November), a head-to-head with CrewAI on public documents (9 November), and 13 runs of v0.1 on xAI's endpoint (31 August and 1 September 2026). The tapes and results are published as GitHub releases: those of 3 to 6 November as [tapes-20261106](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261106), 3 November's earlier runs as [tapes-20261103](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261103), 2 November's as [tapes-20261102](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261102), and those through 29 October as [tapes-20261029](https://github.com/jrodriguez4505/Genet/releases/tag/tapes-20261029), with a replay command for each; the run files in `data/` stay on the operator's machine.
 
 ## 27 October 2026: comparison pilot on Claude Haiku 5.5
 
@@ -614,6 +614,376 @@ One right answer has no verdict under `both`: its reply did not parse.
 - **What this does not show.** It is one review of each product under each rule, on one model, and these are the products the sentence was written from. They were not reviewed under the source rule alone, so this cannot say whether the v0.10.0 rule let them through. A narrower sentence, failing only a product that says it set a named company aside, would keep these catches and fail fewer lists. It is untested, and would need new questions.
 
 All 448 reviews replay with the same results.
+
+## 7 November 2026: a narrower sentence, and a check in code
+
+Both tests go after the harm above: products that set a named company aside, answer anyway, and pass review. Neither is turned on.
+
+### A narrower sentence
+
+`bash scripts/team_runs.sh aside`. The named sentence narrowed to what a product says of itself: "A product that says something the goal names has no figure, could not be found, counts as zero or was set aside has not answered the goal: FAIL it and name what is missing. Keeping out look-alike names or other periods' figures is not this, and a product need not list every figure it used." Two steps for one go-ahead. The first reviewed the gap test's 224 products, which the sentence was written from, so it could not decide anything: it only guarded the second step's spend. The second would have reviewed 318 products no sentence was written from. The first step cost $0.21, against an estimate of $0.22 and a cap of $0.30.
+
+| Rule, on the gap test's 224 products | Wrong passed, of 37 | Right failed, of 187 |
+|---|---|---|
+| Both | 6 | 3 |
+| Named | 0 | 25 |
+| Aside | **2** (limit 1) | **17** (limit 8) |
+
+- **It missed even where it was written from, so the second step did not run.** It fell between the two rules it was meant to improve on.
+- **It failed 14 right products that list some companies' figures**, the case its last sentence excludes, and 3 more over their subtotals.
+- **It passed two wrong products that say just what it describes.** One says Cobalt Ridge "has no FY2026 Q1 figure of its own"; one says Ambergate's figure "is excluded". On Haiku 5.5 the verifier does not reliably tell a list that names some companies from a product that says one has no figure.
+
+### A check in code
+
+The same test as a check the kernel makes, not words for the model: `--gap-check`, off by default. A product the verifier passed whose own words say it has no figure for something, adds 0 for it or set it aside goes back once, with the kernel's reason ("The product says: ... Find that figure in the workspace's files and answer with it"). A product sent back for that which still says so stops the run. The pattern was fixed from the gap test's products and not changed after. On the 318 products no rule was written from, it matched 3 of the 5 wrong products the default rule passes, and 8 right ones.
+
+Before any spend, every rerun and held-out tape was replayed on today's code with and without the check (`data/exp/gapcheck_dry.py`). Of about 1,000 trials, exactly 19 change: the check sends back 10 products that finished wrong and 9 that finished right. That dry run also showed that checking again after the verifier's own reworks stopped 5 right answers and no wrong one, so the second look applies only after a rework the check asked for.
+
+`bash scripts/team_runs.sh gapcheck` then ran those 19 three times. Each trial replays from its tape, and from the request that carries the kernel's reason onward it goes to Haiku and is recorded (`compare --then-live`). Any other way off the tape fails as a replay miss and spends nothing. 33 steps cost $0.13, against an estimate of $0.15 and caps of $1.00. Every other trial matched the dry run.
+
+| Round | Wrong, still wrong | Wrong, put right | Wrong, stopped | Right, still right | Right, stopped |
+|---|---|---|---|---|---|
+| 1 | 1 | 0 | 9 | 6 | 3 |
+| 2 | 4 | 0 | 6 | 3 | 6 |
+| 3 | 3 | 0 | 7 | 4 | 5 |
+
+| The bar, on the mean of three rounds | Needed | Result |
+|---|---|---|
+| Of 10 that finished wrong, still finish wrong | at most 3 | **2.67** |
+| Of 9 that finished right, no longer finish right | at most 2 | **4.67** |
+
+- **The check stays off: it stops wrong answers, and as many right ones.** It turned about 7 of 10 wrong finishes into stops, and about 5 of 9 right finishes into stops too, where the bar allowed 2. One right stop in round 3 was on its budget; the rest were the verifier, after a rework that added "provisional" or kept the sentence.
+- **No rework put a wrong answer right, in 30 tries.** The leads were told the sentence and asked to find the figure, and in 31 of 51 reworks they asked to read files. They read, and still could not settle which figure was the company's. So what is left of the harm is reading: a true figure next to a prior-year sentence or a look-alike's note. A check after the fact can stop such an answer, but cannot make it right.
+- **What this does not show.** These are 19 trials of about 1,000, 11 of them on the tapes the pattern was written from. Whether a stronger model reads these files right is untested.
+
+The live part of each trial is on its own tape, `gapcheck-r<round>-<tape>`. Replaying it needs the original tape as well, and the replay command does not yet take two.
+
+### Sonnet 5.5 on seed 108
+
+`bash scripts/team_runs.sh sonnet`: the first run on Sonnet since 27 October, to ask whether the harm left is Haiku's reading. Seed 108 has the most of Haiku's finished-wrong answers, and the run used the rerun's settings, so each trial pairs with Haiku's on the same question and strategy. A calibration of 4 trials at 20 companies came first, since the kernel's sizes and reply room were measured on Haiku: all 4 right, no stop on size, a malformed reply or the API, the longest 48 of its 600 seconds, $0.53. The 66 trials then cost $5.82, against an estimate of $4.74 and caps of $12.00. Haiku's same 66 cost $0.47.
+
+| Size | Strategy | Trials | Sonnet right | Sonnet wrong | Sonnet stops | Haiku right | Haiku wrong | Haiku stops | Tokens a trial, Sonnet / Haiku |
+|---|---|---|---|---|---|---|---|---|---|
+| 10 | Told crew | 24 | 24 | 0 | 0 | 22 | 1 | 1 | 21,342 / 25,125 |
+| 10 | Genet | 24 | 24 | 0 | 0 | 23 | 0 | 1 | 19,824 / 21,620 |
+| 20 | Single | 6 | 0 | 0 | 6 | 0 | 1 | 5 | 54,253 / 55,643 |
+| 20 | Told crew | 6 | 6 | 0 | 0 | 5 | 0 | 1 | 41,114 / 62,998 |
+| 20 | Genet | 6 | 5 | 0 | 1 | 2 | 2 | 2 | 46,277 / 68,249 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Sonnet finishes wrong, of 66 | at most 1 | **0** (Haiku 4) |
+| Right on the 4 trials Haiku finished wrong | at least 3 | **2** |
+
+- **One bar held and one missed by a trial, so by the rule written first the harm is not only the model's and stays open.** Sonnet finished no answer wrong, against Haiku's 4, and was right on 59 of 66 against 52.
+- **Its two misses on Haiku's wrong trials were stops, not wrong answers.** Genet's aggregate-2 merged the right total, 886.1, and the verifier, now Sonnet, failed it: it read Kestrel Mill Supply's April to June figure as the look-alike Kestrel Mills', the trap Haiku's authors fell into, then failed the rework on another point. Single's breadth-2 said its answer was incomplete, with 9 of 20 files unread.
+- **Single cannot do 20 companies at this cap on Sonnet either.** All 6 stopped, each having said what it had not read. The told crew got 6 of 6 and Genet 5 of 6, against 5 and 2 on Haiku.
+- **Sonnet used fewer tokens a trial than Haiku**, most at 20 companies, and cost about twelve times as much.
+- **What this does not show.** One seed, so only a large difference shows. The verifier and the authors were the same model, so this cannot say which one's reading made the difference.
+
+All three tapes are `sonnet-calib`, `sonnet-s108-10` and `sonnet-s108-20`.
+
+### Sonnet 5.5 on seed 110
+
+`bash scripts/team_runs.sh sonnettwo`: the same on a second seed, with no calibration, at $5.80 against an estimate of $5.40 and caps of $12.00. Seed 108's missed bar stands whatever this shows. The bars here: Sonnet finishes wrong at most once in 66, and is right on both trials Haiku finished wrong; if both hold, the next test is a mixed team.
+
+| Size | Strategy | Trials | Sonnet right / wrong / stops | Haiku right / wrong / stops |
+|---|---|---|---|---|
+| 10 | Told crew | 24 | 24 / 0 / 0 | 23 / 1 / 0 |
+| 10 | Genet | 24 | 23 / 0 / 1 | 23 / 1 / 0 |
+| 20 | Single | 6 | 0 / 0 / 6 | 1 / 0 / 5 |
+| 20 | Told crew | 6 | 5 / 0 / 1 | 5 / 0 / 1 |
+| 20 | Genet | 6 | 5 / 0 / 1 | 5 / 0 / 1 |
+
+- **Both bars held.** Sonnet finished nothing wrong (Haiku 2), and named Cobalt Ridge on both breadth-6 trials where Haiku named Halvorsen Freight.
+- **But it was not right more often.** 57 of 66 on each model. Sonnet's verifier stopped three right answers that Haiku's passed (991.8, 1082.2, and Cobalt Ridge on breadth-5), so on this seed Sonnet traded two wrong answers for stops.
+- **Across both seeds:** Sonnet finished wrong 0 times in 132, against Haiku's 6, and was right on 116 against 109. Its verifier failed 4 right answers, Haiku's on the same trials 0 of those. Sonnet cost $11.62 for the 132; Haiku $0.90.
+- **So the next question is which role needs Sonnet.** The authors' reading, the verifier's, or both: a mixed team can tell, and may get most of the gain at a fraction of the cost.
+
+### Haiku authors with Sonnet checking
+
+`bash scripts/team_runs.sh mixed`, on 8 November: Haiku 5.5 as the lead and sub-agents, Sonnet 5.5 as the verifier (`TASKORG_MODEL_NAME_VERIFY`), on seeds 108 and 110 with the rerun's settings, the told crew and Genet. Each call records the model that answered and is priced at that model's rate (`compare --price`). 120 trials cost $2.39, against an estimate of $2.20 and caps of $3.80. The other way round, Sonnet reading and Haiku checking, would have cost about $8.14 by the tapes, close to Sonnet alone, so it was not run.
+
+| 120 trials | Right | Finished wrong | Stopped | Cost |
+|---|---|---|---|---|
+| Haiku alone | 108 | 5 | 7 | $0.74 |
+| Haiku authors, Sonnet checking | 102 | 2 | 16 | $2.39 |
+| Sonnet alone | 116 | 0 | 4 | $9.53 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Finished wrong | at most 1 | **2**, misses |
+| Right | at least 105 | **102**, misses |
+
+- **By the rule written first, the reading needs Sonnet.** A stronger checker over Haiku's authors cut wrong answers from 5 to 2, but it did not get Sonnet's result, and it cost right answers.
+- **It stopped what it could not trust, right or wrong.** Of Haiku's 5 wrong answers on these trials, 3 came out right and 1 stopped; one stayed wrong, and one new wrong answer appeared. But stops more than doubled, to 16. Some were fair: products that said "partial" or "pending" after a rework. Some were right totals the Sonnet verifier failed (1082.2, 1027.3, 1047.0), as it had on Sonnet's own runs.
+- **The authors are the ones to strengthen.** The errors start where a true figure sits next to a prior-year line or a look-alike's note, and the author sets it aside. A checker can only send that back, and Haiku's reworks did not fix it, here or in the gap check.
+
+### Opus 5.5 on seed 108
+
+`bash scripts/team_runs.sh opus`, on 8 November: three models on the same 66 trials, with the rerun's settings. A calibration of 4 trials came first: all right, no stop on size, a malformed reply or the API, the longest 59 of its 600 seconds, $1.17. The 66 trials then cost $11.78, against an estimate of $10.49 and caps of $16.00.
+
+| Seed 108 | Haiku 5.5 | Sonnet 5.5 | Opus 5.5 |
+|---|---|---|---|
+| 10 companies, told crew, of 24 | 22 right, 1 wrong | 24 right | 23 right, 1 wrong |
+| 10 companies, Genet, of 24 | 23 right | 24 right | 24 right |
+| 20 companies, one agent, of 6 | 0, 1 wrong | 0 | 0 |
+| 20 companies, told crew, of 6 | 5 | 6 | 6 |
+| 20 companies, Genet, of 6 | 2, 2 wrong | 5 | 6 |
+| All, of 66 | 52 right, 4 wrong | 59 right, 0 wrong | 59 right, 1 wrong |
+| Cost, and a right answer | $0.46, $0.009 | $5.82, $0.099 | $11.78, $0.200 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Opus finishes wrong | at most 1 of 66 | **1**, holds |
+| Splitting at 20 companies | crew and Genet right on at least 9 of 12, one agent on at most 1 of 6 | **12 and 0**, holds |
+
+- **Both bars held.** Opus was right on as many as Sonnet, at twice the price. Its one wrong answer was a sum off by 0.1 (469.9 for 469.8), not a figure set aside; on Genet's aggregate-2 at 20 companies, where Haiku took a look-alike's figure and Sonnet's verifier failed the right total, Opus answered 886.1 and passed.
+- **The design holds across three models.** On all three, one agent cannot do the 20-company work at this limit, and the told crew and Genet can: 7, 11 and 12 of 12. The wrong answers that remain are the smallest model's.
+- **Genet at 20 companies tracked the model: 2, 5 and 6 of 6.** The lead's plan was the weak part on Haiku; with a stronger reader it matched the crew.
+
+## 7 and 8 November 2026: how many agents a task needs
+
+`bash scripts/team_runs.sh agents`, on Haiku 5.5. Genet began as a question about teams of hundreds of agents: does each one do new work? This sweep asks it directly. The kernel split the files a question names into 2, 4, 10 or 20 parts (`split-N`: one sub-agent a part, no planning call, no gates, the lead merges), against one agent, the told crew and Genet. Questions over all 20 companies, 6 on each of seeds 113 and 114, which no tape had used. Twice: at a call limit of 8,000 tokens, where the 20 files (about 17,500 tokens) do not fit one call, and at 64,000, where they do. Every strategy got 80 calls. 168 trials cost $2.09, against an estimate of $2.20 and caps of $6.00; no part failed on a rate limit. Genet's cap of 4 sub-agents became a setting for this (`Engine(max_workers=...)`, 4 by default); every run before replays the same.
+
+| Call limit 8,000 | Right of 12 | Wrong | Stops | Tokens a question | Calls |
+|---|---|---|---|---|---|
+| One agent | 1 | 1 | 10 | 54,122 | 10.5 |
+| 2 parts | 0 | 0 | 12 | 42,199 | 7.8 |
+| 4 parts | 10 | 0 | 2 | 51,630 | 11.8 |
+| 10 parts | 11 | 0 | 1 | 64,612 | 22.2 |
+| 20 parts | 9 | 1 | 2 | 97,744 | 42.2 |
+| Told crew | 11 | 0 | 1 | 50,459 | 12.2 |
+| Genet | 9 | 0 | 3 | 54,087 | 12.6 |
+
+| Call limit 64,000 | Right of 12 | Wrong | Stops | Tokens a question | Calls |
+|---|---|---|---|---|---|
+| One agent | 11 | 0 | 1 | 81,708 | 7.5 |
+| 2 parts | 12 | 0 | 0 | 53,102 | 8.2 |
+| 4 parts | 12 | 0 | 0 | 40,877 | 10 |
+| 10 parts | 12 | 0 | 0 | 63,647 | 22 |
+| 20 parts | 9 | 2 | 1 | 100,293 | 42.5 |
+| Told crew | 11 | 0 | 1 | 68,844 | 12.2 |
+| Genet (one agent every time) | 11 | 1 | 0 | 90,038 | 8.2 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| 8,000: splitting is needed | best split at least 6 more right than one agent | **11 against 1**, holds |
+| 8,000: past a handful, more agents do not pay | 20 parts no more right than the better of 4 and 10, at 1.3 times its tokens or more | **9 against 11, 1.51 times**, holds |
+| 8,000: Genet's own plan | within 1 of the best split, at most 1.2 times its tokens | **9 against 11**, 0.84 times, misses |
+| 64,000: one is enough | no split more than 1 right more than one agent | **12 against 11**, holds |
+| 64,000: Genet stays one agent | at least 10 of 12 | **12**, holds |
+
+- **About four was the right number.** At both limits 4 parts cost the fewest tokens of the settings that worked, and were as right as any. Ten parts were as right for 1.25 to 1.55 times the tokens.
+- **Twenty agents did worse and cost about twice as much.** They were right on 9 of 12 at both limits, and made 3 of the sweep's 5 wrong finishes: totals from 20 reports that left a company out or took a look-alike's figure (952.8, 932.3), and one right name the grader could not read for the figure after it. Each part saw one file, so none could set a company against its look-alike, and the merge had 20 reports to add.
+- **Too few fails when a part does not fit.** At 8,000, 2 parts of 10 files stopped on size 10 times of 12. At 64,000 they were fine.
+- **Where the work fits, splitting was still cheaper.** At 64,000 one agent spent 81,708 tokens a question, and 4 parts 40,877, at least as right. One agent sends everything it has read again with every round; a part carries only its share. Genet's rule splits only work that does not fit one call, so it stayed one agent every time, at 2.2 times what 4 parts spent. The simulator showed the same on 27 October; this is the first live measure. Genet does not use prompt caching, under which a re-sent prefix costs about a tenth, and that may close much of this gap: test it before the rule changes.
+- **Genet's own plan missed its bar by one question.** Its leads staffed 4 parts in 11 of 12, as the told crew's did. It lost one to a size stop, one to a refused part and one to a look-alike it left unresolved; the crew lost one. Twelve questions cannot tell that from noise, but by the bar the lead's plan is the weak part, not the count.
+- **What this does not show.** It is a small model of large work: 20 files of about 900 tokens. One model. Twelve questions a cell, so differences of one or two are noise.
+
+The tapes are `agents-s113-8000`, `-s113-64000`, `-s114-8000` and `-s114-64000`.
+
+### Prompt caching on the questions that fit
+
+`bash scripts/team_runs.sh cache`, on 8 November. With `TASKORG_MODEL_CACHE=1`, a call that may go on to tool rounds is sent in blocks cut where each round begins, the newest round marked, so the next round reads what came before from the cache at a tenth of the input price; a write costs a quarter more. The model reads the same text. The sweep's 64,000 questions again, one agent, 4 parts and Genet, 36 trials, $0.31 against an estimate of $0.25 and caps of $1.00.
+
+| Strategy | Right, uncached / cached | Cost a question, uncached / cached | Calls a trial, uncached / cached |
+|---|---|---|---|
+| One agent | 11 / 9 | $0.0129 / $0.0090 | 7.5 / 5.8 |
+| 4 parts | 12 / 11 | $0.0079 / $0.0080 | 10.0 / 10.0 |
+| Genet (one agent every time) | 11 / 11 | $0.0140 / $0.0089 | 8.2 / 6.6 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Answers hold | each within 1 of uncached | **one agent 9 against 11**, misses |
+| Caching pays | one agent's cost a question down 30% or more | **29.8%**, misses |
+| The gap | cached one agent at most 1.25 times cached 4 parts | **1.12**, holds |
+
+- **Caching stays off: both bars it needed missed.** One by a hair, one by an answer.
+- **Most of the sweep's cost gap was the missing cache.** Cached, one agent cost 1.12 times what 4 parts did, against 1.63 times uncached in this run's terms. So, with caching, the should-we rule would need no cost term. 4 parts gained nothing from it: a part reads in one or two rounds, and the write costs more than the reads save.
+- **But the cached single agent read less and was wrong more.** It made 5.8 calls a trial against 7.5, and finished 3 answers wrong where uncached it finished none, one of them a look-alike (Halvorsen Freight Labs). Genet, also one agent here, made fewer calls too and kept its 11. Twelve trials cannot tell the block format from chance, so before caching is used, the uncached and cached single agent need running again side by side.
+
+### The sweep on Sonnet 5.5
+
+`bash scripts/team_runs.sh sonnetsweep`, on 8 November: the sweep's 8,000 questions again, seeds 113 and 114, on Sonnet 5.5, to see whether "about four" holds on a stronger reader. One agent, 4, 10 and 20 parts and Genet, 80 calls each, Haiku's bars. 60 trials cost $10.76, against an estimate of $9.40 and caps of $12.00.
+
+| Call limit 8,000, of 12 | Right, Sonnet | Right answer, Sonnet | Tokens a question, Sonnet | Right, Haiku | Tokens a question, Haiku |
+|---|---|---|---|---|---|
+| One agent | 0 | 0 | 54,203 | 1 | 54,122 |
+| 4 parts | 11 | 12 | 38,770 | 10 | 51,630 |
+| 10 parts | 12 | 12 | 60,607 | 11 | 64,612 |
+| 20 parts | 12 | 12 | 91,285 | 9 | 97,744 |
+| Genet | 11 | 12 | 41,347 | 9 | 54,087 |
+
+"Right answer" counts the product's answer whatever the verifier said; "right" also needs it verified.
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Splitting is needed | best split at least 6 more right than one agent | **12 against 0**, holds |
+| Past a handful, more agents do not pay | 20 parts no more right than the better of 4 and 10, at 1.3 times its tokens or more | **12 against 12, 1.51 times**, holds |
+| Genet's own plan | within 1 of the best split, at most 1.2 times its tokens | **11 against 12, 0.68 times**, holds |
+
+- **On Sonnet the count changed the cost, not the answer.** Every split got the right answer on all 12 questions, at 4, 10 and 20 parts alike. Nothing finished wrong in 60 trials. The two that stopped were right totals (1106.0) the Sonnet verifier failed, one under 4 parts and one under Genet, as it did on seeds 108 and 110.
+- **About four still holds, now on cost alone.** 4 parts spent 38,770 tokens a question, 10 parts 1.56 times that and 20 parts 2.35 times, for no more right answers. At Sonnet's price that is $0.114, $0.190 and $0.297 a question.
+- **Twenty agents' wrong answers on Haiku were the smaller model's.** Haiku's 20-part merges left a company out or took a look-alike's figure; Sonnet's added the same 20 reports right every time. The cost of twenty does not depend on the model; the risk does.
+- **Genet's own plan held its bar here, where on Haiku it missed by one.** Its leads staffed 4 parts every time (Haiku's 11 of 12), none refused, at 1.07 times the fixed 4 parts' tokens.
+- **One agent failed honestly.** It could not read 20 files at this limit on either model. On Sonnet, 10 of its 12 answers said they were incomplete, provisional or partial, and the verifier stopped all 12, including the two that named a wrong company from the files it had read without saying so. The limit is the one we set, so this says only that splitting works when the work does not fit one call.
+- **What this does not show.** The same 12 questions as Haiku's, so the pairing is exact but small. One call limit; the 64,000 half was not rerun.
+
+The tapes are `sonnetsweep-s113-8000` and `sonnetsweep-s114-8000`.
+
+## 9 November 2026: a head-to-head with CrewAI on public documents
+
+`bash scripts/team_runs.sh headtohead`: Genet against CrewAI 1.15.30 on two public benchmarks, with the plan and its bars written first in [HEAD_TO_HEAD.md](HEAD_TO_HEAD.md).
+- **Model and limits:** Haiku 5.5 at effort low. Each trial got a call limit of 100,000 tokens, 80 calls, 1,200 seconds and pages of 16,000 characters. Genet's agents get 6 tool rounds.
+- **CrewAI's setup:** hierarchical, a manager and 4 readers, on CrewAI's own Anthropic provider with native tool calls. Genet's raw client sits underneath it, so every call was sized, capped, priced and taped the same way.
+- **Loong:** 40 questions over 2024 SEC filings, 10 each of spotlight, comparison, clustering and chain. Each question carries 240,000 to 517,000 characters of filings. Sonnet 5.5 judged the answers with Loong's own prompt.
+- **HotpotQA:** 20 distractor questions, scored by exact match.
+- **Cost:** the calibration cost $0.26. The main run cost $2.59: Loong $1.92, HotpotQA $0.19 and the judge $0.48. The rough estimate before calibration was $10 to $16.
+
+One rule changed after the calibration and before the main run had results. Right on Loong became a judge score of at least 80 in a finished run, where the plan had said 100. Sonnet gave 92 to 97 to calibration answers that matched the gold one, one of them word for word, so no answer reached 100 (see HEAD_TO_HEAD.md).
+
+| Loong, of 40 | One agent | Told crew | Genet | CrewAI |
+|---|---|---|---|---|
+| Right | 22 | 20 | 20 | **25** |
+| Right answer, stopped or not | 25 | 22 | 21 | 25 |
+| Finished wrong | 15 | 14 | 12 | 15 |
+| Stopped by the checker | 3 | 6 | 8 | none; CrewAI has no checker |
+| Loong's average score | 68.7 | 59.8 | 59.4 | 66.7 |
+| Score of 100 | 2 | 2 | 1 | 0 |
+| Split | 0 | 40 | 13 | 40 |
+| Tokens a question | 74,697 | 94,722 | 87,694 | 127,338 |
+| Cost a right answer | $0.016 | $0.025 | $0.022 | $0.024 |
+
+| HotpotQA, of 20 | One agent | Told crew | Genet | CrewAI |
+|---|---|---|---|---|
+| Right, exact match | 12 | 9 | 12 | 8 |
+| Split | 0 | 20 | 0 | 20 |
+| Tokens a question | 8,329 | 18,625 | 10,010 | 12,798 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Loong accuracy | Genet at least the best of the others less 3 | **20 against CrewAI's 25**, misses |
+| Loong cost | Genet's tokens a question and cost a right answer at most CrewAI's | **87,694 and $0.022 against 127,338 and $0.024**, holds |
+| Loong wrong finishes | Genet at most CrewAI's | **12 against 15**, holds |
+| HotpotQA, one agent is enough | Genet one agent on at least 18 of 20 | **20 of 20**, holds |
+| HotpotQA at its cost | Genet within 1 right of one agent, at most 1.3 times its tokens | **12 against 12, 1.20 times**, holds |
+
+- **CrewAI was right on 5 more Loong questions than Genet.** Its answers, read side by side, account for the gap:
+  - 3 were Genet's own misses: a count of 1 where the answer was 2, and two "cannot be determined", one of them after a split.
+  - 1 was a right answer stopped by Genet's checker.
+  - 1 came, net, from the judge scoring the same content differently: 62 against 80 and 72 against 82 went against Genet, 80 against 72 went for it.
+- **The loss is where Genet split.** Its lead proposed on 14 questions; the gates refused one part, and Genet split on 13. On those 13 Genet was right on 4, and its checker stopped 5. One agent and CrewAI were right on 7 each, and the told crew on 4. On the 27 questions Genet kept single, it was right on 16, against one agent's 15. So the gate kept what one agent does. Genet's own team did worse than CrewAI's crew and one agent wherever it ran, whether the lead was told to split (the told crew) or the gates decided (Genet). That team is the lead, the parts, the merge and the checker.
+- **One agent came close to CrewAI.** It was right on 22 against 25, at 59% of CrewAI's tokens. With a 100,000-token call and paged reads, most of these questions fit one agent.
+- **The checker trades both ways.** It stopped right answers: 3 of one agent's, 2 of the told crew's and 1 of Genet's. Its contenders finished wrong 12 to 15 times, CrewAI 15.
+- **The cut-off decides the accuracy bar.** The judge docks points for detail it cannot check, and CrewAI's answers carry more of it. At a score of 95 or more, one agent has 17 right and CrewAI 7.
+
+  | Cut-off | One agent | Told crew | Genet | CrewAI | Bar |
+  |---|---|---|---|---|---|
+  | 70 | 22 | 20 | 21 | 26 | misses |
+  | 80, the rule set before results | 22 | 20 | 20 | 25 | misses |
+  | 90 | 21 | 17 | 19 | 19 | would hold |
+
+  The rule was set from the calibration before results, so the bar misses.
+- **Chain questions failed for everyone,** 0 to 2 right of 10. Loong's gold answers label years by when a filing was made, so their "2023 to 2024" is fiscal 2022 to 2023. Every contender read the fiscal years correctly.
+- **On HotpotQA the gate kept short work single.** Genet stayed one agent on all 20 questions and matched one agent's 12 right at 1.20 times its tokens.
+  - CrewAI's 8 by exact match is 12 in substance. Four right answers came wrapped in `<answer>` tags, because its agents took our own instruction, "ANSWER: &lt;answer&gt;", literally.
+  - Exact match is strict for everyone: "Rob Sitch" for Robert Ian "Rob" Sitch counts as wrong.
+- **Every tape replays exactly:** 256 trials and 176 verdicts, with no request missing from its tape. 20 verdicts read by hand agree with the answers they score.
+- **The run took about 5 hours by the clock, against 1.4 hours of trial time.** It paused between trials, probably while the Mac slept. No trial stopped on time or on the API.
+- **What this does not show:**
+  - One subset of one benchmark, at one call limit, on one model, so a difference of 3 or fewer of 40 is noise.
+  - CrewAI as we configured it, not as an expert would.
+  - A judge whose wording moves a score by a few points either way.
+  - Prompts that ask for "ANSWER: &lt;answer&gt;", which is our wording.
+
+### Why Genet's splits lost: the tapes read again
+
+Every Genet-side Loong trial was replayed from its tape with its whole record kept: the plan, each part's report, every merge, and the checker's verdicts. No calls were made. The script is `data/exp/h2h_splits_read.py`.
+- **The lead's choice to stay single was sound.** It was asked to plan on all 40 questions, since no question fits one call. It kept 26 to one agent, saying one agent could search each filing in turn. On those it was right on 16, against one agent's 15.
+- **Splits lost on line names.** Loong's questions use generic line names such as 'Total Operating Revenue', 'long-term borrowings' and 'Cash and Cash Equivalents at End of Period'. Its instruction says to ignore content not found in the statements. On 9 questions, a split run's parts reported that the named line is not in their filing, and gave the closest one: "no line labeled 'Total Operating Revenue'; the closest is 'Revenue'". On those 9:
+
+  | Of the 9 questions | Right |
+  |---|---|
+  | One agent | 6 |
+  | CrewAI | 6 |
+  | Genet | 3 |
+  | Told crew | 3 |
+
+  That is the whole of Genet's deficit against one agent on the questions it split, and 3 of its 5 against CrewAI.
+- **How each of Genet's three losses went.** The parts each flagged the missing name. The lead's merge carried the flags up as a hedge: "cannot be determined", "3, or 2 on a strict reading", "undetermined". The checker failed it as not an answer, and the rework went one of three ways:
+  - Still hedged, on total operating revenue.
+  - Strict and wrong, on the cash count: it counted only exact labels and answered 1 for 2.
+  - Right, but failed again as resting on an estimate, on long-term borrowings.
+
+  One agent and CrewAI's manager used the nearest line without comment. A single agent reads every filing itself, so a name that does not match never reaches the lead as three separate caveats.
+- **Without such a flag, splits mostly worked.** On the questions that are not chain questions, the told crew was right on 18 of 22 and Genet on 3 of 5.
+- **The checker failed products on 11 of Genet's 40 trials** (19 FAILs), 8 of the told crew's (14) and 10 of one agent's (13). It stopped right answers 1, 2 and 3 times.
+- **The fix, built on the operator's go-ahead and run on the 9 questions (below).** `--author-rule wording` tells every writer, but not the plan or the checker, that a filing may name a line differently from the goal. Where no line carries the goal's name, they use the line that measures the same thing, say which, and answer.
+  - `bash scripts/team_runs.sh wording` reruns the told crew and Genet with that note, a y for each step:
+    1. The 9 questions, about $0.35.
+    2. All 40, about $1.25.
+  - The bars are at the top of that script, written before the run. On the 9, together right on at least 9 of 18, against 6, with at most 4 wrong. On the 40:
+    - Genet right on at least 22;
+    - each team right on at least 16 of the other 31;
+    - Genet wrong at most 15 times.
+  - The scorer is `data/exp/wording_read.py`.
+
+### The wording note on the 9 questions
+
+`bash scripts/team_runs.sh wording`, step 1, on 9 November. The told crew and Genet reran the 9 questions with `--author-rule wording`, on the same model, limits and judge. The run cost $0.26: $0.21 for 18 trials and $0.05 for the judge.
+
+| The 9 questions | Right | Finished wrong | Stopped by the checker | Tokens a question |
+|---|---|---|---|---|
+| Told crew, 9 November | 3 | 3 | 3 | 120,814 |
+| Told crew, with the note | 4 | 3 | 2 | 80,645 |
+| Genet, 9 November | 3 | 1 | 5 | 143,672 |
+| Genet, with the note | 4 | 3 | 2 | 91,126 |
+| One agent, 9 November | 6 | 2 | 1 | 89,773 |
+| CrewAI, 9 November | 6 | 3 | 0 | 99,287 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Together right | at least 9 of 18 | **8**, misses |
+| Together finished wrong | at most 4 | **6**, misses |
+
+By the rule written first, step 2 did not run, and the note stays off.
+- **The writers did what the note asked.** Parts named the line they used and answered with it. Merges gave an answer in place of "cannot be determined". The checker's stops fell from 8 to 4, and the two teams used about a third fewer tokens.
+- **Long-term borrowings was fixed for both.** Each team named Broad Street Realty, and the checker passed it.
+- **The checker had not been told.** It failed products for using a nearest line, as the note asked: "substitutes closest-match lines". On total operating revenue, Genet's answer was right (88) and stopped. Its rework compared a figure from the wrong quarter, and the checker caught that.
+- **"The line that measures the same thing" also reached too far.** On the cash count both teams counted Cross Timbers' "Cash and short-term investments" and answered 3. Loong's answer is 2, which one agent gave. On undistributed profits, a proxy line led Genet to a wrong company, and the checker passed it on rework.
+- **Stops became wrong finishes.** Four of the old stops now finish with a wrong answer: total profit for both teams, undistributed profits for Genet, and a grouping by change in cash for the told crew. Two of the told crew's old wrong finishes now stop instead. That is why wrong finishes rose from 4 to 6.
+- **Reading.** Telling writers to substitute fixes the hedging. Without a rule for when a nearby line is the same measure, it trades stops for wrong answers. The checker then disagrees with the writers about substitution, in both directions. Both tapes replay exactly: 18 trials and 18 verdicts.
+- **Next, on the operator's go-ahead: a narrower note, tested on new questions (below; it missed both bars).**
+  - `--author-rule same` tells writers to use only a line that is the same measure under another name, and to say which. A line that adds or leaves out items does not count.
+  - `--verify-rule same` tells the checker not to fail that, and to fail a different measure.
+  - Changes tuned on these 9 questions could fit them, so the test uses 12 Loong questions no earlier run used. They are 6 comparison and 6 clustering, drawn before the run (`compare --which fresh`, seed 1109). The told crew and Genet answer them once with today's briefs and once with the note.
+  - `bash scripts/team_runs.sh samenote`, about $0.70. The bars, written first: with the note, together right on at least 2 more of 24, and finished wrong no more often.
+  - With 12 questions, a hold would only justify the larger run, not settle the question.
+
+### The same-measure note on 12 fresh questions
+
+`bash scripts/team_runs.sh samenote`, on 9 November: the told crew and Genet on 12 Loong questions no earlier run used, once without the note and once with it. The note was `--author-rule same --verify-rule same`. The run cost $0.74: $0.34 without the note, $0.25 with it, and $0.15 for the judge.
+
+| 12 fresh questions | Right | Finished wrong | Stopped by the checker | Split | Tokens a question |
+|---|---|---|---|---|---|
+| Told crew, without the note | 6 | 3 | 3 | 12 | 68,085 |
+| Told crew, with the note | 6 | 6 | 0 | 12 | 68,349 |
+| Genet, without the note | 3 | 5 | 4 | 5 | 157,168 |
+| Genet, with the note | 4 | 5 | 3 | 8 | 76,661 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Together right | at least 2 more of 24 than without | **10 against 9**, misses |
+| Together finished wrong | no more often than without | **11 against 8**, misses |
+
+- **The narrower note failed the same way as the first.** It turned the checker's stops into finished answers, and most of those were wrong. The told crew's 3 stops became none and its wrong finishes rose from 3 to 6, with 6 right both times.
+- **The checker, told the same, passed what it used to stop.** One answer used a substitute line from one company's filing and dropped the other two companies. Another left one of three companies "not determinable" in a grouping.
+- **Genet's lead varied, not just the note.** The lead split 5 of the 12 questions in one run and 8 in the other. The note does not reach the plan, so the difference is the lead's own variance. That variance makes Genet's cost swing too: 157,168 tokens a question against 76,661.
+- **Two notes, two misses.** On these questions, hedges and checker stops mostly kept wrong answers out; they did not cost right ones. The line-name losses of 9 November are real. Neither note recovered them without letting more wrong answers through, so both stay off and the problem stays open.
+- **The four tapes replay exactly:** 48 trials and 48 verdicts.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same` and their judged tapes. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

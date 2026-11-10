@@ -19,6 +19,24 @@ The team is small, and every agent can switch skills, with specialists added onl
 
 Quality of process over quantity of agents: possibly more efficient, and possibly more effective. That stays a claim until measured. `taskorg compare` exists to measure it (see [Proving it](#proving-it)).
 
+**What the tests have found so far.** The same questions over 20 companies' notes, split by the kernel into a fixed number of parts, on Claude Haiku 5.5 (7 and 8 November, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)):
+
+| Right of 12 (tokens a question) | Calls capped at 8,000: the files do not fit one call | Calls capped at 64,000: they do |
+|---|---|---|
+| One agent | 1 (54k) | 11 (82k) |
+| 4 parts | 10 (52k) | 12 (41k) |
+| 10 parts | 11 (65k) | 12 (64k) |
+| 20 parts | 9 (98k) | 9 (100k) |
+
+About four agents was right. On Haiku, twenty did worse at about twice the cost: each saw one file, so none could tell a company from its look-alike, and the lead had twenty reports to merge. On Sonnet 5.5 the same 8,000 questions got the right answer at 4, 10 and 20 parts alike, so the count changed only the cost: 10 parts 1.56 times the tokens of 4, and 20 parts 2.35 times. On the same trials across three models, Sonnet and Opus 5.5 were each right on 59 of 66 against Haiku's 52, with 0 and 1 wrong against Haiku's 4, Opus at twice Sonnet's cost. One agent could not do the 20-company work at this limit on any of them. The limits: one kind of synthetic task, at reduced scale.
+
+**Against another framework.** On 9 November Genet met CrewAI 1.15.30 on public questions: Loong's 40 over real SEC filings, and HotpotQA's 20 short ones. Both ran on Haiku 5.5 with the same limits, and Sonnet judged Loong's answers ([docs/HEAD_TO_HEAD.md](docs/HEAD_TO_HEAD.md)).
+- **Loong:** CrewAI was right on 25, one agent on 22, Genet on 20, so Genet missed its accuracy bar. It used fewer tokens a question (88k against 127k) and finished wrong less (12 against 15).
+- **Where the loss came from:** Genet split on 13 questions and was right on 4 of them, where one agent and CrewAI each got 7. On the 27 it kept single, it matched one agent.
+- **HotpotQA:** Genet stayed one agent on all 20 and matched one agent's score.
+
+Where Genet stayed one agent it did as well as one agent; where it split, its team did worse than both one agent and CrewAI. The limits: one benchmark subset, one call limit, one model, 40 questions.
+
 ## The team
 
 Genet is built for a small, cohesive team:
@@ -206,6 +224,7 @@ Each run starts with clean working memory, even when you reuse a run id. Runs sa
 | `genet-stated` | Same, but the lead's stated reasons are enough. Add it with `--strategies single,always,genet,genet-stated`. |
 | `genet-cards` | Same as `genet`, with the members table in the lead's plan brief (`--cards`). |
 | `always-told` | Same as `always`, with the size notes `genet`'s lead gets. No gates. |
+| `split-2`, `split-4`, `split-10`, `split-20` | The kernel splits the files the question names into that many parts, one sub-agent each, and the lead merges. No planning call and no gates, so only the count differs. For the agent-count sweep; the worker cap of 4 is raised to the count for these runs only. |
 
 The tasks come from a seeded, synthetic corpus of company operating notes, so ground truth is exact and no model has seen it. Facts are written in varied prose and surrounded by distractors: prior-year figures and look-alike company names.
 
@@ -432,7 +451,9 @@ It has no tools of its own. On 28 October, before the kernel opened files for it
 |---|---|---|
 | `--verify-view` | `independent` (default), `shared` | `independent` leaves out the author's notes. The verifier gets the context as the operator gave it, the goal, the criteria, and the product with its evidence, and none of working memory's product or sub-agent reports. `shared` shows it every member's notes and reports: the default until v0.9.0, and how a false note got past it. |
 | `--verify-sources` | `layered` (default), `full`, `none` | The kernel opens workspace files and puts them in the verifier's brief. See below. `none` opens nothing. |
-| `--verify-rule` | `both` (default), `told`, `headed`, `named`, `none` | Words after the source rule, with sources open. `told` says the files are a sample, so a figure no file covers is no reason to FAIL. `headed` says a line with no year takes the year in its file's heading. `both` says both. `named` says both, and that a product that leaves out, sets aside or counts as zero anything the goal names has not answered it; it is off because it failed too many right answers. `none` is the brief before v0.10.0, which older tapes replay. |
+| `--verify-rule` | `both` (default), `told`, `headed`, `named`, `aside`, `none` | Words after the source rule, with sources open. `told` says the files are a sample, so a figure no file covers is no reason to FAIL. `headed` says a line with no year takes the year in its file's heading. `both` says both. `named` says both, and that a product that leaves out, sets aside or counts as zero anything the goal names has not answered it; it is off because it failed too many right answers. `aside` says both, and fails only a product that says itself that something the goal names has no figure, counts as zero or was set aside; it is off because it missed even on the products it was written from. `none` is the brief before v0.10.0, which older tapes replay. |
+
+`--gap-check` (off by default) is the same test made by the kernel, not the model: a product the verifier passed whose own words say it has no figure for something, adds 0 for it or set it aside goes back once, with the kernel's reason, and a product sent back for that which still says so stops the run. On 19 trials it turned about 7 of 10 wrong finishes into stops, and about 5 of 9 right finishes too, so it stays off ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). `compare --then-live` tests such a change cheaply: each trial replays from its tape, and only a trial the check sends back goes to the model from that point.
 
 What each mode opens:
 - **`full`:** every file the goal names, the product cites or its uncertainty names, or the run read.
@@ -485,7 +506,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 438 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 503 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -519,7 +540,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.11.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with a check on Sonnet 5.5; what they show is under [What the live runs show](#what-the-live-runs-show). Not a cloud platform.
+v0.12.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with checks on Sonnet 5.5 and Opus 5.5, and Genet has met CrewAI on public questions; what they show is under [What the live runs show](#what-the-live-runs-show) and in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. [ARCHITECTURE.md](ARCHITECTURE.md) maps the modules and lists the open design questions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

@@ -13,7 +13,8 @@ import os
 
 from .adapters import Brief
 from .errors import InvariantError
-from .live import LiveAdapter, _count, env_models, env_timeout, system_prompt, user_message
+from .live import LiveAdapter, _count, env_models, env_timeout, message_text, system_prompt, user_blocks, user_message
+from .tools import RUNNABLE
 
 BASE_URL = "https://api.anthropic.com"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
@@ -58,12 +59,15 @@ class AnthropicAdapter(LiveAdapter):
     round_reply_tokens = 3_000
 
     def __init__(self, api_key: str, model: str, timeout: int = 60, models: dict[str, str] | None = None,
-                 effort: str | None = None, base_url: str = BASE_URL, client=None):
+                 effort: str | None = None, base_url: str = BASE_URL, client=None, cache: bool = False):
         if effort is not None and effort not in EFFORTS:
             raise InvariantError("LIVE", f"TASKORG_MODEL_EFFORT must be one of {', '.join(EFFORTS)}, got {effort!r}")
         # The SDK client holds the key; the adapter keeps none.
         super().__init__(base_url, "", model, timeout=timeout, models=models, max_reply_param="max_tokens")
         self.effort = effort
+        # Prompt caching for calls that may go on to tool rounds: each round re-sends what came before it, which a
+        # cache serves at a tenth of the price. Off by default: it changes the requests, so older tapes replay without.
+        self.cache = bool(cache)
         if client is None:
             sdk = _sdk()
             # The key is passed in, so the SDK reads no credential from the environment. A model API
@@ -80,10 +84,12 @@ class AnthropicAdapter(LiveAdapter):
             raise InvariantError("LIVE", "set TASKORG_ANTHROPIC_KEY and TASKORG_MODEL_NAME for the anthropic adapter")
         effort = os.environ.get("TASKORG_MODEL_EFFORT", "").strip().lower() or None
         base = os.environ.get("TASKORG_ANTHROPIC_BASE", "").strip() or BASE_URL
-        return cls(key, model, timeout=env_timeout(60), models=env_models(), effort=effort, base_url=base)
+        cache = os.environ.get("TASKORG_MODEL_CACHE", "").strip().lower() in ("1", "on", "yes", "true")
+        return cls(key, model, timeout=env_timeout(60), models=env_models(), effort=effort, base_url=base, cache=cache)
 
     def tape_header(self) -> dict:
-        return super().tape_header() | {"effort": self.effort, "round_reply_tokens": self.round_reply_tokens}
+        return super().tape_header() | {"effort": self.effort, "round_reply_tokens": self.round_reply_tokens,
+                                        **({"cache": True} if self.cache else {})}
 
     def _payload(self, brief: Brief) -> dict:
         payload = {
@@ -95,11 +101,16 @@ class AnthropicAdapter(LiveAdapter):
         }
         if self.effort:
             payload["output_config"] = {"effort": self.effort}
+        if self.cache and any(t in RUNNABLE for t in (brief.tools or [])):
+            # The same text in blocks, the newest round marked: the next round reads everything up to it from the cache.
+            blocks = [{"type": "text", "text": t} for t in user_blocks(brief)]
+            blocks[-2]["cache_control"] = {"type": "ephemeral"}
+            payload["messages"] = [{"role": "user", "content": blocks}]
         return payload
 
     def estimate_tokens(self, brief: Brief) -> int:
         payload = self._payload(brief)
-        chars = len(payload["system"]) + sum(len(m["content"]) for m in payload["messages"])
+        chars = len(payload["system"]) + sum(len(message_text(m["content"])) for m in payload["messages"])
         return math.ceil((max(1, -(-chars // 4)) + 8) * self.token_ratio)
 
     def _post(self, payload: dict) -> str:
@@ -117,11 +128,15 @@ class AnthropicAdapter(LiveAdapter):
         if _count(p) and _count(c):
             cached = [getattr(usage, f, None) for f in ("cache_creation_input_tokens", "cache_read_input_tokens")]
             self.last_usage = {"prompt_tokens": p + sum(x for x in cached if _count(x)), "completion_tokens": c}
+            # Priced apart: a cache write at 1.25 times the input price, a read at a tenth.
+            for key, n in zip(("cache_write_tokens", "cache_read_tokens"), cached):
+                if _count(n) and n:
+                    self.last_usage[key] = n
             thinking = getattr(getattr(usage, "output_tokens_details", None), "thinking_tokens", None)
             if _count(thinking):
                 self.last_usage["thinking_tokens"] = thinking  # part of completion_tokens, for the record
         else:
-            sent = len(payload["system"]) + sum(len(m["content"]) for m in payload["messages"])
+            sent = len(payload["system"]) + sum(len(message_text(m["content"])) for m in payload["messages"])
             self.last_usage = {
                 "prompt_tokens": p if _count(p) else max(1, -(-sent // 4)) + 8,
                 "completion_tokens": c if _count(c) else max(1, -(-len(text) // 4)),

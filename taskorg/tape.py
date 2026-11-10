@@ -129,6 +129,7 @@ class Player:
             and (h.get("effort") is None or isinstance(h["effort"], str))
             and (h.get("max_reply_param") is None or isinstance(h["max_reply_param"], str))
             and (h.get("round_reply_tokens") is None or (type(h["round_reply_tokens"]) is int and h["round_reply_tokens"] >= 0))
+            and h.get("cache") in (None, True, False)
         )
         if not ok:
             raise InvariantError("COMPARE", f"tape {self.path} has no valid header (format {FORMAT}, adapter {' or '.join(ADAPTERS)})")
@@ -150,19 +151,21 @@ class Player:
         e.setdefault("usage", {})
         return e["key"]
 
-    def exchange(self, adapter, payload: dict) -> str:
-        key = request_key(payload, adapter.max_reply_param)
+    def take(self, key: str) -> dict | None:
+        """The recorded exchange for this request, in order, then the last again; None, counted, if there is none."""
         with self._lock:
             entries = self._replies.get(key)
-            entry = None
-            if entries:
-                i = self._served.get(key, 0)
-                entry = entries[min(i, len(entries) - 1)]
-                self._served[key] = i + 1
-                self.served += 1
-                self.repeated += i >= len(entries)
-            else:
+            if not entries:
                 self.misses += 1
+                return None
+            i = self._served.get(key, 0)
+            self._served[key] = i + 1
+            self.served += 1
+            self.repeated += i >= len(entries)
+            return entries[min(i, len(entries) - 1)]
+
+    @staticmethod
+    def serve(adapter, entry: dict | None) -> str:
         if entry is None:
             adapter.last_usage = {}
             raise InvariantError("LIVE", "replay: the tape has no reply for this request; a prompt or brief changed since it was recorded")
@@ -170,6 +173,51 @@ class Player:
         if entry["error"]:
             raise InvariantError(entry["error"]["code"], entry["error"]["message"])
         return entry["reply"]
+
+    def exchange(self, adapter, payload: dict) -> str:
+        return self.serve(adapter, self.take(request_key(payload, adapter.max_reply_param)))
+
+
+class LiveSpend:
+    """What the calls that went to the model used, across trials, so a cap counts them and not the replayed ones."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.calls = self.prompt_tokens = self.completion_tokens = 0
+
+    def add(self, usage: dict) -> None:
+        with self._lock:
+            self.calls += 1
+            self.prompt_tokens += usage.get("prompt_tokens") or 0
+            self.completion_tokens += usage.get("completion_tokens") or 0
+
+    def cost(self, price_in: float, price_out: float) -> float:
+        with self._lock:
+            return (self.prompt_tokens * price_in + self.completion_tokens * price_out) / 1e6
+
+
+class Continuing:
+    """One trial's tape that goes live part way. Replies come from the recorded tape until a request it does not have
+    carries `arm` (the kernel's gap reason, in the lead's rework brief); from then on the trial's requests go to the
+    model through the recorder, and their usage to `spend`. A miss without it fails as a plain replay's does, so a
+    trial that left the recording for any other reason spends nothing. The player, recorder and spend are shared."""
+
+    def __init__(self, player: Player, recorder: Recorder, arm: str, spend: LiveSpend):
+        if not arm:
+            raise InvariantError("COMPARE", "a tape that goes live needs the words that arm it")
+        self.player, self.recorder, self.arm, self.spend = player, recorder, arm, spend
+        self.armed = False
+
+    def exchange(self, adapter, payload: dict) -> str:
+        if not self.armed:
+            entry = self.player.take(request_key(payload, adapter.max_reply_param))
+            if entry is not None or self.arm not in json.dumps(payload, ensure_ascii=False):
+                return self.player.serve(adapter, entry)
+            self.armed = True
+        try:
+            return self.recorder.exchange(adapter, payload)
+        finally:
+            self.spend.add(adapter.last_usage or {})
 
 
 class _Offline:
@@ -190,6 +238,7 @@ def replay_adapter(player: Player):
         adapter = AnthropicAdapter("", h["model"], models=h.get("models"), effort=h.get("effort"), client=_Offline())
         # What this tape's rounds kept; a tape older than the setting kept nothing beyond the reply's room.
         adapter.round_reply_tokens = h.get("round_reply_tokens") or 0
+        adapter.cache = bool(h.get("cache"))  # a cached tape's requests are in blocks
     else:
         from .live import LiveAdapter
 

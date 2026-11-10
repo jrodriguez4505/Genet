@@ -31,6 +31,7 @@ from . import atomic, checks
 from .adapters import Brief, ModelAdapter
 from .compare import trial_cost
 from .errors import InvariantError
+from .live import message_text
 from .suite import build_suite, extract_answer, grade
 
 RULES: dict[str, str] = {
@@ -39,6 +40,8 @@ RULES: dict[str, str] = {
     "headed": checks.HEADING_RULE,
     "both": checks.SAMPLE_RULE + checks.HEADING_RULE,
     "named": checks.SAMPLE_RULE + checks.NAMED_RULE + checks.HEADING_RULE,
+    "aside": checks.SAMPLE_RULE + checks.ASIDE_RULE + checks.HEADING_RULE,
+    "same": checks.SAMPLE_RULE + checks.SAME_VERIFY + checks.HEADING_RULE,
 }
 _PRODUCT = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)(?:\nEVIDENCE GIVEN WITH IT\n|\n" + re.escape(checks.SOURCES_HEAD) + ")", re.S)
 _BODY = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)\n" + re.escape(checks.SOURCES_HEAD), re.S)
@@ -115,7 +118,7 @@ def merges_from(path: Path) -> list[Merge]:
     for row, line in enumerate(lines[1:], 1):
         exchange = json.loads(line)
         try:
-            sent = json.loads(exchange["request"]["messages"][0]["content"])
+            sent = json.loads(message_text(exchange["request"]["messages"][0]["content"]))
         except (KeyError, IndexError, ValueError):
             continue
         fn, mode = sent.get("function"), sent.get("mode")
