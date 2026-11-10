@@ -457,6 +457,51 @@ def test_the_same_measure_run_is_both_arms_on_the_fresh_questions_and_needs_a_y(
     assert again.count("already done") == 4 and len(_calls(log)) == 4
 
 
+REREADS = [  # name, sample, team, tape, the trials whose merge the checker failed, cap
+    ("h2h-rereads-main-told", "main", "always-told", "h2h-loong-genet",
+     "loong-1fd30966,loong-25d28410,loong-28b770d3,loong-5a035018,loong-612f5816,loong-7b470b0f,loong-b7e24eef,"
+     "loong-de58f2e7", "0.20"),
+    ("h2h-rereads-main-genet", "main", "genet", "h2h-loong-genet",
+     "loong-25d28410,loong-28b770d3,loong-7b470b0f,loong-a79e07a2,loong-af88d682", "0.15"),
+    ("h2h-rereads-fresh-told", "fresh", "always-told", "h2h-fresh-plain",
+     "loong-0b4ccc46,loong-6e3692e8,loong-af2ba1aa,loong-c9506966", "0.12"),
+    ("h2h-rereads-fresh-genet", "fresh", "genet", "h2h-fresh-plain", "loong-23f9a12d,loong-62c2c5db,loong-e2caca7c", "0.10"),
+]
+
+
+def test_the_rereads_run_goes_to_the_model_only_at_the_rework_and_needs_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    (tmp_path / "data/tapes").mkdir()
+    for f in ("data/tapes/h2h-loong-genet.jsonl", "data/tapes/h2h-fresh-plain.jsonl", "data/compare/h2h-fresh-plain-judged.json"):
+        (tmp_path / f).write_text("")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "rereads") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "rereads")
+    *steps, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.25" in out and "Done." in out and KEY not in out
+    assert len(steps) == 4
+    for call, (name, sample, team, tape, ids, cap) in zip(steps, REREADS):
+        # Each tape with the settings it was recorded under, the switch on, and live only where it changes a rework.
+        assert "compare" in call and "--adapter anthropic" in call and f"--max-spend {cap} " in call
+        assert f"--benchmark loong " in call and f"--which {sample} " in call and f"--strategies {team} " in call
+        assert f"--replay data/tapes/{tape}.jsonl " in call and f"--ids {ids}" in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--rework-reads --then-live" in call and "--author-rule" not in call and "--verify-rule" not in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        assert call.endswith(f"key={KEY}")
+    assert "h2h-judge " in judge and all(f"--results data/compare/{s[0]}.json " in judge for s in REREADS)
+    assert "--model claude-sonnet-5-5" in judge and "--max-spend 0.10 " in judge
+    assert "--record data/tapes/h2h-rereads-judged.jsonl" in judge and readout.startswith("args=-I -")
+    # Done once, nothing is paid for twice.
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "rereads")
+    assert again.count("already done") == 5 and len(_calls(log)) == 7
+
+
+def test_the_rereads_run_needs_its_tapes(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "rereads")
+    assert "Missing data/tapes/h2h-loong-genet.jsonl" in out and _calls(log) == []
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

@@ -143,6 +143,11 @@ GAP_REASON = ("FAIL. The product says: \"{said}\" A product that says something 
 # Words only that reason carries: a replay that may go live (compare --then-live) goes live on the request that has them.
 GAP_ARM = "A product that says something the goal asks about has no figure, counts as zero or was set aside"
 GAP_MISS = "the product says it left out something the goal asks about"
+# A rework that may read (--rework-reads): after a merge the lead holds no tools, so it could only reword a product the
+# verifier failed for a figure not read. These words tell it it may now read; the first five also arm --then-live.
+REWORK_ARM = "You may read the workspace's files for this rework"
+REWORK_READS = (f" {REWORK_ARM}: where the verifier names a figure that was not read or not confirmed, read it, and "
+                "answer from what you read.")
 # What a call is told when a round of tools returned more than it can carry.
 ROUND_CUT = ("[{n} more tool requests not run: this call has no room for what they return. Work from what is above, "
              "and name anything still missing rather than guess.]")
@@ -294,6 +299,7 @@ class Engine:
         report_up: bool = False,
         cards: bool = False,
         gap_check: bool = False,
+        rework_reads: bool = False,
         max_workers: int = MAX_WORKERS,
     ):
         self.store = store
@@ -329,6 +335,9 @@ class Engine:
         # A product the verifier passed that says itself it has no figure for something, adds 0 for it or set it aside
         # is sent back once (checks.gap_said). Off by default: it changes what finishes.
         self.gap_check = gap_check
+        # A rework after a merge may read the workspace, as a single agent's rework can. Off by default: it changes the
+        # rework brief and its tools, and what a rework may spend.
+        self.rework_reads = rework_reads
         # The most sub-agents a run may staff: 4 unless a measured sweep (compare's split-N) names another.
         if not 1 <= int(max_workers) <= MAX_PARTS:
             raise ValueError(f"max_workers must be 1 to {MAX_PARTS}, got {max_workers!r}")
@@ -997,11 +1006,13 @@ class Engine:
             misses = list(last.get("misses", [])) + list(last.get("world_misses", []))
             run.request_replan(f"verifier did not pass: {reason[:160]}; misses: {', '.join(misses) or 'none named'}")
             run.answer_review(lead, "replan", "CHANGE_METHOD", f"rework the product to meet: {'; '.join(run.state.success_criteria)}")
+            reads = self._rework_reads(run)
             product = self._act(run, self._brief(
                 run, "lead",
                 extra=(
                     REWORK_HEAD + (rework_said(reason) if self.rework_reason or said else "")
-                    + f"Misses: {', '.join(misses) or 'none named'}. Last product: {product.claim[:400]}"
+                    + f"Misses: {', '.join(misses) or 'none named'}." + (REWORK_READS if reads else "")
+                    + f" Last product: {product.claim[:400]}"
                 ),
                 mode="rework",
             ), reserve=1)
@@ -1029,6 +1040,18 @@ class Engine:
             with self._lock:
                 run._record("gap_check", {"said": said})
         return said
+
+    def _rework_reads(self, run: Run) -> bool:
+        """With --rework-reads, a lead that holds no tool that reads, as after a merge, takes the single agent's skill
+        for its rework, so it can read what the verifier named. A lead that already reads, as a single agent or one
+        that covered a part, is left as it is. The skill switch is on the record."""
+        if not self.rework_reads or not (self.toolbox.roots or self.toolbox.files):
+            return False
+        lead = run.state.lead_id
+        if any(t in RUNNABLE for t in run.state.slot(lead).tools):
+            return False
+        run.switch_skill(lead, lead, self._single_agent_skill([]), "rework: read what the verifier named")
+        return True
 
     def _propose(self, run: Run, again: str = "") -> list[Subtask]:
         """The lead reads the context and proposes sub-tasks. Strategies override this.

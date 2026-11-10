@@ -111,6 +111,9 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--gap-check", action="store_true",
                    help="send back, once, a product the verifier passed that says itself it has no figure for something, adds 0 "
                         "for it or set it aside; a reworked product that still says so stops the run. Off by default")
+    p.add_argument("--rework-reads", action="store_true",
+                   help="after a merge, the lead's rework may read the workspace, as a single agent's can, to check what "
+                        "the verifier named. Off by default")
     p.add_argument("--abort", action="append", default=[], metavar="CRITERION",
                    help="stop at a decision point when this is met: forecast_short (the budget cannot finish the "
                         f"work; the default), parts_failed:N (N parts' sub-agents failed), or none. "
@@ -166,7 +169,7 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
                   verify_view=args.verify_view, verify_sources=args.verify_sources, verify_note=MERGE_RULES[args.verify_rule],
                   rework_reason=args.rework_reason, author_note=AUTHOR_RULES[args.author_rule],
                   report_up=args.report_up,
-                  cards=args.cards, gap_check=args.gap_check)
+                  cards=args.cards, gap_check=args.gap_check, rework_reads=args.rework_reads)
 
 
 def _out_path(raw: str | None, default: Path) -> Path:
@@ -434,11 +437,15 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--gap-check", action="store_true",
                      help="send back, once, a product the verifier passed that says itself it has no figure for something, adds 0 "
                           "for it or set it aside; a reworked product that still says so stops the run. Off by default")
+    p_c.add_argument("--rework-reads", action="store_true",
+                     help="after a merge, the lead's rework may read the workspace, as a single agent's can, to check what "
+                          "the verifier named. Off by default")
     p_c.add_argument("--price", action="append", default=[], metavar="MODEL=IN/OUT",
                      help="$ per 1M tokens for one model, input/output, for a team that mixes models; repeat for each")
     p_c.add_argument("--then-live", action="store_true",
-                     help="with --replay and --record: answer from the tape until the gap check sends a product back, "
-                          "then send that trial's later requests to the model (--adapter anthropic) and record them")
+                     help="with --replay, --record and one of --gap-check or --rework-reads: answer from the tape until "
+                          "that switch changes a rework, then send that trial's later requests to the model "
+                          "(--adapter anthropic) and record them")
     p_c.add_argument("--benchmark", default=None, choices=["loong", "hotpot"],
                      help="a public benchmark's questions in place of the generated suite (docs/HEAD_TO_HEAD.md): loong needs "
                           "--questions and --docs, hotpot --questions; --families and the suite options are then not used")
@@ -620,7 +627,7 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
         recorded = player.header.get(header_key)
         recorded = recorded if isinstance(recorded, dict) else {}
         if recorded:  # A tape from before a switch does not name it, and was recorded without it.
-            recorded = {"verify_rule": "none", "rework_reason": False, "gap_check": False} | recorded
+            recorded = {"verify_rule": "none", "rework_reason": False, "gap_check": False, "rework_reads": False} | recorded
         differ = [k for k in keys if k in recorded and recorded[k] != config.get(k)]
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
@@ -665,13 +672,16 @@ def _model_prices(raw: list[str]) -> dict[str, tuple[float, float]]:
 
 
 def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, code: str):
-    """--then-live: each trial replays its tape until the gap check sends a product back, then goes to the model. The
-    live adapter must be the one the tape was recorded with, so the requests before that point are the same."""
-    from .loop import GAP_ARM
+    """--then-live: each trial replays its tape until the switch being measured changes a rework (the gap check sends a
+    product back, or a rework after a merge may read), then goes to the model. The live adapter must be the one the
+    tape was recorded with, so the requests before that point are the same."""
+    from .loop import GAP_ARM, REWORK_ARM
     from .tape import Continuing, LiveSpend, Player, Recorder
 
-    if not (args.replay and args.record and args.adapter == "anthropic" and args.gap_check):
-        raise InvariantError(code, "--then-live needs --replay, --record, --adapter anthropic and --gap-check")
+    if not (args.replay and args.record and args.adapter == "anthropic" and (args.gap_check != args.rework_reads)):
+        raise InvariantError(code, "--then-live needs --replay, --record, --adapter anthropic and one of --gap-check "
+                                   "or --rework-reads")
+    arm = GAP_ARM if args.gap_check else REWORK_ARM
     player = Player(Path(args.replay))
     h = player.header
     first = pick_adapter(args.adapter)  # fails fast with no key or model
@@ -690,7 +700,7 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
     def factory():
         adapter = pick_adapter(args.adapter)
         adapter.round_reply_tokens = rounds  # what the tape's rounds kept, so its requests are the same
-        adapter.tape = Continuing(player, recorder, GAP_ARM, spend)
+        adapter.tape = Continuing(player, recorder, arm, spend)
         return adapter
 
     factory.spend = spend
@@ -816,6 +826,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
         "verify_view": args.verify_view, "verify_sources": args.verify_sources, "verify_rule": args.verify_rule,
         "rework_reason": args.rework_reason, "author_rule": args.author_rule, "gap_check": args.gap_check,
+        "rework_reads": args.rework_reads,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
     # Only a benchmark run names these, so a generated-suite run's config, and its tape, read as before.
@@ -842,7 +853,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         args, config, "compare", "COMPARE",
         ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors", "filed",
          "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources", "verify_rule",
-         "rework_reason", "author_rule", "gap_check") + bench_keys,
+         "rework_reason", "author_rule", "gap_check", "rework_reads") + bench_keys,
     )
     if args.corpus:
         suite.write_corpus(args.corpus)
@@ -861,7 +872,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
                        else spend_cap(args.max_spend, args.price_in, args.price_out, prices)),
             verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
                     "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
-                    "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check},
+                    "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check,
+                    "rework_reads": args.rework_reads},
             page_chars=args.page_chars,
         )
     finally:
@@ -878,7 +890,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if args.then_live:
         spend = factory.spend
         live = (f", ${spend.cost(args.price_in, args.price_out):.4f}" if args.price_in is not None else "")
-        print(f"live: {spend.calls} requests sent to the model after the gap check{live}")
+        print(f"live: {spend.calls} requests sent to the model after {'the gap check' if args.gap_check else 'a rework that may read'}{live}")
     if recorder:
         print(f"tape: {recorder.count} exchanges saved to {args.record}")
     print(f"saved {out}")

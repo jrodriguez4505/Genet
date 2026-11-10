@@ -198,7 +198,7 @@ class LiveSpend:
 
 class Continuing:
     """One trial's tape that goes live part way. Replies come from the recorded tape until a request it does not have
-    carries `arm` (the kernel's gap reason, in the lead's rework brief); from then on the trial's requests go to the
+    carries `arm` (words of the switch being measured, in the lead's rework brief); from then on the trial's requests go to the
     model through the recorder, and their usage to `spend`. A miss without it fails as a plain replay's does, so a
     trial that left the recording for any other reason spends nothing. The player, recorder and spend are shared."""
 
