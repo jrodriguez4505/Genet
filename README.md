@@ -455,6 +455,8 @@ It has no tools of its own. On 28 October, before the kernel opened files for it
 
 `--gap-check` (off by default) is the same test made by the kernel, not the model: a product the verifier passed whose own words say it has no figure for something, adds 0 for it or set it aside goes back once, with the kernel's reason, and a product sent back for that which still says so stops the run. On 19 trials it turned about 7 of 10 wrong finishes into stops, and about 5 of 9 right finishes too, so it stays off ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). `compare --then-live` tests such a change cheaply: each trial replays from its tape, and only a trial the check sends back goes to the model from that point.
 
+`--rework-reads` (off by default) lets the lead read during a rework after a merge. A merging lead holds no tool that reads, so when the verifier fails a figure as not read or not confirmed, the rework could only reword it. With the switch, the rework gets a single agent's retrieve and read, and is told it may read what the verifier named. It was tested on the 20 split trials of the CrewAI head-to-head that the verifier sent back. Right finishes rose from 0 to 4, but wrong finishes rose from 3 to 9, so it stays off ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). `--then-live` is armed by `--gap-check` or `--rework-reads`, and needs exactly one of them.
+
 What each mode opens:
 - **`full`:** every file the goal names, the product cites or its uncertainty names, or the run read.
 - **`layered`:** first, any file the goal names that no call in the run read or searched. The product has something for that subject, so it came from somewhere else. Then the files the product's uncertainty names. Then two at random from what the goal names or the product cites.
