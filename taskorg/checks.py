@@ -70,6 +70,20 @@ WORDING_RULE = (
     " A file may name a line differently from the goal. Where no line carries the goal's name, use the line that "
     "measures the same thing, say which line you used, and answer with it: a different name is not a gap."
 )
+# The wording note narrowed, and the checker told the same. On Loong's 9 questions (9 November) the wording note ended
+# the hedging, but the checker, not told, failed the nearest lines the writers used, and "the line that measures the
+# same thing" reached too far: cash and short-term investments counted as cash and cash equivalents.
+SAME_RULE = (
+    " A file may name a line differently from the goal. Where no line carries the goal's name, use a line that is the "
+    "same measure under another name, such as 'Net sales' for 'Revenue', say which line you used, and answer with it: "
+    "a different name is not a gap. A line that adds or leaves out items is a different measure, such as 'Cash and "
+    "short-term investments' for 'Cash': do not use it; say the file has no line for the goal's measure."
+)
+SAME_VERIFY = (
+    " A product may answer with a line that is the same measure the goal names under another name, if it says which "
+    "line it used: that is an answer, so do not FAIL it for the name alone. FAIL a product that uses a line that adds "
+    "or leaves out items the goal's measure does not, as a different measure."
+)
 # A product that names its own gap is no answer. On the rerun of 5 November, 5 of the 6 wrong answers that finished had
 # set a named company aside ("contributes 0", "unresolved") and were passed under the sample rule, which says a figure
 # no file covers is no fault (docs/LIVE_TESTS.md).
@@ -114,7 +128,8 @@ def gap_said(claim: str) -> str:
 VERIFY_RULE = SAMPLE_RULE + HEADING_RULE
 # What the lead and sub-agents can be told about an undated line (--author-rule). Off until a run shows it pays: on the
 # held-out seeds, 23 of 33 wrong answers were an author refusing a figure its file holds, on a line with no year.
-AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip(), "wording": WORDING_RULE.strip()}
+AUTHOR_RULES: dict[str, str] = {"none": "", "headed": HEADING_RULE.strip(), "wording": WORDING_RULE.strip(),
+                                 "same": SAME_RULE.strip()}
 
 _READ_HEAD = re.compile(r"\[read ([^\]\n]+)\](?:\n| already in full above)")
 _MATCH_LINE = re.compile(r"^([^\[\n:][^\n:]*):\d+: ", re.MULTILINE)

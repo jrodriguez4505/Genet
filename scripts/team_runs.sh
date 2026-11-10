@@ -242,6 +242,17 @@
 #     - Step 2, wrong finishes. Genet at most 15 (CrewAI's; Genet had 12).
 #     Reported with no bar: the told crew's total, parts that still say a named line is missing, the checker's stops, cost.
 #     If the bars hold, the split losses were the wording, and the note goes into Genet's writers by default.
+#   bash scripts/team_runs.sh samenote   the same-measure note on Loong questions no earlier run used, on Haiku 5.5, with the
+#     head-to-head's limits and judge. 12 questions drawn before the run (benchmarks.loong_fresh, seed 1109): 6 comparison
+#     and 6 clustering. The told crew and Genet, once with today's briefs and once with --author-rule same --verify-rule
+#     same: writers use a line that is the same measure under another name and say which, and not a line that adds or
+#     leaves out items; the checker does not fail the first and fails the second. One y, about $0.70.
+#     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
+#     - With the note, the told crew and Genet together right on at least 2 more of 24 than without.
+#     - With the note, together finished wrong no more often than without.
+#     Reported with no bar: each arm by team, the checker's stops, parts that say a named line is missing, tokens.
+#     If both hold, the note goes to the 40 of the head-to-head, then to the default. 12 questions are few: a difference
+#     of 2 of 24 can be noise, so a hold is a reason for the larger run, not a result.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -252,8 +263,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -272,6 +283,8 @@ elif [ "$mode" = sonnetsweep ]; then
   echo "  2) claude-sonnet-5-5   \$2 / \$10        about \$9.40 in all, each seed capped at \$6.00"
 elif [ "$mode" = headtohead ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   calibration about \$1.20; then about \$10 to \$16 with the judge on Sonnet (caps \$18.50)"
+elif [ "$mode" = samenote ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.70 with the judge on Sonnet (caps \$1.10)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -375,7 +388,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -654,6 +667,51 @@ EOF
   judge_held h2h-wording-all-judged 0.40 h2h-wording-all
   echo
   echo "Done. Results: data/compare/h2h-wording-*.json   Tapes: data/tapes/h2h-wording-*.jsonl   Read: data/exp/wording_read.py"
+  exit 0
+fi
+if [ "$mode" = samenote ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial"; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  echo
+  echo ">>> The same-measure note on 12 Loong questions no earlier run used (6 comparison, 6 clustering), on $model."
+  echo "    The told crew and Genet, once without the note and once with it: writers use a line that is the same measure"
+  echo "    under another name and say which; the checker does not fail that, and fails a line that adds or leaves out items."
+  echo "    48 trials and the judge: about \$0.70, each part stopping itself (caps \$0.40, \$0.40, \$0.15, \$0.15)."
+  echo "    Written before it ran: with the note, together right on at least 2 more of 24, and finished wrong no more often."
+  echo "    The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6"
+  loong="--benchmark loong --which fresh --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial"
+  judge_held() {  # name, cap, results files
+    local name=$1 cap=$2
+    shift 2
+    local files=()
+    for f in "$@"; do files+=(--results "data/compare/$f.json"); done
+    if [ -f "data/compare/$name.json" ]; then
+      echo "== $name: already done"
+    else
+      [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+      echo
+      echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+      "$PY" -m taskorg.cli h2h-judge "${files[@]}" --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 \
+        --price-in 2 --price-out 10 --max-spend "$cap" --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+        | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+    fi
+    [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  }
+  held h2h-fresh-plain 0.40 compare $loong --strategies always-told,genet $limits
+  held h2h-fresh-same 0.40 compare $loong --strategies always-told,genet $limits --author-rule same --verify-rule same
+  judge_held h2h-fresh-plain-judged 0.15 h2h-fresh-plain
+  judge_held h2h-fresh-same-judged 0.15 h2h-fresh-same
+  echo
+  echo "Done. Results: data/compare/h2h-fresh-*.json   Tapes: data/tapes/h2h-fresh-*.jsonl   Read: data/exp/same_read.py"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then

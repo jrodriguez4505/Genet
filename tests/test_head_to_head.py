@@ -182,6 +182,57 @@ def test_the_loong_sample_is_fixed_by_its_seed_and_takes_the_planned_pool(loong_
     assert benchmarks.loong_sample(rows, loong_docs, seed=7) != one
 
 
+def _rows_with_spares():
+    spare = [{"id": f"{level}{n:02d}bbbb-x", "type": "financial", "language": "en", "set": 2, "level": level,
+              "doc": ["Acme Corp", "Beta Inc"], "question": f"F{level}-{n}?", "instruction": "Answer it.", "answer": "A",
+              "prompt_template": "{docs}\n\n{instruction}\n\n{question}"} for level in (2, 3) for n in range(7)]
+    return _loong_rows() + spare
+
+
+def test_the_fresh_draw_takes_only_questions_no_sample_holds(loong_docs):
+    rows = _rows_with_spares()
+    planned = benchmarks.loong_sample(rows, loong_docs)
+    used = set(planned["main"]) | set(planned["calibration"])
+    fresh = benchmarks.loong_fresh(rows, loong_docs)
+    assert fresh == benchmarks.loong_fresh(rows, loong_docs) and len(fresh) == 12 and not used & set(fresh)
+    levels = {r["id"]: r["level"] for r in rows}
+    assert [levels[i] for i in fresh] == [2] * 6 + [3] * 6
+    assert benchmarks.loong_fresh(rows, loong_docs, seed=7) != fresh
+    suite = benchmarks.loong_suite(_write_rows(loong_docs.parent, rows), loong_docs, "fresh")
+    assert [t.id for t in suite.tasks] == [f"loong-{i[:8]}" for i in fresh]
+    with pytest.raises(benchmarks.BenchmarkError, match="unused questions"):
+        benchmarks.loong_fresh(_loong_rows(), loong_docs)
+
+
+def _write_rows(where, rows):
+    path = where / "loong.jsonl"
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    return path
+
+
+def test_compare_takes_the_fresh_draw_and_the_same_measure_rules(loong_docs, capsys):
+    from taskorg.cli import main
+
+    q = _write_rows(loong_docs.parent, _rows_with_spares())
+    assert main(["compare", "--adapter", "stub", "--dry-run", "--benchmark", "loong", "--questions", str(q),
+                 "--docs", str(loong_docs), "--which", "fresh", "--strategies", "always-told,genet",
+                 "--author-rule", "same", "--verify-rule", "same"]) == 0
+    config = json.loads(capsys.readouterr().out)
+    assert config["which"] == "fresh" and len(config["task_ids"]) == 12 and config["trials"] == 24
+    assert (config["author_rule"], config["verify_rule"]) == ("same", "same")
+
+
+def test_the_same_measure_note_and_its_checker_sentence():
+    from taskorg import checks, merge_bench
+
+    writers, checker = checks.AUTHOR_RULES["same"], merge_bench.RULES["same"]
+    assert writers == checks.SAME_RULE.strip() and "same measure under another name" in writers
+    assert "adds or leaves out items is a different measure" in writers and "do not use it" in writers
+    assert checker == checks.SAMPLE_RULE + checks.SAME_VERIFY + checks.HEADING_RULE
+    assert "do not FAIL it for the name alone" in checker and "as a different measure" in checker
+    assert checks.SAME_VERIFY not in writers and checks.SAME_RULE not in checker
+
+
 def test_a_level_too_small_for_the_plan_is_an_error(loong_docs):
     rows = [r for r in _loong_rows() if not (r["level"] == 4 and r["id"] > "405")]
     with pytest.raises(benchmarks.BenchmarkError, match="level 4"):

@@ -954,6 +954,12 @@ By the rule written first, step 2 did not run, and the note stays off.
 - **"The line that measures the same thing" also reached too far.** On the cash count both teams counted Cross Timbers' "Cash and short-term investments" and answered 3. Loong's answer is 2, which one agent gave. On undistributed profits, a proxy line led Genet to a wrong company, and the checker passed it on rework.
 - **Stops became wrong finishes.** Four of the old stops now finish with a wrong answer: total profit for both teams, undistributed profits for Genet, and a grouping by change in cash for the told crew. Two of the told crew's old wrong finishes now stop instead. That is why wrong finishes rose from 4 to 6.
 - **Reading.** Telling writers to substitute fixes the hedging. Without a rule for when a nearby line is the same measure, it trades stops for wrong answers. The checker then disagrees with the writers about substitution, in both directions. Both tapes replay exactly: 18 trials and 18 verdicts.
+- **Next, on the operator's go-ahead: a narrower note, tested on new questions.**
+  - `--author-rule same` tells writers to use only a line that is the same measure under another name, and to say which. A line that adds or leaves out items does not count.
+  - `--verify-rule same` tells the checker not to fail that, and to fail a different measure.
+  - Changes tuned on these 9 questions could fit them, so the test uses 12 Loong questions no earlier run used. They are 6 comparison and 6 clustering, drawn before the run (`compare --which fresh`, seed 1109). The told crew and Genet answer them once with today's briefs and once with the note.
+  - `bash scripts/team_runs.sh samenote`, about $0.70. The bars, written first: with the note, together right on at least 2 more of 24, and finished wrong no more often.
+  - With 12 questions, a hold would only justify the larger run, not settle the question.
 
 The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine` and `h2h-wording-nine-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 

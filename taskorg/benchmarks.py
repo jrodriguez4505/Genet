@@ -22,6 +22,10 @@ LOONG_SEED = 1108
 LOONG_SETS = (1, 2)          # 10,000 to 100,000 tokens of filings a question, in Loong's count
 LOONG_LEVELS = (1, 2, 3, 4)  # spotlight locating, comparison, clustering, chain of reasoning
 LOONG_PER_LEVEL = 10
+# Questions no earlier run used, for a check of a change made after reading the main sample: comparison and
+# clustering, where split runs lost on line names (docs/LIVE_TESTS.md, 9 November). Drawn once, before the run.
+LOONG_FRESH_SEED = 1109
+LOONG_FRESH = {2: 6, 3: 6}
 LEVEL_NAMES = {1: "spotlight", 2: "comparison", 3: "clustering", 4: "chain"}
 
 LOONG_CONTEXT = (
@@ -125,6 +129,20 @@ def loong_sample(rows: list[dict], docs_dir: str | Path, seed: int = LOONG_SEED,
     return out
 
 
+def loong_fresh(rows: list[dict], docs_dir: str | Path, seed: int = LOONG_FRESH_SEED,
+                per_level: dict[int, int] | None = None) -> list[str]:
+    """Ids no earlier sample holds: for each level, a seeded draw from what the main and calibration draws left."""
+    planned = loong_sample(rows, docs_dir)
+    used = set(planned["main"]) | set(planned["calibration"])
+    out: list[str] = []
+    for level, n in (per_level or LOONG_FRESH).items():
+        pool = [r for r in loong_pool(rows, level, docs_dir) if r["id"] not in used]
+        if len(pool) < n:
+            raise BenchmarkError(f"level {level} has {len(pool)} unused questions, the fresh draw needs {n}")
+        out += [r["id"] for r in random.Random(seed * 10 + level).sample(pool, n)]
+    return out
+
+
 def loong_files(row: dict, docs_dir: str | Path) -> list[tuple[str, Path]]:
     """Each of a question's filings: the name it gets in the workspace, and its file in Loong's doc/financial.
 
@@ -163,7 +181,12 @@ def loong_task(row: dict, docs_dir: str | Path) -> tuple[Task, dict[str, str]]:
 def loong_suite(questions: str | Path, docs_dir: str | Path, which: str = "main", ids: list[str] | None = None) -> Suite:
     rows = read_jsonl(questions)
     by_id = {r["id"]: r for r in rows}
-    wanted = ids if ids is not None else loong_sample(rows, docs_dir)[which]
+    if ids is not None:
+        wanted = ids
+    elif which == "fresh":
+        wanted = loong_fresh(rows, docs_dir)
+    else:
+        wanted = loong_sample(rows, docs_dir)[which]
     tasks, corpus = [], {}
     for qid in wanted:
         if qid not in by_id:

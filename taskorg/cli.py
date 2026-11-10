@@ -100,13 +100,14 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
                    help="workspace files the kernel opens for the verifier: layered (default), full, or none "
                         "(the brief before v0.7.0, which older tapes replay)")
     p.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
-                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, aside, "
+                   help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, aside, same, "
                         "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
                    help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")
     p.add_argument("--author-rule", default="none", choices=list(AUTHOR_RULES),
-                   help="words for the lead's and sub-agents' briefs: none (the default), or headed, a line that gives no "
-                        "year takes the year in its file's heading")
+                   help="words for the lead's and sub-agents' briefs: none (the default); headed, a line that gives no "
+                        "year takes the year in its file's heading; wording or same, a line named differently from the goal "
+                        "(checks.WORDING_RULE, checks.SAME_RULE)")
     p.add_argument("--gap-check", action="store_true",
                    help="send back, once, a product the verifier passed that says itself it has no figure for something, adds 0 "
                         "for it or set it aside; a reworked product that still says so stops the run. Off by default")
@@ -422,13 +423,14 @@ def main(argv: list[str] | None = None) -> int:
                      help="sources the kernel opens for the verifier: layered (default), full, or none "
                           "(the brief before v0.7.0, which older tapes replay)")
     p_c.add_argument("--verify-rule", default="both", choices=list(MERGE_RULES),
-                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, aside, "
+                     help="words after the verifier's source rule, with sources open: both (the default), told, headed, named, aside, same, "
                           "or none (the brief before v0.10.0, which older tapes replay). merge-bench says what each is")
     p_c.add_argument("--no-rework-reason", dest="rework_reason", action="store_false",
                      help="leave out of the lead's rework brief why the verifier failed its product (as older tapes hold it)")
     p_c.add_argument("--author-rule", default="none", choices=list(AUTHOR_RULES),
-                     help="words for the lead's and sub-agents' briefs: none (the default), or headed, a line that gives no "
-                          "year takes the year in its file's heading")
+                     help="words for the lead's and sub-agents' briefs: none (the default); headed, a line that gives no "
+                          "year takes the year in its file's heading; wording or same, a line named differently from the goal "
+                          "(checks.WORDING_RULE, checks.SAME_RULE)")
     p_c.add_argument("--gap-check", action="store_true",
                      help="send back, once, a product the verifier passed that says itself it has no figure for something, adds 0 "
                           "for it or set it aside; a reworked product that still says so stops the run. Off by default")
@@ -442,8 +444,9 @@ def main(argv: list[str] | None = None) -> int:
                           "--questions and --docs, hotpot --questions; --families and the suite options are then not used")
     p_c.add_argument("--questions", default=None, help="the benchmark's question file (JSON lines)")
     p_c.add_argument("--docs", default=None, help="Loong's doc/financial folder")
-    p_c.add_argument("--which", default="main", choices=["main", "calibration"],
-                     help="Loong's planned sample: 40 main questions, or the 4 for calibration")
+    p_c.add_argument("--which", default="main", choices=["main", "calibration", "fresh"],
+                     help="Loong's planned sample: 40 main questions, the 4 for calibration, or 12 fresh ones no earlier "
+                          "sample holds (6 comparison, 6 clustering)")
     p_c.add_argument("--ids", default=None,
                      help="with --benchmark: only these questions of the sample, by task id (loong-1a2b3c4d), comma separated")
     p_c.add_argument("--page-chars", type=_whole(1000), default=None,

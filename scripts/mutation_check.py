@@ -553,11 +553,15 @@ M = [
     ("judge.py", "each trial is judged again", "        if pair not in seen:", "        if True:"),
     ("judge.py", "a stopped trial counts as right", '"correct": score >= RIGHT_SCORE and res.get("status") == "complete"}', '"correct": score >= RIGHT_SCORE}'),
     ("judge.py", "right is Loong's 100 again", '"correct": score >= RIGHT_SCORE and res.get("status")', '"correct": score >= PERFECT and res.get("status")'),
-    ("checks.py", "the wording note is not offered", ', "wording": WORDING_RULE.strip()}', '}'),
+    ("checks.py", "the wording note is not offered", ' "wording": WORDING_RULE.strip(),', ''),
     ("checks.py", "the wording note gives no line to use", '"measures the same thing, say which line you used, and answer with it: a different name is not a gap."', '"is missing."'),
     ("cli.py", "ids are ignored", '        suite.tasks = [t for t in suite.tasks if t.id in set(wanted)]\n', ''),
     ("cli.py", "an unknown id is let through", '        if unknown or not wanted:\n', '        if False:\n'),
     ("cli.py", "ids without a benchmark are let through", '    if args.ids and not args.benchmark:\n', '    if False:\n'),
+    ("benchmarks.py", "the fresh draw takes used questions", 'pool = [r for r in loong_pool(rows, level, docs_dir) if r["id"] not in used]', 'pool = loong_pool(rows, level, docs_dir)'),
+    ("benchmarks.py", "fresh draws the main sample", '    elif which == "fresh":\n        wanted = loong_fresh(rows, docs_dir)\n', ''),
+    ("checks.py", "the same note keeps a different measure", '"short-term investments\' for \'Cash\': do not use it; say the file has no line for the goal\'s measure."', '"short-term investments\' for \'Cash\'."'),
+    ("merge_bench.py", "the checker is not told the same measure", '"same": checks.SAMPLE_RULE + checks.SAME_VERIFY + checks.HEADING_RULE,', '"same": checks.SAMPLE_RULE + checks.HEADING_RULE,'),
     ("judge.py", "a score under 80 counts as right", 'RIGHT_SCORE = 80.0\n', 'RIGHT_SCORE = 75.0\n'),
 ]
 

@@ -439,6 +439,24 @@ def test_the_wording_run_needs_its_files(tmp_path: Path):
     assert "Missing data/h2h/loong-questions/loong.jsonl" in out and _calls(log) == []
 
 
+def test_the_same_measure_run_is_both_arms_on_the_fresh_questions_and_needs_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "samenote") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "samenote")
+    plain, same, judge_plain, judge_same = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.70" in out and "Done." in out and KEY not in out
+    for call in (plain, same):
+        assert "--benchmark loong --which fresh " in call and "--strategies always-told,genet " in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--price-in 0.10 --price-out 0.50 --max-spend 0.40 " in call and call.endswith(f"key={KEY}")
+    assert "--author-rule" not in plain and "--verify-rule" not in plain and "--record data/tapes/h2h-fresh-plain.jsonl" in plain
+    assert "--author-rule same --verify-rule same " in same and "--record data/tapes/h2h-fresh-same.jsonl" in same
+    assert "--results data/compare/h2h-fresh-plain.json " in judge_plain and "--max-spend 0.15 " in judge_plain
+    assert "--results data/compare/h2h-fresh-same.json " in judge_same and "--record data/tapes/h2h-fresh-same-judged.jsonl" in judge_same
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "samenote")
+    assert again.count("already done") == 4 and len(_calls(log)) == 4
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")
