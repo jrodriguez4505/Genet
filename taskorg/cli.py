@@ -9,7 +9,7 @@ from .budget import Budget
 from .checks import AUTHOR_RULES, SOURCES, VIEWS
 from .errors import InvariantError
 from .factory import new_run
-from .gates import Subtask, World
+from .gates import SPLIT_POLICIES, Subtask, World
 from .live import pick_adapter
 from .loop import Engine
 from .memory_store import MemoryStore
@@ -91,9 +91,10 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
                    help="the sub-tasks must not share a context (a declared reason to fan out)")
     p.add_argument("--no-lessons", action="store_true",
                    help="do not write lessons from a failed run to the shared guidelines")
-    p.add_argument("--split-policy", default="measured", choices=["measured", "stated"],
+    p.add_argument("--split-policy", default="measured", choices=list(SPLIT_POLICIES),
                    help="measured: fan out only for declared isolation or material that does not fit one context; "
-                        "stated: the lead's named reasons are enough")
+                        "stated: the lead's named reasons are enough; reads: measured, with no planning call when one "
+                        "agent reading a page of each file can hold what it needs")
     p.add_argument("--verify-view", default="independent", choices=list(VIEWS),
                    help="what the verifier sees: shared (every note), independent (not the author's notes)")
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
@@ -451,9 +452,9 @@ def main(argv: list[str] | None = None) -> int:
                           "--questions and --docs, hotpot --questions; --families and the suite options are then not used")
     p_c.add_argument("--questions", default=None, help="the benchmark's question file (JSON lines)")
     p_c.add_argument("--docs", default=None, help="Loong's doc/financial folder")
-    p_c.add_argument("--which", default="main", choices=["main", "calibration", "fresh"],
-                     help="Loong's planned sample: 40 main questions, the 4 for calibration, or 12 fresh ones no earlier "
-                          "sample holds (6 comparison, 6 clustering)")
+    p_c.add_argument("--which", default="main", choices=["main", "calibration", "fresh", "rest"],
+                     help="Loong's planned sample: 40 main questions, the 4 for calibration, 12 fresh ones no earlier "
+                          "sample holds (6 comparison, 6 clustering), or the rest: every planned question none of those holds")
     p_c.add_argument("--ids", default=None,
                      help="with --benchmark: only these questions of the sample, by task id (loong-1a2b3c4d), comma separated")
     p_c.add_argument("--page-chars", type=_whole(1000), default=None,

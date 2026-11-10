@@ -1018,6 +1018,51 @@ By the rule written first, the full rerun of the 40 does not run, and the switch
 - **Reading.** This is the third change that takes away a reason to stop, after the wording note and the same-measure note. Each time, more wrong answers finished than right ones. On these runs the checker's stops mostly kept wrong answers out. Most errors behind them came from how Loong names lines, dates years and draws bands, not from what the lead could read.
 - **The tapes replay exactly.** Each live tape, joined to the tape it continued, gives all 20 trials with no request missing and the same results. The judge's tape gives the same 20 scores. The readout is `data/exp/rereads_read.py`.
 
+### When to split: the plan, written before the run
+
+**Why.** Three fixes after the split each let more wrong answers finish than right ones. The loss starts earlier, in the decision to split. On the 13 of the 40 that Genet split, it was right on 4, where one agent and CrewAI each got 7. The gates admit a split when the goal's files do not fit one call, and no Loong question's filings do. But one agent reading each filing in turn never came close to running out. Its largest call on the 40 was 66,480 tokens of the 100,000 allowed. On the 13 that Genet split, its largest calls ran from 13,928 to 54,166.
+
+**The rule.** `--split-policy reads`, off by default; compare's `genet-reads`. It is `measured` with one more check, before the plan:
+- With paged reads, one agent reads a long file a page at a time and keeps what it found. So the check counts a page of each file the goal names, and compares that with the gates' share of one call.
+- When it fits, there is no planning call, and the lead works alone from the start, as one agent does.
+- When it does not fit, the lead plans, and the gates judge the plan as they do now.
+- Unpaged work is measured as before.
+
+**Checked for free** (`data/exp/splitrule_dry.py`, each strategy replayed on its own):
+- **Every synthetic tape:** 366 trials, 209 of them split, with reads not paged. The rule does what Genet did, request for request.
+- **The head-to-head's paged questions:** the 40, its 4 calibration questions and its 20 HotpotQA questions. The rule does what one agent did, request for request, with no request missing from the tapes.
+- **The resulting change on the 40:**
+
+| The 40 of 9 November | Right | Finished wrong | Stopped | Tokens a question |
+|---|---|---|---|---|
+| Genet as it is | 20 | 12 | 8 | 87,694 |
+| Under the rule | 22 | 15 | 3 | 74,697 |
+| Of those, the 13 Genet split: as it is | 4 | 4 | 5 | 105,084 |
+| The 13, under the rule | 7 | 6 | 0 | 64,167 |
+
+On the 40, the rule would hold all five head-to-head bars: right 22, at least CrewAI's 25 less 3, and wrong 15, no more than CrewAI's 15. By the standard used for the three fixes, wrong finishes rising by at most half the right gained, it misses. These are the questions that suggested the rule, so they cannot test it.
+
+**The live test.** `bash scripts/team_runs.sh splitrule`, one y.
+- **Questions:** the 54 Loong questions no earlier run used (`compare --which rest`: everything the main, calibration and fresh draws left). 7 are spotlight, 15 comparison, 23 clustering and 9 chain.
+- **Arms:** Genet as it is, and Genet under the rule, on the head-to-head's model, limits and judge.
+- **What the rule does there:** it keeps all 54 to one agent. The largest need, a page of each of 5 filings, is about 35,000 tokens, against a room of 50,000.
+- **Cost:** about $1.70 and 45 minutes. The caps are $1.50, $0.90 and $0.50 for the judge.
+
+| The bar, written before the run | Needed |
+|---|---|
+| Right | under the rule, at least 2 more of the 54 than Genet as it is |
+| Wrong finishes | up by at most half the right finishes gained |
+| Tokens a question | fewer than Genet as it is |
+
+Reported with no bar:
+- stops;
+- each of Loong's four levels;
+- the questions Genet as it is split, and those it kept to one agent.
+
+If all three hold, the rule goes to the default on the operator's go-ahead. Even 54 questions are few: a difference of 3 or 4 can be noise.
+
+**What it cannot show.** No task here has files larger than a page that one agent must read whole. There the rule could keep to one agent work that one agent cannot hold. That case is untested.
+
 The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI

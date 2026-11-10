@@ -204,6 +204,20 @@ def test_the_fresh_draw_takes_only_questions_no_sample_holds(loong_docs):
         benchmarks.loong_fresh(_loong_rows(), loong_docs)
 
 
+def test_the_rest_is_every_planned_question_no_draw_holds(loong_docs):
+    rows = _rows_with_spares()
+    planned = benchmarks.loong_sample(rows, loong_docs)
+    used = set(planned["main"]) | set(planned["calibration"]) | set(benchmarks.loong_fresh(rows, loong_docs))
+    rest = benchmarks.loong_rest(rows, loong_docs)
+    pool = {r["id"] for level in benchmarks.LOONG_LEVELS for r in benchmarks.loong_pool(rows, level, loong_docs)}
+    assert rest and not used & set(rest) and set(rest) == pool - used
+    levels = {r["id"]: r["level"] for r in rows}
+    assert [levels[i] for i in rest] == sorted(levels[i] for i in rest)  # by level, then id
+    assert {"zh000000", "set3aaaa", "twofiling"}.isdisjoint(rest)
+    suite = benchmarks.loong_suite(_write_rows(loong_docs.parent, rows), loong_docs, "rest")
+    assert [t.id for t in suite.tasks] == [f"loong-{i[:8]}" for i in rest]
+
+
 def _write_rows(where, rows):
     path = where / "loong.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))

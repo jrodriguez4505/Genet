@@ -502,6 +502,35 @@ def test_the_rereads_run_needs_its_tapes(tmp_path: Path):
     assert "Missing data/tapes/h2h-loong-genet.jsonl" in out and _calls(log) == []
 
 
+def test_the_split_rule_run_puts_both_genets_on_the_rest_and_needs_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "splitrule") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitrule")
+    today, reads, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $1.70" in out and "Done." in out and KEY not in out
+    for call, (name, team, cap) in zip((today, reads), (("h2h-split-today", "genet", "1.50"),
+                                                        ("h2h-split-reads", "genet-reads", "0.90"))):
+        # Live from the start, on the questions no earlier run used, with the head-to-head's limits.
+        assert "compare" in call and "--adapter anthropic" in call and f"--max-spend {cap} " in call
+        assert "--benchmark loong " in call and "--which rest " in call and f"--strategies {team} " in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--replay" not in call and "--then-live" not in call and "--ids" not in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        assert call.endswith(f"key={KEY}")
+    assert "h2h-judge " in judge and "--results data/compare/h2h-split-today.json " in judge
+    assert "--results data/compare/h2h-split-reads.json " in judge
+    assert "--model claude-sonnet-5-5" in judge and "--max-spend 0.50 " in judge
+    assert "--record data/tapes/h2h-split-judged.jsonl" in judge and readout.startswith("args=-I -")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "splitrule")
+    assert again.count("already done") == 3 and len(_calls(log)) == 5
+
+
+def test_the_split_rule_run_needs_the_questions(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitrule")
+    assert "Missing data/h2h/loong-questions/loong.jsonl" in out and _calls(log) == []
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

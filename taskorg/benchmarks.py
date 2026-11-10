@@ -143,6 +143,14 @@ def loong_fresh(rows: list[dict], docs_dir: str | Path, seed: int = LOONG_FRESH_
     return out
 
 
+def loong_rest(rows: list[dict], docs_dir: str | Path) -> list[str]:
+    """Every question of the planned sets that no earlier draw holds (main, calibration or fresh), by level and id.
+    Not a draw: all that is left, so nothing about the set was chosen."""
+    planned = loong_sample(rows, docs_dir)
+    used = set(planned["main"]) | set(planned["calibration"]) | set(loong_fresh(rows, docs_dir))
+    return [r["id"] for level in LOONG_LEVELS for r in loong_pool(rows, level, docs_dir) if r["id"] not in used]
+
+
 def loong_files(row: dict, docs_dir: str | Path) -> list[tuple[str, Path]]:
     """Each of a question's filings: the name it gets in the workspace, and its file in Loong's doc/financial.
 
@@ -185,6 +193,8 @@ def loong_suite(questions: str | Path, docs_dir: str | Path, which: str = "main"
         wanted = ids
     elif which == "fresh":
         wanted = loong_fresh(rows, docs_dir)
+    elif which == "rest":
+        wanted = loong_rest(rows, docs_dir)
     else:
         wanted = loong_sample(rows, docs_dir)[which]
     tasks, corpus = [], {}

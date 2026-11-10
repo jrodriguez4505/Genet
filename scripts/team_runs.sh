@@ -268,6 +268,26 @@
 #       25 less 3), and wrong at most 15 (12; CrewAI's 15). The head-to-head's accuracy bar then holds.
 #     Reported with no bar: each team apart, the checks the reworks passed or failed, what the reworks read, tokens.
 #     If all three hold, the switch goes to a full rerun of the 40 under both teams, then to the default.
+#   bash scripts/team_runs.sh splitrule   when to split (--split-policy reads; compare's genet-reads), on Haiku 5.5 with
+#     the head-to-head's limits and judge. Today the gates admit a split when the goal's files do not fit one call. With
+#     paged reads, one agent reads a long file a page at a time and keeps what it found, so the rule counts a page of
+#     each file: when that fits, there is no planning call and the lead works alone. When it does not, the lead plans
+#     and the gates judge its parts as today. Unpaged work is measured as today.
+#     On the 54 Loong questions no earlier run used (compare --which rest: everything the main, calibration and fresh
+#     draws left), Genet as it is and Genet under the rule, then the judge on the 108. One y, about $1.70.
+#     Before the run, free (data/exp/splitrule_dry.py): on every synthetic tape (366 trials, 209 of them split, reads not
+#     paged) the rule does what Genet did, request for request. On the head-to-head's 40, its 4 calibration questions
+#     and its 20 HotpotQA questions it does what one agent did, request for request: on the 40, right 22, wrong 15,
+#     stopped 3, against Genet's 20, 12 and 8, at 75k tokens a question against 88k. By the second bar below, that
+#     in-sample result misses. On all 54 new questions the rule keeps the lead alone.
+#     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
+#     - Under the rule, right on at least 2 more of the 54 than Genet as it is.
+#     - Wrong finishes rise by at most half the right finishes gained.
+#     - Fewer tokens a question than Genet as it is.
+#     Reported with no bar: stops; each of Loong's four levels; the questions Genet as it is split and those it kept to
+#     one agent.
+#     If all three hold, the rule goes to the default, on the operator's go-ahead. 54 questions are still few: a
+#     difference of 3 or 4 can be noise.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -278,8 +298,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -302,6 +322,8 @@ elif [ "$mode" = samenote ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.70 with the judge on Sonnet (caps \$1.10)"
 elif [ "$mode" = rereads ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.25 with the judge on Sonnet (caps \$0.67)"
+elif [ "$mode" = splitrule ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.70 with the judge on Sonnet (caps \$2.90)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -405,7 +427,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -810,6 +832,80 @@ print(f"bar: Genet's 40 right {sum(map(right, forty))} (at least 22), wrong {sum
 EOF
   echo
   echo "Done. Results: data/compare/h2h-rereads-*.json   Tapes, what went to the model: data/tapes/h2h-rereads-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = splitrule ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial"; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  echo
+  echo ">>> When to split, on $model: the 54 Loong questions no earlier run used, Genet as it is and Genet under the rule"
+  echo "    (a split needs work one agent reading a page of each file could not hold; when it can, no planning call)."
+  echo "    Then the judge on the 108. About \$1.70 and 45 minutes, each step stopping itself (caps \$1.50, \$0.90, and"
+  echo "    \$0.50 for the judge)."
+  echo "    Written before it ran: under the rule, right on at least 2 more of the 54, wrong finishes up by at most half"
+  echo "    of that, and fewer tokens a question. On the head-to-head's 40 the rule gives one agent's trials: right +2, wrong"
+  echo "    +3, so the second bar missed in-sample. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6"
+  loong="--benchmark loong --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial --which rest"
+  held h2h-split-today 1.50 compare $loong --strategies genet $limits </dev/null
+  held h2h-split-reads 0.90 compare $loong --strategies genet-reads $limits </dev/null
+  name=h2h-split-judged
+  if [ -f "data/compare/$name.json" ]; then
+    echo "== $name: already done"
+  else
+    [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+    echo
+    echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+    "$PY" -m taskorg.cli h2h-judge --results data/compare/h2h-split-today.json --results data/compare/h2h-split-reads.json \
+      --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-spend 0.50 \
+      --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+      | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+  fi
+  [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  "$PY" -I - <<'EOF'
+import json
+right = lambda r: (r.get("judge_score") or 0) >= 80 and r["status"] == "complete"
+wrong = lambda r: r["status"] == "complete" and not right(r)
+rows = json.load(open("data/compare/h2h-split-judged.json"))["results"]
+today = {r["task_id"]: r for r in rows if r["strategy"] == "genet"}
+reads = {r["task_id"]: r for r in rows if r["strategy"] == "genet-reads"}
+def line(rs):
+    rs = list(rs)
+    stopped = [r for r in rs if r["status"] != "complete"]
+    tok = sum(r["tokens"] for r in rs) / max(1, len(rs))
+    return (f"{len(rs)} trials: right {sum(map(right, rs))}, wrong {sum(map(wrong, rs))}, stopped {len(stopped)}"
+            f" ({sum((r.get('judge_score') or 0) >= 80 for r in stopped)} on a right answer), {tok:,.0f} tokens a question,"
+            f" split {sum((r['workers'] or 0) > 0 for r in rs)}")
+print(f"  Genet as it is     {line(today.values())}")
+print(f"  under the rule     {line(reads.values())}")
+split = [t for t, r in today.items() if (r["workers"] or 0) > 0]
+alone = [t for t in today if t not in split]
+families = sorted({r["family"] for r in today.values()})
+groups = [("where Genet split", split), ("where it kept one agent", alone)]
+groups += [(f"level {f[len('loong-'):]}", [t for t, r in today.items() if r["family"] == f]) for f in families]
+for label, ids in groups:
+    print(f"  {label}:")
+    print(f"    Genet as it is   {line(today[t] for t in ids)}")
+    print(f"    under the rule   {line(reads[t] for t in ids if t in reads)}")
+gained = sum(map(right, reads.values())) - sum(map(right, today.values()))
+added = sum(map(wrong, reads.values())) - sum(map(wrong, today.values()))
+tok_t = sum(r["tokens"] for r in today.values()) / max(1, len(today))
+tok_r = sum(r["tokens"] for r in reads.values()) / max(1, len(reads))
+a, b, c = gained >= 2, added <= gained / 2, tok_r < tok_t
+print(f"bar: right {sum(map(right, today.values()))} -> {sum(map(right, reads.values()))}, at least 2 more -> {'holds' if a else 'MISSES'}")
+print(f"bar: wrong {sum(map(wrong, today.values()))} -> {sum(map(wrong, reads.values()))}, up by at most half of {gained} -> {'holds' if b else 'MISSES'}")
+print(f"bar: tokens a question {tok_t:,.0f} -> {tok_r:,.0f}, fewer -> {'holds' if c else 'MISSES'}")
+EOF
+  echo
+  echo "Done. Results: data/compare/h2h-split-*.json   Tapes, what went to the model: data/tapes/h2h-split-*.jsonl"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then

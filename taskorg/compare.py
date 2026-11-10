@@ -174,6 +174,7 @@ STRATEGIES: dict[str, Callable[..., Engine]] = {
     "always-told": ToldCrew,
     "genet": Engine,
     "genet-stated": functools.partial(Engine, split_policy="stated"),
+    "genet-reads": functools.partial(Engine, split_policy="reads"),
     "genet-cards": functools.partial(Engine, cards=True),
 } | {f"split-{n}": functools.partial(FixedSplit, parts=n) for n in SWEEP}
 

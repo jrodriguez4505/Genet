@@ -127,6 +127,8 @@ The could-we gate counts calls, not tokens. A split can pass it under a token bu
 
 That second check makes the gate measurable rather than rhetorical. The lead can no longer split work just by giving a reason. `--split-policy stated` restores the old behavior, where the lead's named reasons are enough; it is kept for comparison. Fan-outs the operator names with the `fanout` command count as declared.
 
+`--split-policy reads` (off by default; compare's `genet-reads`) is `measured` with one more check, before the plan. With paged reads (`--page-chars`), one agent reads a long file a page at a time and keeps what it found, so what it must hold is about a page of each file, not the files. When a page of each file the goal names fits the gates' share of one call, there is no planning call and the lead works alone from the start, as one agent does. When it does not fit, the lead plans and the gates judge the plan as under `measured`. Unpaged work is measured as before. On the CrewAI head-to-head's 40 Loong questions it kept every question to one agent: right 22 against 20, but finished wrong 15 against 12. On every synthetic tape it changed nothing. A live test on 54 Loong questions no earlier run used, `bash scripts/team_runs.sh splitrule`, has its bars written before the run ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)).
+
 When the plan no longer fits, request a replan and change the method. `KEEP_ROSTER` is illegal on a replan request; use `CHANGE_METHOD` or `REVISE_GOAL`.
 
 ## Skills and tools
@@ -201,7 +203,7 @@ Every run command takes these flags:
 - `--exists FILE`: the file's name covers a channel.
 - `--criteria TEXT`: the product must show this.
 - `--isolate`: the sub-tasks must not share a context, which is a declared reason to fan out.
-- `--split-policy measured|stated`: what "should we" accepts (default `measured`).
+- `--split-policy measured|stated|reads`: what "should we" accepts (default `measured`). `reads` skips the plan when one agent reading a page of each file fits.
 - `--tier`, plus budget overrides: `--max-calls`, `--max-tokens`, `--max-seconds`, `--max-tokens-per-call`.
 - `--abort CRITERION`: `forecast_short` (the default), `parts_failed:N`, or `none`. Naming one replaces the default (see [The shared situation](#the-shared-situation)).
 - `--main-effort CHANNEL`: the part the goal depends on most; the gates judge it first.
@@ -519,7 +521,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 | Sub-agent | A worker with an isolated context and one channel. | `worker` slot with a `channel_id` |
 | Sub-task | A part of the work with a stated reason to run separately. | `Subtask`, `subtask:<channel>@<skill>=<failure>` |
 | Gates | Admission control for sub-agents. | `gates.assess()`, `GateRecord` |
-| Split policy | What counts as a reason to fan out: measured (default) or stated. | `Engine(split_policy=...)`, `--split-policy` |
+| Split policy | What counts as a reason to fan out: measured (default), stated, or reads (measured, with no plan when one agent reading a page of each file fits). | `Engine(split_policy=...)`, `--split-policy` |
 | Skill | A role brief plus a tool allowlist. | `Slot.skill`, `SKILLS`, `Run.switch_skill()` |
 | Goal | What the run must deliver, with success criteria and a done-when condition. | `goal`, `success_criteria`, `done_when` |
 | Method | The current plan. Its moves are recorded as labels; design part 9 would have the kernel run them. | `RunState.method`, `axes` |

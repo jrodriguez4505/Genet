@@ -15,7 +15,7 @@ from . import checks, members, situation
 from .budget import Budget
 from .cues import fire_auto_cues
 from .errors import InvariantError
-from .gates import LEAD_COVERS, PART_TOO_BIG, Assessment, Subtask, _could_we, assess
+from .gates import LEAD_COVERS, PART_TOO_BIG, SPLIT_POLICIES, Assessment, Subtask, _could_we, assess
 from .memory_store import MemoryStore
 from .run import Run
 from .models import MAX_WORKERS, SKILL_TOOLS, SKILLS, Artifact, Delta, Slot, Status
@@ -310,7 +310,10 @@ class Engine:
         self.parallel = parallel
         self.max_tool_rounds = max(0, int(max_tool_rounds))  # negative rounds would make a worker cost less than one call
         # "Should we" for the lead's proposals: "measured" needs declared isolation or
-        # material that does not fit one context; "stated" accepts the lead's reasons.
+        # material that does not fit one context; "stated" accepts the lead's reasons. "reads" is "measured", with
+        # no planning call when one agent reading a page of each file can hold what it needs (_one_agent_reads).
+        if split_policy not in SPLIT_POLICIES:
+            raise ValueError(f"split_policy must be one of {SPLIT_POLICIES}, got {split_policy!r}")
         self.split_policy = split_policy
         self.isolation_required = isolation_required
         self.fit_fraction = fit_fraction
@@ -743,6 +746,32 @@ class Engine:
         ratio = getattr(self.adapter, "token_ratio", 1.0)
         return n if ratio == 1.0 else math.ceil(n * ratio)
 
+    def _page_tokens(self) -> int | None:
+        """A page of a paged read in the model's tokens, with what a read adds to it; None when reads are not paged."""
+        chars = self.toolbox.page_chars
+        return self._model_tokens(chars // 4 + READ_FRAME) if chars else None
+
+    def _one_agent_reads(self, run: Run) -> bool:
+        """Split policy "reads", before any plan: can one agent that reads a page of each file at a time hold what it
+        needs in one call? The files are those the goal names, or the workspace's when it names fewer than two; the
+        room is the gates' share of a call before any brief is measured. When it fits, no split could pass the gates,
+        so there is no planning call and the lead works alone from the start. Only with paged reads: unpaged, one
+        agent reads each file whole, as the gates already measure it. The measure is on the record either way."""
+        b = run.budget
+        page = self._page_tokens()
+        if self.split_policy != "reads" or not page or not b or not b.max_tokens_per_call:
+            return False
+        names = checks.named_in(run.state.goal, self.toolbox.shown_files())
+        found = self.toolbox.material("", " ".join(names)) if len(names) > 1 else None
+        sizes = [self._model_tokens(t) for t in (found.values() if found else self.toolbox.file_sizes())]
+        if not sizes:
+            return False
+        need = sum(min(t, page) for t in sizes)
+        room = int(b.max_tokens_per_call * self.fit_fraction)
+        run._record("split_rule", {"policy": "reads", "files": len(sizes), "page_tokens": page, "need": need,
+                                   "room": room, "plan": need > room})
+        return need <= room
+
     def _material(self, subtask: Subtask) -> dict[str, int] | None:
         """The sub-task's files, in the model's tokens."""
         found = self.toolbox.material(subtask.channel_id, subtask.named_failure)
@@ -1057,6 +1086,8 @@ class Engine:
         """The lead reads the context and proposes sub-tasks. Strategies override this.
 
         again: why its first plan was refused, for a second try."""
+        if self._one_agent_reads(run):
+            return []
         lead = run.state.lead_id
         run.switch_skill(lead, lead, "reason", "read the context; propose sub-tasks only for independent work")
         base = PLAN_BRIEF.format(skills="|".join(SKILLS)) + self._cards(run)
