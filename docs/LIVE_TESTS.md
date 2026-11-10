@@ -983,7 +983,42 @@ By the rule written first, step 2 did not run, and the note stays off.
 - **Two notes, two misses.** On these questions, hedges and checker stops mostly kept wrong answers out; they did not cost right ones. The line-name losses of 9 November are real. Neither note recovered them without letting more wrong answers through, so both stay off and the problem stays open.
 - **The four tapes replay exactly:** 48 trials and 48 verdicts.
 
-The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same` and their judged tapes. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+### A rework that may read, on the 20 stopped split runs
+
+**Why it was tried.** The tapes show where split runs stop. After a split, the lead merges the parts' reports with skill "reason", whose only tool is `write`. When the checker fails a merge, the rework keeps that skill. The checker's usual reason is a figure "not read" or "not confirmed". The lead cannot read, so it can only reword: it adds "provisional", hedges, or changes its answer. On the head-to-head tapes, reworks after a split passed 12 times of 35. Reworks by a single agent, which can read, passed 14 times of 23.
+
+**The switch.** `--rework-reads`, off by default. When the lead holds no reading tool and there is a workspace, its rework gets a single agent's skill, retrieve and read. It is told it may read the figures the checker named. With the switch off, every request is unchanged, and the 9 November and fresh-question tapes replay exactly.
+
+**The run.** `bash scripts/team_runs.sh rereads`, on 9 November, Haiku 5.5 with the Sonnet judge. It covered the 20 split trials, from the 9 November and fresh-question runs, whose checker sent a merge back. Each trial replays from its tape up to its first rework, so the merges and checker failures are the same as before. From the rework on, it goes to the model (`compare --then-live`, armed by the switch's words). The run cost $0.26: $0.20 for 96 live requests and $0.06 for the judge. The estimate was $0.25 and the caps $0.67.
+
+| The 20 trials | Right | Finished wrong | Stopped by the checker | Stopped on a right answer |
+|---|---|---|---|---|
+| Told crew (12), as taped | 0 | 3 | 9 | 3 |
+| Told crew (12), may read | 3 | 6 | 3 | 0 |
+| Genet (8), as taped | 0 | 0 | 8 | 3 |
+| Genet (8), may read | 1 | 3 | 4 | 1 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Right finishes | at least 4 of 20 | **4**, holds |
+| Wrong finishes | up by at most half the right gained, 2 | **3 to 9**, misses |
+| Genet's 40, with its 5 reworked trials | right at least 22, wrong at most 15 | **right 21, wrong 14**, misses |
+
+By the rule written first, the full rerun of the 40 does not run, and the switch stays off. On the 40 of 9 November with these reworks in place, Genet would be right 21 times and wrong 14, against 20 and 12. The told crew would be right 22 times and wrong 16, against 20 and 14. One agent was right 22 times and CrewAI 25.
+- **The reworks read.** Across the 20 trials they read 102 times and searched 70 times before answering.
+- **Of the 6 stops on a right answer:**
+  - 4 now finish right: long-term borrowings for both teams, the grouping by change in cash, and the share count.
+  - 1 still stops: Genet's revenue grouping.
+  - 1 now finishes wrong: Genet's receivables grouping. After reading, it left Equus's receivable of 139 out of every band.
+- **Of the 11 stops on a wrong answer, 6 now finish wrong.** Reading confirmed the figures, and the checker then passed them. The errors were of other kinds:
+  - **Years.** Two trend questions on one company's annual reports, operating profit and diluted EPS. The reworks dated each figure by the period in its statement. Loong's answers date each figure by its file, one year later. Both answers have the years shifted and say there is no 2024 figure.
+  - **Line names.** On total operating revenue, the rework confirmed that no line carries that name and answered "cannot be determined". On intangible assets, it reported the same flat $688,778 as Loong but called it goodwill, and the judge gave it 50.
+  - **Bands.** Two groupings by size put a company one band off.
+- **Of the 3 wrong finishes,** 2 are still wrong, and 1, undistributed profits, now stops.
+- **Reading.** This is the third change that takes away a reason to stop, after the wording note and the same-measure note. Each time, more wrong answers finished than right ones. On these runs the checker's stops mostly kept wrong answers out. Most errors behind them came from how Loong names lines, dates years and draws bands, not from what the lead could read.
+- **The tapes replay exactly.** Each live tape, joined to the tape it continued, gives all 20 trials with no request missing and the same results. The judge's tape gives the same 20 scores. The readout is `data/exp/rereads_read.py`.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
