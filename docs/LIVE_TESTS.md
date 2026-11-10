@@ -954,14 +954,36 @@ By the rule written first, step 2 did not run, and the note stays off.
 - **"The line that measures the same thing" also reached too far.** On the cash count both teams counted Cross Timbers' "Cash and short-term investments" and answered 3. Loong's answer is 2, which one agent gave. On undistributed profits, a proxy line led Genet to a wrong company, and the checker passed it on rework.
 - **Stops became wrong finishes.** Four of the old stops now finish with a wrong answer: total profit for both teams, undistributed profits for Genet, and a grouping by change in cash for the told crew. Two of the told crew's old wrong finishes now stop instead. That is why wrong finishes rose from 4 to 6.
 - **Reading.** Telling writers to substitute fixes the hedging. Without a rule for when a nearby line is the same measure, it trades stops for wrong answers. The checker then disagrees with the writers about substitution, in both directions. Both tapes replay exactly: 18 trials and 18 verdicts.
-- **Next, on the operator's go-ahead: a narrower note, tested on new questions.**
+- **Next, on the operator's go-ahead: a narrower note, tested on new questions (below; it missed both bars).**
   - `--author-rule same` tells writers to use only a line that is the same measure under another name, and to say which. A line that adds or leaves out items does not count.
   - `--verify-rule same` tells the checker not to fail that, and to fail a different measure.
   - Changes tuned on these 9 questions could fit them, so the test uses 12 Loong questions no earlier run used. They are 6 comparison and 6 clustering, drawn before the run (`compare --which fresh`, seed 1109). The told crew and Genet answer them once with today's briefs and once with the note.
   - `bash scripts/team_runs.sh samenote`, about $0.70. The bars, written first: with the note, together right on at least 2 more of 24, and finished wrong no more often.
   - With 12 questions, a hold would only justify the larger run, not settle the question.
 
-The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine` and `h2h-wording-nine-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+### The same-measure note on 12 fresh questions
+
+`bash scripts/team_runs.sh samenote`, on 9 November: the told crew and Genet on 12 Loong questions no earlier run used, once without the note and once with it. The note was `--author-rule same --verify-rule same`. The run cost $0.74: $0.34 without the note, $0.25 with it, and $0.15 for the judge.
+
+| 12 fresh questions | Right | Finished wrong | Stopped by the checker | Split | Tokens a question |
+|---|---|---|---|---|---|
+| Told crew, without the note | 6 | 3 | 3 | 12 | 68,085 |
+| Told crew, with the note | 6 | 6 | 0 | 12 | 68,349 |
+| Genet, without the note | 3 | 5 | 4 | 5 | 157,168 |
+| Genet, with the note | 4 | 5 | 3 | 8 | 76,661 |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Together right | at least 2 more of 24 than without | **10 against 9**, misses |
+| Together finished wrong | no more often than without | **11 against 8**, misses |
+
+- **The narrower note failed the same way as the first.** It turned the checker's stops into finished answers, and most of those were wrong. The told crew's 3 stops became none and its wrong finishes rose from 3 to 6, with 6 right both times.
+- **The checker, told the same, passed what it used to stop.** One answer used a substitute line from one company's filing and dropped the other two companies. Another left one of three companies "not determinable" in a grouping.
+- **Genet's lead varied, not just the note.** The lead split 5 of the 12 questions in one run and 8 in the other. The note does not reach the plan, so the difference is the lead's own variance. That variance makes Genet's cost swing too: 157,168 tokens a question against 76,661.
+- **Two notes, two misses.** On these questions, hedges and checker stops mostly kept wrong answers out; they did not cost right ones. The line-name losses of 9 November are real. Neither note recovered them without letting more wrong answers through, so both stay off and the problem stays open.
+- **The four tapes replay exactly:** 48 trials and 48 verdicts.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same` and their judged tapes. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

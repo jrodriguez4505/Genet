@@ -2,6 +2,39 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.12.0 — November 2026: how many agents, three models, and an outside comparison
+
+**Why.** Every result so far compared Genet with its own baselines, on one model, with the agent count set by Genet's own gates. Three questions were left: how many agents a task like this needs, whether the findings hold on stronger models, and how Genet does against an established framework on public questions.
+
+**Built.** Everything below is off by default, and v0.11.0's tapes replay as before.
+- **Fixed splits for measuring** (`split-2`, `split-4`, `split-10`, `split-20`). The kernel splits a goal's files evenly, and each engine has its own worker cap.
+- **Prompt caching** (`TASKORG_MODEL_CACHE`), priced per model. **A model and price per role** (`--price MODEL=IN/OUT`), so a Sonnet verifier can check Haiku writers.
+- **Two checks for answers that set a figure aside.** `--verify-rule aside` adds a verifier sentence, and `--gap-check` sends such an answer back for one rework. **`compare --then-live`** replays a tape until a chosen request, then goes live.
+- **Public benchmarks in `compare`** (`taskorg/benchmarks.py`):
+  - Loong's English SEC-filing questions and HotpotQA, with `--benchmark`, `--questions`, `--docs`, `--which main|calibration|fresh` and `--ids`;
+  - paged reads (`read:PATH@N`, `--page-chars`);
+  - `h2h-judge`, which runs Loong's own judge prompt on Sonnet. An answer counts as right at a score of 80 or more.
+- **A raw client for other frameworks** (`taskorg/rawcall.py`). It sizes, caps, prices and tapes every call. `scripts/h2h_crewai.py` runs CrewAI 1.15.30 on it, with CrewAI's own tool calls and telemetry off.
+- **Notes for a line a filing names differently** (`--author-rule wording|same`, `--verify-rule same`).
+- **New run modes in `scripts/team_runs.sh`:** `sonnet`, `sonnettwo`, `agents`, `cache`, `mixed`, `opus`, `sonnetsweep`, `headtohead`, `wording` and `samenote`. Each has its bars written before it ran.
+
+**What the live runs showed** (7 to 9 November, about $45 in all). See [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+- **About four agents was right.** On Haiku at an 8,000-token call limit, 4 parts were right on 10 of 12 and 20 parts on 9, at about twice the tokens. Where the work fits one call, 4 parts cost half what one agent did. On Sonnet every split got the right answer on all 12, and the count changed only the cost; the checker stopped one of 4 parts' right answers, so 4 parts finished 11 right.
+- **Three models on the same 66 trials.** Haiku, Sonnet and Opus were right on 52, 59 and 59, and finished wrong 4, 0 and 1 times. A Sonnet verifier over Haiku writers did not reach Sonnet alone.
+- **Prompt caching cut one agent's cost by 30%**, but the cached agent read less and finished wrong more often, so it is off.
+- **Against CrewAI on Loong's 40 questions over SEC filings:**
+  - CrewAI was right on 25, one agent on 22 and Genet on 20, so Genet missed its accuracy bar.
+  - It held the other bars: fewer tokens a question (88k against 127k), lower cost a right answer, and fewer wrong finishes (12 against 15).
+  - On HotpotQA Genet stayed one agent on all 20 and matched it.
+  - Genet lost where it split. Its parts each reported that the line a question names was missing, and its merge hedged.
+- **Neither the wording note nor the narrower same-measure note recovered those answers.** Each turned stops into wrong answers, on the in-sample 9 and on 12 fresh questions.
+
+**Left open.**
+- Line names that a filing words differently, after a split.
+- The aside and gap checks, which each stopped too many right answers.
+- A split rule that weighs cost as well as fit.
+- The lead's variance in whether to split: 5 against 8 of 12 on two runs of the same questions.
+
 ## v0.11.0 — November 2026: a lead told why, and rounds that fit
 
 **Why.** The run of 3 November left four things to try. Nobody had tested the heading sentence on files where a heading does not hold. The lead's rework brief never said what the verifier objected to, in 0 of 32 requests. A lead's own reads could overflow its next call and stop the run. And most wrong answers were an author refusing a figure that is in the file.
