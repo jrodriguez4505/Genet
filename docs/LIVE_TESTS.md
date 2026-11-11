@@ -1153,7 +1153,50 @@ If all three hold, kept pages go to the default on the operator's go-ahead.
 - A rework drawn again can differ by chance as well as by the switch, and there is one live draw against one taped draw.
 - HotpotQA's 7 are left out: they are short, and they are scored by exact match, not by the judge.
 
-The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes, `h2h-split-today`, `h2h-split-reads` and `h2h-split-judged`, and the `h2h-keeps-*` tapes once that run is made. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+### A rework that keeps its pages: the result, 11 November
+
+Run on Haiku 5.5 as planned, with Sonnet 5.5 judging the 36. Spend was $0.58:
+- $0.46 live, including $0.058 for the fresh step's first try, which stopped at its cap;
+- $0.12 for the judge's 35 calls. One trial had no answer to send.
+
+Every trial went to the model at its rework and nowhere else.
+
+| The 36 | Right | Finished wrong | Stopped | Tokens |
+|---|---|---|---|---|
+| As taped | 7 | 19 | 10 (6 on a right answer) | 6,116,108 |
+| Pages kept | 6 | 21 | 9 (5 on a right answer) | 7,154,697 |
+
+| The bar, written before the run | Needed | Result | |
+|---|---|---|---|
+| Tokens | at most 5,497,118 | 6,116,108 to 7,154,697 | **misses** |
+| Right | at least 7 | 7 to 6 | **misses** |
+| Wrong finishes | up by at most half the right gained | 19 to 21, with 1 fewer right | **misses** |
+
+By tape, as right, finished wrong and stopped, then tokens (no bar):
+
+| Trials | As taped | Pages kept |
+|---|---|---|
+| The 40, single, 10 | 0, 7, 3; 1,262,275 | 1, 7, 2; 1,390,800 |
+| The 40, Genet, 6 | 1, 2, 3; 1,055,822 | 0, 6, 0; 983,380 |
+| Calibration, single, 2 | 0, 1, 1; 208,356 | 0, 1, 1; 226,081 |
+| Calibration, Genet, 1 | 0, 1, 0; 465,612 | 0, 0, 1; 586,856 |
+| The 12 fresh, Genet, 3 | 0, 2, 1; 1,053,088 | 0, 1, 2; 1,891,387 |
+| The 54, Genet as it is, 3 | 1, 2, 0; 328,263 | 1, 2, 0; 331,877 |
+| The 54, under the split rule, 11 | 5, 4, 2; 1,742,692 | 4, 4, 3; 1,744,316 |
+
+**Why tokens rose.** The rework did not stop reading. Of its 73 calls that carried kept pages, 38 asked to read or search again. Each of those calls sent all the kept pages once more, so the rework's calls were fewer but much larger. On one fresh question, seven calls of 58,000 to 78,000 tokens each took the trial from 527,119 tokens to 845,687.
+
+The two long trials that suggested the switch went opposite ways:
+- `loong-44b5d8c0`: 342,747 tokens to 220,650. It finished right as taped, but stopped with its pages kept.
+- `loong-7d75bfc7`: 703,083 to 847,412, stopped both times.
+
+**Reported with no bar.**
+- **The 54, with kept pages in both arms:** Genet as it is was right 24 and wrong 24, at 65,200 tokens a question. Under the split rule it was right 27 and wrong 24, at 72,644. The split rule still misses its token bar.
+- **The 40, with kept pages:** one agent was right 23 and wrong 15, Genet right 19 and wrong 16. CrewAI was right 25 and wrong 15.
+
+**What follows.** All three bars missed, so `--rework-keeps` stays off by default. Pages a rework already holds do not stop Haiku reading more, and carrying them makes every further call dearer. A rework that is to cost less needs a limit on what it reads, not only what it is given.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes, `h2h-split-today`, `h2h-split-reads` and `h2h-split-judged`, and the `h2h-keeps-*` live tapes and `h2h-keeps-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

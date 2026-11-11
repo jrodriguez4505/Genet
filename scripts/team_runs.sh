@@ -301,6 +301,8 @@
 #     On 11 November the fresh step stopped at its $0.11 cap after one trial, which cost $0.058: a rework that keeps its
 #     pages went on reading, and each call carried them all. Its cap and those of the steps after it were raised, the
 #     bars unchanged; the fresh step runs again whole. About $0.80 in all, $0.21 of it spent before the stop.
+#     Ran 11 November, $0.58 in all: tokens 6,116,108 to 7,154,697, right 7 to 6, wrong 19 to 21. All three bars
+#     missed, so the switch stays off (docs/LIVE_TESTS.md).
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
