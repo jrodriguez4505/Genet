@@ -1340,6 +1340,19 @@ The bars set before the run all hold. The rule goes to the default on the operat
 
 **Made the default, 11 November**, on the operator's go-ahead. `--split-policy` defaults to `reads`, and compare's `genet` is the rule; `genet-measured` is Genet as every earlier run had it. A paged tape from before names no policy, and its `genet` replays under `measured`, as it ran.
 
+**The rework under the new default (free, from the tapes).** Both draws were replayed whole, with a probe at the rework (`data/exp/rework_default.py`): 216 of 216 trials replayed as recorded. The judge scored only final products, so what is counted is where each rework ended.
+
+| Both draws | Reworked | Then right | Then wrong | Then stopped | Tokens from the rework on |
+|---|---|---|---|---|---|
+| The rule (the default) | 24 of 108 | 9 | 11 | 4 | 1,418,776 (19%) |
+| Genet as it was | 24 of 108 | 4 | 8 | 12 | 527,078 (8%) |
+
+- **Genet as it was:** 18 of its 24 reworks followed a split, and 11 of those stopped. That is most of its stops where it split.
+- **Under the rule:** every rework follows one agent's product, and 20 of 24 end in an answer: 9 right, 11 wrong.
+- **Stopping instead of reworking:** under the rule, this would give up 9 right finishes to avoid 11 wrong ones, and save about 13,100 tokens a question. On the synthetic tapes, the rework fixed 35 wrong products for 2 it broke.
+
+So on Loong the rework is about even. Whether it pays depends on what a wrong answer costs against no answer, so it stays as it is. Grading the 24 failed products would show how often the verifier turned down a right one (about $0.10 on the Sonnet judge).
+
 ## 11 November 2026: does splitting still win at a real call limit?
 
 ### The plan, written before the run
