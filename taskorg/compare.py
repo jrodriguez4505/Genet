@@ -233,6 +233,11 @@ def run_trial(
         run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=task.purpose or PURPOSE,
                       done_when=task.done_when or DONE_WHEN)
         run.state.success_criteria = ["ANSWER:"]
+        # A tape marks each exchange with the trial that sent it, and a replay serves each trial its own (tape.Player).
+        try:
+            adapter.trial = run.id
+        except AttributeError:
+            pass
         if task.filed:
             # Parts already done: the run's world covers them, as --exists does for a live run.
             run.world = World(existing_channels=[slug(n) for n in task.filed])

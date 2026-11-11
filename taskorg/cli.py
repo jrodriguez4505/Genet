@@ -384,6 +384,16 @@ def main(argv: list[str] | None = None) -> int:
     p_b.add_argument("--question", default="Could a single agent have done this?")
     p_b.set_defaults(func=cmd_brief)
 
+    p_pair = sub.add_parser("paired", help="two arms of a comparison, question by question, with their noise "
+                                               "(an exact sign test on the questions where they differ, and a "
+                                               "bootstrap range for tokens)")
+    p_pair.add_argument("first", help="a compare or h2h-judge results file, then :STRATEGY if it holds more than one")
+    p_pair.add_argument("second", help="the arm to compare with the first, the same way")
+    p_pair.add_argument("--grading", choices=["judged", "exact"], default=None,
+                        help="judged: a judge score of at least 80 is right (Loong); exact: the answer key (generated "
+                             "questions, HotpotQA). By default, judged when the results carry judge scores")
+    p_pair.set_defaults(func=cmd_paired)
+
     p_replay = sub.add_parser("replay", help="print a saved run log")
     p_replay.add_argument("path")
     p_replay.set_defaults(func=cmd_replay)
@@ -638,6 +648,16 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
             recorded = {"verify_rule": "none", "rework_reason": False, "gap_check": False, "rework_reads": False,
                         "rework_keeps": False} | recorded
         differ = [k for k in keys if k in recorded and recorded[k] != config.get(k)]
+        part = "strategies" in differ and set(config.get("strategies") or ()) <= set(recorded.get("strategies") or ())
+        if part:
+            # Some of its strategies, or all in another order: the requests are the tape's, and what may differ is
+            # which recorded reply a shared request gets, unless the tape marked each exchange with its trial.
+            differ.remove("strategies")
+            if not player.marked:
+                stderr(f"note: the tape was recorded with strategies {','.join(recorded['strategies'])} and does not mark "
+                       "which trial sent each request; where two sent the same one, a replay of some of them, or in "
+                       "another order, may be served the other's reply. Replay them all, in that order, for the run as "
+                       "it went")
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
         config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}
@@ -1331,6 +1351,36 @@ def cmd_policy_fit(args: argparse.Namespace) -> int:
     stub = vs_stub(rows)
     saved = str(dump(pol.head, Path(args.out)))
     print(json.dumps({"ok": True, "saved": saved, "imitation": report, "stub": stub}, indent=2))
+    return 0
+
+
+def _arm(spec: str) -> tuple[str, dict]:
+    """PATH[:STRATEGY] -> its label and question -> result. A results file of one strategy needs no name."""
+    path, _, strategy = spec.rpartition(":") if spec.rpartition(":")[0].endswith(".json") else (spec, "", "")
+    try:
+        rows = json.loads(Path(path).read_text())["results"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise InvariantError("PAIRED", f"cannot read results from {path}: {e}") from None
+    names = sorted({r["strategy"] for r in rows})
+    if not strategy:
+        if len(names) != 1:
+            raise InvariantError("PAIRED", f"{path} holds {', '.join(names)}: name one as {path}:STRATEGY")
+        strategy = names[0]
+    if strategy not in names:
+        raise InvariantError("PAIRED", f"{path} has no strategy {strategy} (it has {', '.join(names)})")
+    return f"{Path(path).stem}:{strategy}", {(r["task_id"], r.get("repeat", 0)): r for r in rows if r["strategy"] == strategy}
+
+
+def cmd_paired(args: argparse.Namespace) -> int:
+    from .paired import exact_right, exact_wrong, judged_right, judged_wrong, paired
+
+    (first_name, first), (second_name, second) = _arm(args.first), _arm(args.second)
+    grading = args.grading or ("judged" if any("judge_score" in r for r in [*first.values(), *second.values()]) else "exact")
+    right, wrong = (judged_right, judged_wrong) if grading == "judged" else (exact_right, exact_wrong)
+    result = paired(first, second, right=right, wrong=wrong)
+    if not result.questions:
+        raise InvariantError("PAIRED", "the two arms share no question")
+    print("\n".join(result.lines(first_name, second_name)))
     return 0
 
 

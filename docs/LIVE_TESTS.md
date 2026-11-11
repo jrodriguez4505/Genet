@@ -1198,6 +1198,81 @@ The two long trials that suggested the switch went opposite ways:
 
 The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes, `h2h-split-today`, `h2h-split-reads` and `h2h-split-judged`, and the `h2h-keeps-*` live tapes and `h2h-keeps-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
+## 11 November 2026: the tapes read again, no new calls
+
+Three questions about the record itself, answered from tapes and results already on disk. Nothing was sent to a model.
+
+### Does the verifier's rework pay?
+
+`data/exp/rework_audit.py` replays each tape whole, with a probe at the rework. When the lead is sent back, the probe keeps the product it is sent back with and the tokens spent so far, and the trial then runs on from the tape as it did.
+
+1,251 trials on generated questions and 324 on Loong and HotpotQA replay exactly as recorded. Another 141, on older tapes whose briefs have changed since, do not, and are left out.
+
+Generated questions have an answer key, so the product the verifier failed is graded too:
+
+| Generated questions | Trials | Reworked | Failed product was right | Then finished right | Failed product was wrong | Then fixed | Then finished wrong | Tokens from the rework on | With no rework |
+|---|---|---|---|---|---|---|---|---|---|
+| Haiku 5.5 | 873 | 129 | 23 | 16 | 106 | 29 | 2 | 8% | right -45, wrong -2 |
+| Sonnet 5.5 | 192 | 46 | 21 | 16 | 25 | 0 | 0 | 13% | right -16 |
+| Opus 5.5 | 66 | 7 | 0 | 0 | 7 | 1 | 0 | 10% | right -1 |
+| Haiku, Sonnet checking | 120 | 26 | 11 | 6 | 15 | 5 | 0 | 10% | right -11 |
+| All | 1,251 | 208 | 55 | 38 | 153 | 35 | 2 | 9% | right -73, wrong -2 |
+
+The public benchmarks are graded after the run, so here the failed product is not:
+
+| Public benchmarks, Haiku 5.5 | Trials | Reworked | After the rework: right, wrong, stopped | Tokens from the rework on | With no rework |
+|---|---|---|---|---|---|
+| Loong | 264 | 67 | 8, 26, 33 (13 on a right answer) | 13% | right -8, wrong -26 |
+| Of those, one agent or a lead alone | 162 | 36 | 7, 19, 10 | 19% | right -7, wrong -19 |
+| Of those, split | 102 | 31 | 1, 7, 23 | 4% | right -1, wrong -7 |
+| HotpotQA | 60 | 14 | 6, 5, 3 | 13% | right -6, wrong -5 |
+
+What it shows:
+- **On generated questions the rework pays.** Of 153 products the verifier rightly failed, the rework fixed 35 and let 2 through wrong. With no rework, 73 right finishes would be lost to stop 2 wrong ones, for 9% of the tokens.
+- **About half its right finishes undo the verifier's own false alarms.** 55 failed products were right, and 38 of them finished right after the rework. On Sonnet the rework fixed none of 25 wrong products; all its value was in false alarms, and on one agent it took 44% of the tokens.
+- **On Loong the rework let wrong answers through, 26 to 8.** The failed products are not graded there, so this cannot say whether the rework broke right answers or failed to fix wrong ones. Grading them would take Loong's judge on 67 products.
+- **The rework stays.** Stopping instead of reworking on work like Loong is a question for a test written before it runs; this reading only suggests it.
+
+### Replays that are exact
+
+Trials run one at a time, so a tape replayed with all its strategies, in their order, is the run as it went. The head-to-head's HotpotQA tape replays 60 of 60 that way. One strategy replayed alone could be served another's reply where both sent the same request: Genet alone on that tape came out 5 tokens off on one trial.
+
+Each exchange is now marked with the trial that sent it, and a replay serves each trial its own replies (`taskorg/tape.py`), so one strategy replays alone exactly. A tape from before the marks is served as before. `compare` says so when asked to replay only some of its strategies, or in another order.
+
+### What is noise
+
+The live comparisons are small: 12 to 54 questions an arm. `taskorg paired FIRST SECOND` (`taskorg/paired.py`) pairs two arms question by question:
+- **Right or wrong finishes:** only the questions where the arms differ count. An exact two-sided sign test on those gives how often a split at least that uneven comes from chance.
+- **Tokens a question:** the mean difference, with a 95% bootstrap range.
+
+`data/exp/noise.py` reads every comparison so far that way. p under 0.05, or a range that leaves out zero, counts as beyond noise:
+
+| Comparison | Questions | Right | Wrong | Tokens a question |
+|---|---|---|---|---|
+| Loong head-to-head, Genet against one agent | 40 | 22 to 20, p 0.69 | 15 to 12, p 0.45 | +13.0k (-7.3k to +34.1k) |
+| Genet against CrewAI | 40 | 25 to 20, p 0.12 | 15 to 12, p 0.45 | **-39.6k (-76.1k to -5.1k)** |
+| One agent against CrewAI | 40 | 25 to 22, p 0.25 | 15 to 15, p 1.00 | **-52.6k (-83.0k to -23.4k)** |
+| Split rule, the 54 | 54 | 24 to 28, p 0.22 | 24 to 24, p 1.00 | +7.5k (-15.8k to +37.1k) |
+| Split rule in-sample, the 40 | 40 | 20 to 22, p 0.69 | 12 to 15, p 0.45 | -13.0k (-34.1k to +7.3k) |
+| Kept pages | 36 | 7 to 6, p 1.00 | 19 to 21, p 0.69 | +28.9k (-2.4k to +70.1k) |
+| Rework may read | 20 | 0 to 4, p 0.12 | 3 to 9, p 0.07 | **+65.4k (+47.7k to +85.4k)** |
+| Same-measure note, Genet | 12 | 3 to 4, p 1.00 | 5 to 5, p 1.00 | **-80.5k (-167.8k to -12.8k)** |
+| Sweep at 8,000, 4 parts against one agent | 12 | **1 to 10, p 0.004** | 1 to 0, p 1.00 | -2.5k (-17.5k to +15.7k) |
+| Sweep at 8,000, 10 parts against one agent | 12 | **1 to 11, p 0.006** | 1 to 0, p 1.00 | **+10.5k (+3.2k to +19.2k)** |
+| Sweep at 8,000, 20 parts against one agent | 12 | **1 to 9, p 0.008** | 1 to 1, p 1.00 | **+43.6k (+36.3k to +52.2k)** |
+| Sweep at 8,000, Genet against one agent | 12 | **1 to 9, p 0.008** | 1 to 0, p 1.00 | 0.0k (-13.0k to +15.4k) |
+| Sweep at 64,000, 20 parts against 4 | 12 | 12 to 9, p 0.25 | 0 to 2, p 0.50 | **+59.4k (+56.8k to +62.5k)** |
+
+What holds:
+- **Splitting where one call cannot hold the work.** One agent was right on 1 of 12, while every split and Genet got 8 to 11.
+- **Tokens.** Genet and one agent used fewer than CrewAI on Loong, and parts beyond four cost more where the work fits.
+
+What does not hold:
+- **Every right or wrong difference on Loong.** CrewAI's 25, one agent's 22 and Genet's 20 cannot be told from a tie, and nor can Genet's 12 wrong against 15. "Genet missed its accuracy bar" and "where it split, it did worse" go beyond what 40 questions show.
+- **The split rule's +4, and each of the three fixes.**
+
+From now on a readout gives each difference with its noise, and a bar names a difference beyond noise, not a count.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.
