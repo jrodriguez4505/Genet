@@ -7,13 +7,14 @@ the check as it was."""
 
 from __future__ import annotations
 
+import argparse
 import json
 
 from taskorg import checks, compare
 from taskorg.budget import Budget
 from taskorg.cli import _as_recorded, main
 from taskorg.factory import new_run
-from taskorg.loop import Engine
+from taskorg.loop import QUOTE_ARM, Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import Artifact
 from taskorg.tools import Toolbox
@@ -103,3 +104,41 @@ def test_a_benchmark_tape_from_before_replays_under_the_check_as_it_was(capsys):
     config = {"quote_spaces": True, "genet_split": "reads"}
     _as_recorded({"benchmark": "loong", "quote_spaces": True, "genet_split": "reads"}, config)
     assert config == {"quote_spaces": True, "genet_split": "reads"}
+
+
+def _goes_live(tmp_path, monkeypatch, recorded, config):
+    from test_rework_reads import _Haiku
+
+    from taskorg import cli
+
+    tape = tmp_path / "t.jsonl"
+    tape.write_text(json.dumps({"tape": 1, "adapter": "anthropic", "model": "claude-haiku-5-5", "effort": "low",
+                                "compare": recorded}) + "\n")
+    monkeypatch.setattr(cli, "pick_adapter", lambda name: _Haiku())
+    args = argparse.Namespace(replay=str(tape), record=str(tmp_path / "l.jsonl"), adapter="anthropic", gap_check=False,
+                              rework_reads=False, rework_keeps=False, fixed_quotes=True)
+    factory, _, recorder = cli._continuing_source(args, config, "compare", "COMPARE")
+    recorder.close()
+    return factory, json.loads((tmp_path / "l.jsonl").read_text().splitlines()[0])["compare"]
+
+
+def test_a_tape_from_before_goes_live_at_the_first_check_the_fix_changes(tmp_path, monkeypatch, capsys):
+    config = {"quote_spaces": True}
+    factory, header = _goes_live(tmp_path, monkeypatch, {"benchmark": "loong", "page_chars": 16000}, config)
+    # It replays as the tape ran up to the brief the fix changes, and goes on under the fixed check.
+    assert factory().tape.arm == QUOTE_ARM == checks.SOURCES_HEAD
+    assert config["quote_spaces"] is True and header["quote_spaces"] is True
+    assert "goes on live under the fixed quote check" in capsys.readouterr().err
+
+
+def test_the_fixed_check_needs_a_benchmark_tape_from_before_it(tmp_path, monkeypatch, capsys):
+    import pytest
+
+    from taskorg.errors import InvariantError
+
+    for recorded, config in (({"benchmark": "loong", "quote_spaces": True}, {"quote_spaces": True}),  # already fixed
+                             ({"seed": 7}, {})):  # generated notes: nothing to fix
+        with pytest.raises(InvariantError, match="not one"):
+            _goes_live(tmp_path, monkeypatch, recorded, config)
+    assert main(["compare", "--dry-run", "--fixed-quotes", "--per-family", "1"]) != 0
+    assert "it needs --then-live" in capsys.readouterr().out

@@ -153,6 +153,9 @@ REWORK_READS = (f" {REWORK_ARM}: where the verifier names a figure that was not 
 # two trials whose rework read the filings again took 343k and 703k tokens. With this on, the rework brief carries what
 # that call held, as far as one call has room. These words open it, and arm --then-live.
 KEEP_ARM = "What you read for the last product, kept for this rework"
+# In every verifier brief with sources, where the quote check's flags go: a tape from before the check was fixed goes
+# live at the first such brief the fix changes (compare --fixed-quotes --then-live).
+QUOTE_ARM = checks.SOURCES_HEAD
 KEEP_NOTE = f"[{KEEP_ARM}. Read again only what the verifier names that is not here.]"
 # What a call is told when a round of tools returned more than it can carry.
 ROUND_CUT = ("[{n} more tool requests not run: this call has no room for what they return. Work from what is above, "

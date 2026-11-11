@@ -461,9 +461,12 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--price", action="append", default=[], metavar="MODEL=IN/OUT",
                      help="$ per 1M tokens for one model, input/output, for a team that mixes models; repeat for each")
     p_c.add_argument("--then-live", action="store_true",
-                     help="with --replay, --record and one of --gap-check, --rework-reads or --rework-keeps: answer from the tape until "
-                          "that switch changes a rework, then send that trial's later requests to the model "
-                          "(--adapter anthropic) and record them")
+                     help="with --replay, --record and one of --gap-check, --rework-reads, --rework-keeps or --fixed-quotes: "
+                          "answer from the tape until that switch changes a rework or a check, then send that trial's later "
+                          "requests to the model (--adapter anthropic) and record them")
+    p_c.add_argument("--fixed-quotes", action="store_true",
+                     help="with --then-live, on a benchmark tape from before 11 November: the quote check as fixed then "
+                          "(zero-width spaces read as space); a trial goes live at the first check the fix changes")
     p_c.add_argument("--benchmark", default=None, choices=["loong", "hotpot"],
                      help="a public benchmark's questions in place of the generated suite (docs/HEAD_TO_HEAD.md): loong needs "
                           "--questions and --docs, hotpot --questions; --families and the suite options are then not used")
@@ -734,14 +737,15 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
     """--then-live: each trial replays its tape until the switch being measured changes a rework (the gap check sends a
     product back, a rework after a merge may read, or a rework keeps what was read), then goes to the model. The live
     adapter must be the one the tape was recorded with, so the requests before that point are the same."""
-    from .loop import GAP_ARM, KEEP_ARM, REWORK_ARM
+    from .loop import GAP_ARM, KEEP_ARM, QUOTE_ARM, REWORK_ARM
     from .tape import Continuing, LiveSpend, Player, Recorder
 
-    switches = (args.gap_check, args.rework_reads, args.rework_keeps)
+    fixed = getattr(args, "fixed_quotes", False)
+    switches = (args.gap_check, args.rework_reads, args.rework_keeps, fixed)
     if not (args.replay and args.record and args.adapter == "anthropic" and sum(map(bool, switches)) == 1):
         raise InvariantError(code, "--then-live needs --replay, --record, --adapter anthropic and one of --gap-check, "
-                                   "--rework-reads or --rework-keeps")
-    arm = GAP_ARM if args.gap_check else REWORK_ARM if args.rework_reads else KEEP_ARM
+                                   "--rework-reads, --rework-keeps or --fixed-quotes")
+    arm = GAP_ARM if args.gap_check else REWORK_ARM if args.rework_reads else KEEP_ARM if args.rework_keeps else QUOTE_ARM
     player = Player(Path(args.replay))
     h = player.header
     first = pick_adapter(args.adapter)  # fails fast with no key or model
@@ -753,6 +757,16 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
     rounds = h.get("round_reply_tokens") or 0
     recorded = h.get(header_key)
     _as_recorded(recorded if isinstance(recorded, dict) else {}, config)
+    if fixed:
+        # The fix is what is measured: the tape ran the check as it was, and from the first check the fix changes, the
+        # trial goes on live under the fixed one.
+        if config.get("quote_spaces") is not False:
+            raise InvariantError(code, "--fixed-quotes measures the fixed quote check against a benchmark tape from before "
+                                       "it; this tape is not one")
+        config["quote_spaces"] = True
+        from .compare import stderr
+
+        stderr("note: from the first check the fix changes, each trial goes on live under the fixed quote check")
     config |= {"tape": str(args.replay), "replayed": h.get("adapter"), "model": h.get("model"), "then_live": True,
                "live_tape": str(args.record)}
     first.round_reply_tokens = rounds
@@ -867,6 +881,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
         raise InvariantError("COMPARE", "--price needs --price-in and --price-out, for tokens no model is named for")
     if args.record and args.replay and not args.then_live:
         raise InvariantError("COMPARE", "--record or --replay, not both, unless --then-live")
+    if args.fixed_quotes and not args.then_live:
+        raise InvariantError("COMPARE", "--fixed-quotes measures the fixed quote check on a tape from before it: it needs "
+                                        "--then-live")
     from .tools import PAGE_MAX
     if args.page_chars is not None and args.page_chars > PAGE_MAX:
         raise InvariantError("COMPARE", f"--page-chars is at most {PAGE_MAX:,}")
@@ -964,7 +981,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if args.then_live:
         spend = factory.spend
         live = (f", ${spend.cost(args.price_in, args.price_out):.4f}" if args.price_in is not None else "")
-        after = "the gap check" if args.gap_check else "a rework that may read" if args.rework_reads else "a rework that keeps its pages"
+        after = ("the gap check" if args.gap_check else "a rework that may read" if args.rework_reads
+                 else "a rework that keeps its pages" if args.rework_keeps else "a check the fixed quote check changes")
         print(f"live: {spend.calls} requests sent to the model after {after}{live}")
     if recorder:
         print(f"tape: {recorder.count} exchanges saved to {args.record}")

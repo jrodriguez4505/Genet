@@ -1376,6 +1376,15 @@ So on Loong the rework is about even. Whether it pays depends on what a wrong an
 
 Two of the 7 right products the verifier failed had only such flags. The other three flagged quotes were reworded tables ("General and administrative | 10,135 | 12,975"), which the check is right to flag. **Fixed the same day,** on the operator's go-ahead: the check reads zero-width characters as space. A fix changes what the verifier is told, so a benchmark run's config names the check (`quote_spaces`). A benchmark tape from before names nothing, and replays under the check as it was. Whether the fix changes the rework on Loong is not yet measured.
 
+**Measuring the fix: the plan, written before the run.** Replayed under the fixed check (`data/exp/quote_diverge.py`), 11 of the split rule's 108 trials send a verifier brief the tapes do not have: 4 in the first draw and 7 in the second. `bash scripts/team_runs.sh quotefix` replays each of the 11 to that brief and goes to the model from there (`--fixed-quotes --then-live`). The other 97 are as taped. Then the judge scores the 11. About $0.15, with caps of $0.15, $0.25 and $0.15.
+
+A rehearsal with a stand-in model went live in exactly those 11, each at its verifier. The run is built to share the Mac with other work:
+- one small process at a time (a Loong replay peaks near 130 MB);
+- steps of 4 and 7 trials that are not run again once finished;
+- before each step, a wait while macOS reports memory short (`GENET_MEMORY_FLOOR`, 15% free by default).
+
+It is reported with no bar, paired with the 11 as taped. The fix stays either way.
+
 ## 11 November 2026: does splitting still win at a real call limit?
 
 ### The plan, written before the run

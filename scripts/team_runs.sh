@@ -346,6 +346,19 @@
 #     Ran 11 November, $0.06: 7 of the 24 right, 12 not, 5 with no answer line. The rework ended the 7 right ones 5 right
 #     and 2 stopped, and the 17 others 4 right, 11 wrong and 2 stopped. Two of the 7 were failed only on quote flags that
 #     are false: the 2024 filings carry zero-width spaces the kernel's quote check did not read as space.
+#   bash scripts/team_runs.sh quotefix   the quote check as fixed on 11 November, on the split rule's two draws of the 54.
+#     Replayed with the fixed check (data/exp/quote_diverge.py), 11 of the 108 trials send a verifier brief the tapes
+#     do not have: 4 in the first draw (loong-05a8ab3a,loong-926878f8,loong-9dbb2495,loong-e4417f84),
+#     7 in the second (loong-05a8ab3a,loong-500d85cc,loong-926878f8,loong-bfe2f7f4,loong-9dbb2495,loong-c3f0bc88,loong-e4417f84).
+#     Each of the 11 replays its tape to that brief and goes to the model from there (--fixed-quotes --then-live); the
+#     other 97 are as taped. Then the judge on the 11. About $0.15 in all (caps $0.15, $0.25, and $0.15 for the judge).
+#     Built to share the Mac with other work: one small process at a time (a Loong replay peaks near 130 MB), steps of
+#     4 and 7 trials that are not run again once finished, and before each step a wait while macOS reports memory
+#     short (GENET_MEMORY_FLOOR, 15% free by default; after GENET_MEMORY_WAIT seconds, 1800 by default, it stops,
+#     keeping what finished).
+#     Reported with no bar, paired with the 11 as taped: right, wrong, stops and tokens. The fix stays either way: it is
+#     a correction. With 11 trials a right or wrong difference will very likely be within noise; what it can show is
+#     what the false flags cost.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
@@ -366,8 +379,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain|firstjudge) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain|firstjudge]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain|firstjudge|quotefix) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain|firstjudge|quotefix]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -400,6 +413,8 @@ elif [ "$mode" = splitagain ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.70 with the judge on Sonnet (caps \$2.90)"
 elif [ "$mode" = firstjudge ]; then
   echo "  the judge only, on claude-sonnet-5-5   \$2 / \$10   about \$0.06 (cap \$0.25)"
+elif [ "$mode" = quotefix ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.15 with the judge on Sonnet (caps \$0.55)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -503,7 +518,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ] || [ "$mode" = scale ] || [ "$mode" = splitagain ] || [ "$mode" = firstjudge ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ] || [ "$mode" = scale ] || [ "$mode" = splitagain ] || [ "$mode" = firstjudge ] || [ "$mode" = quotefix ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -1196,6 +1211,89 @@ print(f"bar: faster beyond noise -> {'holds' if c else 'MISSES'}")
 EOF
   echo
   echo "Done. Results: data/compare/h2h-split2-*.json   Tapes, what went to the model: data/tapes/h2h-split2-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = quotefix ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial" data/tapes/h2h-split-reads.jsonl \
+           data/tapes/h2h-split2-reads.jsonl data/compare/h2h-split-judged.json data/compare/h2h-split2-judged.json; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  room() {  # Waits while macOS reports memory short, so the run can share the Mac with other work.
+    local floor="${GENET_MEMORY_FLOOR:-15}" most="${GENET_MEMORY_WAIT:-1800}" free waited=0
+    command -v memory_pressure >/dev/null 2>&1 || return 0
+    while :; do
+      free=$(memory_pressure 2>/dev/null | sed -n 's/.*free percentage: \([0-9]*\)%.*/\1/p')
+      if [ -z "$free" ] || [ "$free" -ge "$floor" ]; then
+        return 0
+      fi
+      if [ "$waited" -ge "$most" ]; then
+        echo "Memory has stayed short (${free}% free, under ${floor}%), so nothing more was run. What finished is kept."
+        echo "To go on: bash scripts/team_runs.sh $mode"
+        exit 1
+      fi
+      [ "$waited" -eq 0 ] && echo "Waiting for memory: ${free}% free, under ${floor}%. The run goes on when it frees up."
+      sleep 30
+      waited=$((waited + 30))
+    done
+  }
+  echo
+  echo ">>> The quote check as fixed, on $model: the 11 trials of the split rule's two draws whose verifier brief the fix"
+  echo "    changes. Each replays its tape to that brief and goes to the model from there; then the judge on the 11."
+  echo "    About \$0.15 in all, each step stopping itself (caps \$0.15, \$0.25, and \$0.15 for the judge). One small"
+  echo "    process at a time, and before each step a wait while memory is short."
+  echo "    Reported with no bar, beside the 11 as taped. The fix stays either way."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  # The settings the tapes were recorded with, so every request before the changed brief is the tape's own.
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6 --fixed-quotes --then-live"
+  loong="--benchmark loong --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial --which rest"
+  room
+  held h2h-quotes-1 0.15 compare $loong --strategies genet-reads --replay data/tapes/h2h-split-reads.jsonl $limits \
+    --ids loong-05a8ab3a,loong-926878f8,loong-9dbb2495,loong-e4417f84 </dev/null
+  room
+  held h2h-quotes-2 0.25 compare $loong --strategies genet-reads --replay data/tapes/h2h-split2-reads.jsonl $limits \
+    --ids loong-05a8ab3a,loong-500d85cc,loong-926878f8,loong-bfe2f7f4,loong-9dbb2495,loong-c3f0bc88,loong-e4417f84 </dev/null
+  room
+  name=h2h-quotes-judged
+  if [ -f "data/compare/$name.json" ]; then
+    echo "== $name: already done"
+  else
+    [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+    echo
+    echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+    "$PY" -m taskorg.cli h2h-judge --results data/compare/h2h-quotes-1.json --results data/compare/h2h-quotes-2.json \
+      --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-spend 0.15 \
+      --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+      | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+  fi
+  [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so there is no readout."; exit 1; }
+  "$PY" - <<'EOF'
+import json
+from taskorg.paired import judged_right, judged_wrong, paired
+now = {}
+for r in json.load(open("data/compare/h2h-quotes-judged.json"))["results"]:
+    now[("1" if r["source"].endswith("h2h-quotes-1.json") else "2", r["task_id"])] = r
+taped = {}
+for d, f in (("1", "data/compare/h2h-split-judged.json"), ("2", "data/compare/h2h-split2-judged.json")):
+    for r in json.load(open(f))["results"]:
+        if r["strategy"] == "genet-reads" and (d, r["task_id"]) in now:
+            taped[(d, r["task_id"])] = r
+end = lambda r: ("right" if judged_right(r) else "wrong") if r["status"] == "complete" else "stopped"
+for k in sorted(now):
+    a, b = taped[k], now[k]
+    print(f"  draw {k[0]} {k[1]}: as taped {end(a)}, {a['tokens']:,} tokens, {a['calls']} calls -> "
+          f"fixed {end(b)}, {b['tokens']:,} tokens, {b['calls']} calls")
+p = paired(taped, now, right=judged_right, wrong=judged_wrong)
+print("\n".join(p.lines("as taped", "the fixed check")))
+print(f"  stopped {sum(end(r) == 'stopped' for r in taped.values())} -> {sum(end(r) == 'stopped' for r in now.values())}")
+EOF
+  echo
+  echo "Done. Results: data/compare/h2h-quotes-*.json   Tapes, what went to the model: data/tapes/h2h-quotes-*.jsonl"
   exit 0
 fi
 if [ "$mode" = firstjudge ]; then

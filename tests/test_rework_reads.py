@@ -158,8 +158,9 @@ def test_then_live_takes_one_switch_to_arm_it(tmp_path: Path, monkeypatch, capsy
                                 "compare": {}}) + "\n")
     base = ["compare", "--adapter", "anthropic", "--replay", str(tape), "--record", str(tmp_path / "l.jsonl"),
             "--then-live", "--out", str(tmp_path / "o.json"), "--per-family", "1", "--families", "lookup"]
-    for extra in ([], ["--gap-check", "--rework-reads"], ["--rework-reads", "--rework-keeps"]):
-        assert main(base + extra) != 0 and "one of --gap-check, --rework-reads or --rework-keeps" in capsys.readouterr().out
+    for extra in ([], ["--gap-check", "--rework-reads"], ["--rework-reads", "--rework-keeps"], ["--rework-keeps", "--fixed-quotes"]):
+        assert main(base + extra) != 0
+        assert "one of --gap-check, --rework-reads, --rework-keeps or --fixed-quotes" in capsys.readouterr().out
     monkeypatch.setenv("TASKORG_ANTHROPIC_KEY", "sk-not-a-real-key")
     monkeypatch.setenv("TASKORG_MODEL_NAME", "claude-sonnet-5-5")
     monkeypatch.setenv("TASKORG_MODEL_EFFORT", "low")

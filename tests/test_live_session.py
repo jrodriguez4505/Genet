@@ -646,6 +646,50 @@ def test_the_failed_products_are_judged_once_with_a_y(tmp_path: Path):
     assert again.count("already done") == 1 and len(_calls(log)) == 3
 
 
+def _quotes_tree(tmp_path: Path, **stub_env) -> tuple[Path, dict]:
+    log, env = _wording_tree(tmp_path, **stub_env)
+    for f in ("data/tapes/h2h-split-reads.jsonl", "data/tapes/h2h-split2-reads.jsonl", "data/compare/h2h-split-judged.json",
+              "data/compare/h2h-split2-judged.json"):
+        (tmp_path / f).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / f).write_text("{}")
+    return log, env
+
+
+def test_the_fixed_quote_check_goes_live_only_where_it_changes_a_check(tmp_path: Path):
+    log, env = _quotes_tree(tmp_path, GENET_MEMORY_FLOOR="0")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "quotefix") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "quotefix")
+    first, second, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.15" in out and "Done." in out and KEY not in out
+    for call, (name, tape, cap, ids) in zip((first, second), (("h2h-quotes-1", "h2h-split-reads", "0.15", "loong-05a8ab3a,loong-926878f8,loong-9dbb2495,loong-e4417f84"),
+                                                              ("h2h-quotes-2", "h2h-split2-reads", "0.25", "loong-05a8ab3a,loong-500d85cc,loong-926878f8,loong-bfe2f7f4,loong-9dbb2495,loong-c3f0bc88,loong-e4417f84"))):
+        # Each trial replays its tape to the brief the fix changes, then goes live; only the 11 that change.
+        assert "compare" in call and f"--max-spend {cap} " in call and "--which rest " in call
+        assert "--strategies genet-reads " in call and f"--replay data/tapes/{tape}.jsonl " in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--fixed-quotes --then-live" in call and f"--ids {ids} " in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+    assert "--results data/compare/h2h-quotes-1.json --results data/compare/h2h-quotes-2.json " in judge
+    assert "--max-spend 0.15 " in judge and "--record data/tapes/h2h-quotes-judged.jsonl" in judge
+    assert readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "quotefix")
+    assert again.count("already done") == 3 and len(_calls(log)) == 5
+
+
+def test_the_fixed_quote_run_waits_while_memory_is_short_and_stops_keeping_what_finished(tmp_path: Path):
+    log, env = _quotes_tree(tmp_path, GENET_MEMORY_WAIT="0")
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "memory_pressure").write_text("#!/bin/bash\necho 'System-wide memory free percentage: 5%'\n")
+    (bin_ / "memory_pressure").chmod(0o755)
+    out = _session(tmp_path, env | {"PATH": f"{bin_}:{env['PATH']}"}, f"{KEY}\ny\n", "quotefix")
+    assert "Memory has stayed short (5% free, under 15%)" in out and "bash scripts/team_runs.sh quotefix" in out
+    assert _calls(log) == []
+    (bin_ / "memory_pressure").write_text("#!/bin/bash\necho 'System-wide memory free percentage: 40%'\n")
+    out = _session(tmp_path, env | {"PATH": f"{bin_}:{env['PATH']}"}, f"{KEY}\ny\n", "quotefix")
+    assert "Waiting for memory" not in out and len(_calls(log)) == 4
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")
