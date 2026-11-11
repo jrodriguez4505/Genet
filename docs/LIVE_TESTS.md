@@ -1292,6 +1292,25 @@ The Loong financial questions are used up, so a clean test needs more questions:
 
 The bars set before the run hold as written: the rule stays off by default until the operator decides.
 
+**Time, where it acts.** On the 54, the rule finished sooner on the questions Genet split: -10.3s on 30s, or -35% (-14.9 to -5.4), faster on 23 of 27, p under 0.001. Over all 54 it was faster on 41 of 54.
+
+**Drawn again: the plan, written before the run.** `bash scripts/team_runs.sh splitagain`, one y, about $1.70.
+- **What runs:** the 54 again, both arms, with the same model, limits and judge.
+- **How it is read:** pooled with the first draw, both out of sample, on the questions Genet split in each draw.
+
+| The bar, written before the run | Needed |
+|---|---|
+| Right | the rule has more, beyond noise (p under 0.05) |
+| Wrong finishes | up by at most half the right gained |
+| Time a question | the rule is faster, beyond noise |
+
+Reported with no bar:
+- the second draw alone;
+- all 54 in each draw;
+- tokens a question.
+
+If all three hold, the rule goes to the default on the operator's go-ahead.
+
 ## 11 November 2026: does splitting still win at a real call limit?
 
 ### The plan, written before the run

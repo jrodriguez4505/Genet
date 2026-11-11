@@ -604,6 +604,31 @@ def test_the_scale_run_asks_the_sweeps_questions_at_a_real_limit_and_needs_a_y(t
     assert again.count("already done") == 2 and len(_calls(log)) == 4
 
 
+def test_the_split_rule_runs_again_on_the_54_and_reads_both_draws(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    (tmp_path / "data/compare/h2h-split-judged.json").write_text("{}")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "splitagain") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitagain")
+    today, reads, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $1.70" in out and "Done." in out and KEY not in out
+    for call, (name, team, cap) in zip((today, reads), (("h2h-split2-today", "genet", "1.50"),
+                                                        ("h2h-split2-reads", "genet-reads", "0.90"))):
+        # A second draw, live from the start, as the first ran.
+        assert "compare" in call and f"--max-spend {cap} " in call and "--which rest " in call and f"--strategies {team} " in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--replay" not in call and f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+    assert "--results data/compare/h2h-split2-today.json " in judge and "--results data/compare/h2h-split2-reads.json " in judge
+    assert "--max-spend 0.50 " in judge and "--record data/tapes/h2h-split2-judged.jsonl" in judge and readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "splitagain")
+    assert again.count("already done") == 3 and len(_calls(log)) == 5
+
+
+def test_the_split_rule_run_again_needs_the_first_draw(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitagain")
+    assert "Missing data/compare/h2h-split-judged.json" in out and _calls(log) == []
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

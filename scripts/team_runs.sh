@@ -319,6 +319,18 @@
 #     and its largest call; where Genet split. If one agent copes here, the sweep's result was the 8,000 limit's.
 #     Ran 11 November, $2.30: right one agent 6, 4 parts 4, Genet 4 of 12 (stopped 5, 7, 8), within noise; both bars
 #     missed. One agent searched and coped (largest call 80,745). The sweep's result was the 8,000 limit's.
+#   bash scripts/team_runs.sh splitagain   the split rule again, where it acts. Its 10 November bars were set on all 54
+#     questions, but it changes only those Genet splits; on the rest both arms are one agent. Read on the questions
+#     Genet split (docs/LIVE_TESTS.md, The split rule, where it acts): on the 54, right 9 to 13 (+4 / -0, p 0.12) and
+#     35% sooner (p under 0.001); with the 40 that suggested it, +7 / -0 (p 0.02), but those 13 are in-sample.
+#     So the 54 drawn again, both arms, the same model, limits and judge; then pooled with the first draw, both out of
+#     sample, on the questions Genet split in each draw. One y, about $1.70 (caps $1.50, $0.90, $0.50).
+#     The bars, written before the run, on the questions Genet split, both draws pooled (taskorg paired):
+#     - Right: the rule has more, beyond noise (p under 0.05).
+#     - Wrong finishes rise by at most half the right gained.
+#     - Time a question: the rule is faster, beyond noise.
+#     Reported with no bar: the second draw alone; all 54 in each draw; tokens a question. If all three hold, the rule
+#     goes to the default on the operator's go-ahead.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
@@ -339,8 +351,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -369,6 +381,8 @@ elif [ "$mode" = keeppages ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.60 more with the judge on Sonnet (caps \$1.51 in all)"
 elif [ "$mode" = scale ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1 to \$4 in all (caps \$2.50 for each of 2 seeds)"
+elif [ "$mode" = splitagain ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.70 with the judge on Sonnet (caps \$2.90)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -472,7 +486,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ] || [ "$mode" = scale ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ] || [ "$mode" = scale ] || [ "$mode" = splitagain ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -1097,6 +1111,74 @@ for s, held, p in bars:
 EOF
   echo
   echo "Done. Results: data/compare/scale-s*.json   Tapes, what went to the model: data/tapes/scale-s*.jsonl"
+  exit 0
+fi
+if [ "$mode" = splitagain ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial" data/compare/h2h-split-judged.json; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  echo
+  echo ">>> The split rule again, where it acts, on $model: the 54 Loong questions drawn again, Genet as it is and Genet"
+  echo "    under the rule, then the judge on the 108. About \$1.70, each step stopping itself (caps \$1.50, \$0.90, and"
+  echo "    \$0.50 for the judge)."
+  echo "    Written before it ran: on the questions Genet split, both draws pooled, the rule has more right finishes and is"
+  echo "    faster, each beyond noise, with wrong finishes up by at most half the right gained. The full bars are at the top"
+  echo "    of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6"
+  loong="--benchmark loong --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial --which rest"
+  held h2h-split2-today 1.50 compare $loong --strategies genet $limits </dev/null
+  held h2h-split2-reads 0.90 compare $loong --strategies genet-reads $limits </dev/null
+  name=h2h-split2-judged
+  if [ -f "data/compare/$name.json" ]; then
+    echo "== $name: already done"
+  else
+    [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+    echo
+    echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+    "$PY" -m taskorg.cli h2h-judge --results data/compare/h2h-split2-today.json --results data/compare/h2h-split2-reads.json \
+      --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-spend 0.50 \
+      --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+      | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+  fi
+  [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  "$PY" - <<'EOF'
+import json
+from taskorg.paired import boot_range, judged_right, judged_wrong, paired, sign_p
+draws = {"1": json.load(open("data/compare/h2h-split-judged.json"))["results"],
+         "2": json.load(open("data/compare/h2h-split2-judged.json"))["results"]}
+genet = {(d, r["task_id"]): r for d, rows in draws.items() for r in rows if r["strategy"] == "genet"}
+rule = {(d, r["task_id"]): r for d, rows in draws.items() for r in rows if r["strategy"] == "genet-reads"}
+split = [k for k, r in genet.items() if (r["workers"] or 0) > 0 and k in rule]
+def show(label, keys):
+    p = paired({k: genet[k] for k in keys}, {k: rule[k] for k in keys}, right=judged_right, wrong=judged_wrong)
+    print(f"  {label}:")
+    print("\n".join("    " + line for line in p.lines("Genet as it is", "the split rule")))
+    return p
+show("the second draw, all 54", [k for k in genet if k[0] == "2" and k in rule])
+show("the second draw, where Genet split", [k for k in split if k[0] == "2"])
+p = show("both draws, where Genet split", split)
+d = [rule[k]["latency_s"] - genet[k]["latency_s"] for k in split]
+lo, hi = boot_range(d)
+faster, slower = sum(x < 0 for x in d), sum(x > 0 for x in d)
+print(f"    time a question {sum(d) / len(d):+.1f}s (95% range {lo:+.1f} to {hi:+.1f}); faster on {faster}, slower on {slower},"
+      f" p {sign_p(faster, slower):.3f}")
+gained = p.right.after - p.right.before
+a = p.right.gained > p.right.lost and not p.right.noise
+b = p.wrong.after - p.wrong.before <= gained / 2
+c = faster > slower and sign_p(faster, slower) < 0.05 and hi < 0
+print(f"bar: right {p.right.before} -> {p.right.after} (+{p.right.gained} / -{p.right.lost}, p {p.right.p:.3f}), beyond noise -> {'holds' if a else 'MISSES'}")
+print(f"bar: wrong {p.wrong.before} -> {p.wrong.after}, up by at most half of {gained} -> {'holds' if b else 'MISSES'}")
+print(f"bar: faster beyond noise -> {'holds' if c else 'MISSES'}")
+EOF
+  echo
+  echo "Done. Results: data/compare/h2h-split2-*.json   Tapes, what went to the model: data/tapes/h2h-split2-*.jsonl"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then
