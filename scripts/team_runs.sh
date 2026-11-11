@@ -359,6 +359,9 @@
 #     Reported with no bar, paired with the 11 as taped: right, wrong, stops and tokens. The fix stays either way: it is
 #     a correction. With 11 trials a right or wrong difference will very likely be within noise; what it can show is
 #     what the false flags cost.
+#     Ran 11 November beside VALS, about two minutes, $0.06. Right 6 -> 6, wrong 5 -> 5, no stops, on all 11 the
+#     same answers; tokens 875,357 -> 795,180 (-7.3k a question, within noise). Three reworks that only false flags
+#     caused were saved (69k -> 19k, 86k -> 42k, 61k -> 20k); one wrong answer that had passed was sent back (40k -> 81k).
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.

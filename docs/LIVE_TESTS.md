@@ -1385,6 +1385,23 @@ A rehearsal with a stand-in model went live in exactly those 11, each at its ver
 
 It is reported with no bar, paired with the 11 as taped. The fix stays either way.
 
+**Measuring the fix: the result.** It ran 11 November alongside another project's long job, and finished in about two minutes for $0.06: $0.013 and $0.019 live, and $0.033 for the judge. Of the 108 trials, 97 replayed as taped.
+
+| The 11, as taped against the fixed check | Right | Wrong | Stopped | Tokens |
+|---|---|---|---|---|
+| As taped | 6 | 5 | 0 | 875,357 |
+| The fixed check | 6 | 5 | 0 | 795,180 |
+
+- **No answer changed.** Right and wrong are the same on every one of the 11.
+- **Three reworks were saved.** Each had been sent back only on false flags, and now passed at the first check:
+  - one right answer, 69,483 tokens down to 19,202;
+  - one right answer, 86,216 down to 41,970;
+  - one wrong answer, 60,580 down to 20,195. The false flag had sent it back and its rework was wrong too, so the wrong answer is the same, at a third of the cost.
+- **One went the other way.** A wrong answer that had passed at once was sent back this time, from 39,790 tokens to 80,591. The changed brief drew a new reply.
+- **The other six** differ by under 15,000 tokens each.
+
+In all, 9% fewer tokens on the 11, about 7,300 a question, within noise (-23,455 to +7,628). The fix stays: it corrects the check, saves the reworks false flags caused, and changed no answer here.
+
 ## 11 November 2026: does splitting still win at a real call limit?
 
 ### The plan, written before the run
