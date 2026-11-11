@@ -357,6 +357,7 @@ def review_trial(
     budget: Budget,
     variant: int = 0,
     repeat: int = 0,
+    review_end: bool = True,
 ) -> ReviewResult:
     """One review: the author's record and product on a fresh run, then the verifier's call alone."""
     view, sources = SETUPS[setup]
@@ -366,7 +367,7 @@ def review_trial(
                       done_when=DONE_WHEN)
         run.state.success_criteria = ["ANSWER:"]
         engine = Engine(store, adapter=adapter, budget=budget, toolbox=Toolbox(roots=[corpus_dir]),
-                        verify_view=view, verify_sources=sources, verify_note=TOLD.get(setup, ""))
+                        verify_view=view, verify_sources=sources, verify_note=TOLD.get(setup, ""), review_end=review_end)
         engine._arm(run)
         lead = run.state.lead_id
         context = task_context(task)
@@ -427,6 +428,7 @@ def run_bench(
     corpus_dir: Path | None = None,
     progress: Callable[[str], None] | None = None,
     stop_when: Callable[[list[ReviewResult]], str] | None = None,
+    review_end: bool = True,
 ) -> list[ReviewResult]:
     """Every product under every setup, setups interleaved so endpoint drift hits them alike. A stop_when
     reason, or Ctrl-C, ends it before the next review; the reviews already made are returned."""
@@ -446,7 +448,7 @@ def run_bench(
                             return results
                         where = corpus_for(built, root, Path(tmp) / "planted" / f"{task.id}-{built.kind}-{variant}")
                         res = review_trial(task, built, setup, adapter_factory(), where, budget=budget_factory(),
-                                           variant=variant, repeat=r)
+                                           variant=variant, repeat=r, review_end=review_end)
                         results.append(res)
                         if progress:
                             mark = "ok " if res.right else "x  "

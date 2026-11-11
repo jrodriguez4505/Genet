@@ -1402,6 +1402,20 @@ It is reported with no bar, paired with the 11 as taped. The fix stays either wa
 
 In all, 9% fewer tokens on the 11, about 7,300 a question, within noise (-23,455 to +7,628). The fix stays: it corrects the check, saves the reworks false flags caused, and changed no answer here.
 
+**The next false alarm: where the product ends** (free, from the tapes). Two of the 7 right products the verifier failed under the split rule were failed partly because "the ANSWER line is not last".
+- **On the Loong tapes,** 18 of the verifier's 173 failures (10%) say so. On the synthetic tapes, 25 of 1,197 do.
+- **The products did end with their ANSWER line.** Every failure on the Loong tapes that says so was checked against the product's own text: 26 of 28 end with it.
+- **The cause was the kernel's own layout.** In the verifier's view, the product's text is followed by the evidence it gave, then the kernel's quote check and the sources, with nothing to show where the product stops. The verifier read them as part of the product.
+
+**Fixed the same day,** on the operator's go-ahead. The view now marks where the product's text ends: `[End of the product's text. Below: the evidence it gave, then the kernel's checks and sources.]`
+
+Every run's config names the view (`review_end`), and so does the verify bench's. A tape from before names nothing, and replays under the view as it was:
+- **Loong,** the rule's second draw: 54 of 54 as recorded.
+- **The verify bench of 29 October:** 120 of 120.
+- **The agent sweep, seed 113 at 8,000:** no request missed. As before the fix, 3 or 4 of its split-2 trials come out differently from one replay to the next, a different few each time. Two parts running side by side on a tape from before the trial marks can be served each other's replies.
+
+Not yet measured live. `compare --marked-review --then-live` replays a tape from before up to each trial's first verifier call, and goes live from there.
+
 ## 11 November 2026: does splitting still win at a real call limit?
 
 ### The plan, written before the run

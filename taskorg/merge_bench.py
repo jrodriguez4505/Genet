@@ -32,6 +32,7 @@ from .adapters import Brief, ModelAdapter
 from .compare import trial_cost
 from .errors import InvariantError
 from .live import message_text
+from .loop import REVIEW_END
 from .suite import build_suite, extract_answer, grade
 
 RULES: dict[str, str] = {
@@ -43,7 +44,8 @@ RULES: dict[str, str] = {
     "aside": checks.SAMPLE_RULE + checks.ASIDE_RULE + checks.HEADING_RULE,
     "same": checks.SAMPLE_RULE + checks.SAME_VERIFY + checks.HEADING_RULE,
 }
-_PRODUCT = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)(?:\nEVIDENCE GIVEN WITH IT\n|\n" + re.escape(checks.SOURCES_HEAD) + ")", re.S)
+_PRODUCT = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)(?:\n" + re.escape(REVIEW_END) + r"|\nEVIDENCE GIVEN WITH IT\n|\n"
+                      + re.escape(checks.SOURCES_HEAD) + ")", re.S)
 _BODY = re.compile(r"PRODUCT UNDER REVIEW[^\n]*\n(.*?)\n" + re.escape(checks.SOURCES_HEAD), re.S)
 # A product that voices a doubt of its own. A rough match: it sorts products for reading, and decides nothing.
 _DOUBT = re.compile(r"provisional|unconfirm|not confirmed|no year|year[- ]un|unlabel|without a year|not labell?ed|could not|"

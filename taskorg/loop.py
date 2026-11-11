@@ -83,14 +83,22 @@ REVIEW_EVIDENCE = 12
 REVIEW_EVIDENCE_CHARS = 400
 
 
-def _for_review(product: Artifact) -> str:
+# Where the product's text ends, in the verifier's view. After it the kernel puts the evidence the product gave, its quote
+# check and the sources, and a verifier read them as the product's own: it failed products that end with their ANSWER
+# line for not ending with it (26 of 28 such failures on the Loong tapes, before 11 November).
+REVIEW_END = "[End of the product's text. Below: the evidence it gave, then the kernel's checks and sources.]"
+
+
+def _for_review(product: Artifact, end: bool) -> str:
     """The product as the verifier reads it: the claim and the evidence given with it, which the kernel's own
-    criteria check counts too. Shown the claim alone, a verifier failed sourced answers as unsourced."""
+    criteria check counts too. Shown the claim alone, a verifier failed sourced answers as unsourced. end: mark where
+    the product's text ends (False: the view before 11 November, for tapes from then)."""
+    claim = product.claim + (f"\n{REVIEW_END}" if end else "")
     shown = [e[:REVIEW_EVIDENCE_CHARS] for e in product.evidence[:REVIEW_EVIDENCE] if e.strip()]
     if not shown:
-        return product.claim
+        return claim
     more = f"\n[{len(product.evidence) - REVIEW_EVIDENCE} more not shown]" if len(product.evidence) > REVIEW_EVIDENCE else ""
-    return product.claim + "\nEVIDENCE GIVEN WITH IT\n" + "\n".join(f"- {e}" for e in shown) + more
+    return claim + "\nEVIDENCE GIVEN WITH IT\n" + "\n".join(f"- {e}" for e in shown) + more
 
 
 def _verifier_accepts(check: Artifact, run: Run, product: Artifact | None = None) -> bool:
@@ -156,6 +164,9 @@ KEEP_ARM = "What you read for the last product, kept for this rework"
 # In every verifier brief with sources, where the quote check's flags go: a tape from before the check was fixed goes
 # live at the first such brief the fix changes (compare --fixed-quotes --then-live).
 QUOTE_ARM = checks.SOURCES_HEAD
+# In every verifier brief: a tape from before the end of the product's text was marked goes live at the first one
+# (compare --marked-review --then-live).
+REVIEW_ARM = "PRODUCT UNDER REVIEW"
 KEEP_NOTE = f"[{KEEP_ARM}. Read again only what the verifier names that is not here.]"
 # What a call is told when a round of tools returned more than it can carry.
 ROUND_CUT = ("[{n} more tool requests not run: this call has no room for what they return. Work from what is above, "
@@ -311,6 +322,7 @@ class Engine:
         rework_reads: bool = False,
         rework_keeps: bool = False,
         quote_spaces: bool = True,
+        review_end: bool = True,
         max_workers: int = MAX_WORKERS,
     ):
         self.store = store
@@ -359,6 +371,8 @@ class Engine:
         # The kernel's quote check reads zero-width characters as space (checks.misquoted); False is the check as it
         # was before 11 November, for tapes from then.
         self.quote_spaces = quote_spaces
+        # The verifier's view marks where the product's text ends (_for_review); False is the view before 11 November.
+        self.review_end = review_end
         # The most sub-agents a run may staff: 4 unless a measured sweep (compare's split-N) names another.
         if not 1 <= int(max_workers) <= MAX_PARTS:
             raise ValueError(f"max_workers must be 1 to {MAX_PARTS}, got {max_workers!r}")
@@ -1002,7 +1016,7 @@ class Engine:
 
         Sources go in as many as fit the per-call limit, in the order checks.pick ranks them, and the
         brief says how many did not. What was opened, and why, goes on the record."""
-        extra = _for_review(product)
+        extra = _for_review(product, end=self.review_end)
         if self.verify_sources == "none":
             return self._brief(run, "verifier", extra=extra, mode="verify")
         names = self.toolbox.shown_files()

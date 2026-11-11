@@ -461,12 +461,15 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--price", action="append", default=[], metavar="MODEL=IN/OUT",
                      help="$ per 1M tokens for one model, input/output, for a team that mixes models; repeat for each")
     p_c.add_argument("--then-live", action="store_true",
-                     help="with --replay, --record and one of --gap-check, --rework-reads, --rework-keeps or --fixed-quotes: "
+                     help="with --replay, --record and one of --gap-check, --rework-reads, --rework-keeps, --fixed-quotes or --marked-review: "
                           "answer from the tape until that switch changes a rework or a check, then send that trial's later "
                           "requests to the model (--adapter anthropic) and record them")
     p_c.add_argument("--fixed-quotes", action="store_true",
                      help="with --then-live, on a benchmark tape from before 11 November: the quote check as fixed then "
                           "(zero-width spaces read as space); a trial goes live at the first check the fix changes")
+    p_c.add_argument("--marked-review", action="store_true",
+                     help="with --then-live, on a tape from before 11 November: the verifier's view with the end of the "
+                          "product's text marked; a trial goes live at its first verifier call")
     p_c.add_argument("--benchmark", default=None, choices=["loong", "hotpot"],
                      help="a public benchmark's questions in place of the generated suite (docs/HEAD_TO_HEAD.md): loong needs "
                           "--questions and --docs, hotpot --questions; --families and the suite options are then not used")
@@ -714,6 +717,8 @@ AS_BEFORE = {
     "genet_split": ("measured", "genet split under the {was} policy, as it did before 11 November"),
     # Since 11 November the quote check reads zero-width characters as space; only a benchmark's files hold them.
     "quote_spaces": (False, "quote check read zero-width characters as text, as it did before 11 November"),
+    # Since 11 November the verifier's view marks where the product's text ends.
+    "review_end": (False, "verifier saw no mark where the product's text ends, as before 11 November"),
 }
 
 
@@ -737,15 +742,19 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
     """--then-live: each trial replays its tape until the switch being measured changes a rework (the gap check sends a
     product back, a rework after a merge may read, or a rework keeps what was read), then goes to the model. The live
     adapter must be the one the tape was recorded with, so the requests before that point are the same."""
-    from .loop import GAP_ARM, KEEP_ARM, QUOTE_ARM, REWORK_ARM
+    from .loop import GAP_ARM, KEEP_ARM, QUOTE_ARM, REVIEW_ARM, REWORK_ARM
     from .tape import Continuing, LiveSpend, Player, Recorder
 
-    fixed = getattr(args, "fixed_quotes", False)
-    switches = (args.gap_check, args.rework_reads, args.rework_keeps, fixed)
+    # A fix measured on a tape from before it: the setting it changed, the words that arm it, and what it is called.
+    fixes = {"fixed_quotes": ("quote_spaces", QUOTE_ARM, "the fixed quote check"),
+             "marked_review": ("review_end", REVIEW_ARM, "the verifier's view with the product's end marked")}
+    fix = next((f for f in fixes if getattr(args, f, False)), None)
+    switches = (args.gap_check, args.rework_reads, args.rework_keeps, *(getattr(args, f, False) for f in fixes))
     if not (args.replay and args.record and args.adapter == "anthropic" and sum(map(bool, switches)) == 1):
         raise InvariantError(code, "--then-live needs --replay, --record, --adapter anthropic and one of --gap-check, "
-                                   "--rework-reads, --rework-keeps or --fixed-quotes")
-    arm = GAP_ARM if args.gap_check else REWORK_ARM if args.rework_reads else KEEP_ARM if args.rework_keeps else QUOTE_ARM
+                                   "--rework-reads, --rework-keeps, --fixed-quotes or --marked-review")
+    arm = (GAP_ARM if args.gap_check else REWORK_ARM if args.rework_reads else KEEP_ARM if args.rework_keeps
+           else fixes[fix][1])
     player = Player(Path(args.replay))
     h = player.header
     first = pick_adapter(args.adapter)  # fails fast with no key or model
@@ -757,16 +766,17 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
     rounds = h.get("round_reply_tokens") or 0
     recorded = h.get(header_key)
     _as_recorded(recorded if isinstance(recorded, dict) else {}, config)
-    if fixed:
-        # The fix is what is measured: the tape ran the check as it was, and from the first check the fix changes, the
-        # trial goes on live under the fixed one.
-        if config.get("quote_spaces") is not False:
-            raise InvariantError(code, "--fixed-quotes measures the fixed quote check against a benchmark tape from before "
-                                       "it; this tape is not one")
-        config["quote_spaces"] = True
+    if fix:
+        # The fix is what is measured: the tape ran as it was, and from the first brief the fix changes, the trial goes
+        # on live under the fix.
+        key, _, called = fixes[fix]
+        if config.get(key) is not False:
+            raise InvariantError(code, f"--{fix.replace('_', '-')} measures {called} against a tape from before it; "
+                                       "this tape is not one")
+        config[key] = True
         from .compare import stderr
 
-        stderr("note: from the first check the fix changes, each trial goes on live under the fixed quote check")
+        stderr(f"note: from the first brief the fix changes, each trial goes on live under {called}")
     config |= {"tape": str(args.replay), "replayed": h.get("adapter"), "model": h.get("model"), "then_live": True,
                "live_tape": str(args.record)}
     first.round_reply_tokens = rounds
@@ -881,9 +891,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
         raise InvariantError("COMPARE", "--price needs --price-in and --price-out, for tokens no model is named for")
     if args.record and args.replay and not args.then_live:
         raise InvariantError("COMPARE", "--record or --replay, not both, unless --then-live")
-    if args.fixed_quotes and not args.then_live:
-        raise InvariantError("COMPARE", "--fixed-quotes measures the fixed quote check on a tape from before it: it needs "
-                                        "--then-live")
+    if (args.fixed_quotes or args.marked_review) and not args.then_live:
+        raise InvariantError("COMPARE", "--fixed-quotes and --marked-review measure a fix on a tape from before it: each "
+                                        "needs --then-live")
     from .tools import PAGE_MAX
     if args.page_chars is not None and args.page_chars > PAGE_MAX:
         raise InvariantError("COMPARE", f"--page-chars is at most {PAGE_MAX:,}")
@@ -929,6 +939,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         config["genet_split"] = SPLIT_DEFAULT  # the rule acts only on paged reads, so only a paged run names it
     if args.benchmark:
         config["quote_spaces"] = True  # a benchmark's files can hold zero-width spaces; generated notes do not
+    config["review_end"] = True  # every run's verifier reads a product
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
     if args.max_spend is not None:
@@ -963,7 +974,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
                     "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
                     "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check,
                     "rework_reads": args.rework_reads, "rework_keeps": args.rework_keeps,
-                    "quote_spaces": config.get("quote_spaces", True)},
+                    "quote_spaces": config.get("quote_spaces", True), "review_end": config["review_end"]},
             page_chars=args.page_chars,
             genet_split=config.get("genet_split"),
         )
@@ -982,7 +993,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
         spend = factory.spend
         live = (f", ${spend.cost(args.price_in, args.price_out):.4f}" if args.price_in is not None else "")
         after = ("the gap check" if args.gap_check else "a rework that may read" if args.rework_reads
-                 else "a rework that keeps its pages" if args.rework_keeps else "a check the fixed quote check changes")
+                 else "a rework that keeps its pages" if args.rework_keeps
+                 else "a check the fixed quote check changes" if args.fixed_quotes else "a verifier call, its view marked")
         print(f"live: {spend.calls} requests sent to the model after {after}{live}")
     if recorder:
         print(f"tape: {recorder.count} exchanges saved to {args.record}")
@@ -1024,6 +1036,7 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
         "entities": args.entities, "distractors": args.distractors, "repeat": args.repeat, "seed": args.seed,
         "max_calls_per_review": args.max_calls, "context_tokens": args.context,
         "products": len(items), "wrong_products": sum(b.error is not None for _, _, b in items), "reviews": reviews,
+        "review_end": True,
     }
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
@@ -1040,7 +1053,7 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
         suite.write_corpus(args.corpus)
     try:
         results = run_bench(
-            suite, factory, setups=setups, arms=arms, repeats=args.repeat,
+            suite, factory, setups=setups, arms=arms, repeats=args.repeat, review_end=config["review_end"],
             budget_factory=lambda: comparison_budget(args.max_calls, args.context),
             corpus_dir=Path(args.corpus) if args.corpus else None, progress=stderr,
             stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,

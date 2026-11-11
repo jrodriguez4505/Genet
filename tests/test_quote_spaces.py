@@ -141,4 +141,4 @@ def test_the_fixed_check_needs_a_benchmark_tape_from_before_it(tmp_path, monkeyp
         with pytest.raises(InvariantError, match="not one"):
             _goes_live(tmp_path, monkeypatch, recorded, config)
     assert main(["compare", "--dry-run", "--fixed-quotes", "--per-family", "1"]) != 0
-    assert "it needs --then-live" in capsys.readouterr().out
+    assert "each needs --then-live" in capsys.readouterr().out
