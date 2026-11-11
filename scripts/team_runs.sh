@@ -336,6 +336,13 @@
 #     noise). All three bars hold. Over all 54 in each draw, right 49 to 56, p 0.09, within noise.
 #     Made the default on the operator's go-ahead, 11 November: compare's genet is now the rule, and genet-measured
 #     is Genet as every run above had it. A tape from before replays its genet under measured, as it ran.
+#   bash scripts/team_runs.sh firstjudge   the products the verifier failed under the split rule, judged. Over both
+#     draws of the 54 the rule's trials were reworked 24 times and then ended right 9, wrong 11, stopped 4
+#     (docs/LIVE_TESTS.md); the judge scored only final products, so whether the verifier was right to fail these is
+#     not known. data/exp/first_products.py takes them from the tapes' replays: 19 have an answer line and are judged
+#     by Sonnet 5.5 with Loong's own prompt, as every Loong score; 5 have none and score 0 with no call. One y, about
+#     $0.06, stopping itself at $0.25. Reported with no bar, and it changes nothing by itself: how often the verifier
+#     turned down a right answer, and what the rework made of right and wrong ones.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
@@ -356,8 +363,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain|firstjudge) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale|splitagain|firstjudge]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -388,6 +395,8 @@ elif [ "$mode" = scale ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1 to \$4 in all (caps \$2.50 for each of 2 seeds)"
 elif [ "$mode" = splitagain ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.70 with the judge on Sonnet (caps \$2.90)"
+elif [ "$mode" = firstjudge ]; then
+  echo "  the judge only, on claude-sonnet-5-5   \$2 / \$10   about \$0.06 (cap \$0.25)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -491,7 +500,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ] || [ "$mode" = scale ] || [ "$mode" = splitagain ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ] || [ "$mode" = scale ] || [ "$mode" = splitagain ] || [ "$mode" = firstjudge ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -1184,6 +1193,48 @@ print(f"bar: faster beyond noise -> {'holds' if c else 'MISSES'}")
 EOF
   echo
   echo "Done. Results: data/compare/h2h-split2-*.json   Tapes, what went to the model: data/tapes/h2h-split2-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = firstjudge ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" data/compare/h2h-first-products.json; do
+    [ -e "$f" ] || { echo "Missing $f (data/exp/first_products.py). Nothing was run."; exit 1; }
+  done
+  echo
+  echo ">>> The products the verifier failed under the split rule, judged: 24 over both draws of the 54, 19 with an answer"
+  echo "    line, each judged once by Sonnet 5.5 with Loong's own prompt. About \$0.06, stopping itself at \$0.25."
+  echo "    Reported with no bar: how often the verifier turned down a right answer. It changes nothing by itself."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  name=h2h-first-judged
+  if [ -f "data/compare/$name.json" ]; then
+    echo "== $name: already done"
+  else
+    [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+    echo
+    echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+    "$PY" -m taskorg.cli h2h-judge --results data/compare/h2h-first-products.json \
+      --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-spend 0.25 \
+      --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+      | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+  fi
+  [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so there is no readout."; exit 1; }
+  "$PY" - <<'EOF'
+import json
+from collections import Counter
+rows = json.load(open("data/compare/h2h-first-judged.json"))["results"]
+right = lambda r: (r.get("judge_score") or 0) >= 80
+print(f"The verifier failed {len(rows)} products; the judge scores {sum(map(right, rows))} of them right (80 or more), "
+      f"and {sum(not r.get('answer') for r in rows)} had no answer line.")
+for label, pick in (("right when failed", right), ("not right when failed", lambda r: not right(r))):
+    c = Counter(r["ended"] for r in rows if pick(r))
+    print(f"  {label}: {sum(c.values())}; after the rework right {c['right']}, wrong {c['wrong']}, stopped {c['stopped']}")
+EOF
+  echo
+  echo "Done. Results: data/compare/h2h-first-judged.json   Tape, what went to the judge: data/tapes/h2h-first-judged.jsonl"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then

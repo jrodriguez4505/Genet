@@ -629,6 +629,23 @@ def test_the_split_rule_run_again_needs_the_first_draw(tmp_path: Path):
     assert "Missing data/compare/h2h-split-judged.json" in out and _calls(log) == []
 
 
+def test_the_failed_products_are_judged_once_with_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "firstjudge")
+    assert "Missing data/compare/h2h-first-products.json" in out and _calls(log) == []
+    (tmp_path / "data/compare/h2h-first-products.json").write_text("{}")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "firstjudge") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "firstjudge")
+    judge, readout = _calls(log)
+    assert "about $0.06" in out and "Done." in out and KEY not in out
+    # The judge alone, on Sonnet, capped and taped; no Haiku run and no smoke test.
+    assert "h2h-judge --results data/compare/h2h-first-products.json " in judge and "--model claude-sonnet-5-5" in judge
+    assert "--price-in 2 --price-out 10 --max-spend 0.25 " in judge and "--record data/tapes/h2h-first-judged.jsonl" in judge
+    assert "taskorg.cli compare" not in judge and readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "firstjudge")
+    assert again.count("already done") == 1 and len(_calls(log)) == 3
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")
