@@ -1132,6 +1132,7 @@ Of the 10 that stopped, 6 stopped on a right answer.
 **The live test.** `bash scripts/team_runs.sh keeppages`, one y.
 - **Steps:** each tape and strategy replayed on its own up to the rework, then live, on the 36 alone (`--ids`), with the head-to-head's model and limits. Then Sonnet 5.5 judges the 36.
 - **Cost:** about $0.35. The caps are $0.15, $0.13, $0.03, $0.03, $0.11, $0.05 and $0.27, and $0.20 for the judge.
+- **Caps raised, 11 November.** The fresh step stopped at its $0.11 cap after one of its three trials, which cost $0.058. The first four steps had finished, and $0.21 was spent in all. The caps of the four unfinished steps were raised to $0.30, $0.12 and $0.50, and $0.25 for the judge, with the bars unchanged. The fresh step runs again whole, and the run is now about $0.80 in all.
 
 | The bar, written before the run | Needed |
 |---|---|

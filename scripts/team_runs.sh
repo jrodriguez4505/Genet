@@ -297,7 +297,10 @@
 #     Each trial replays from its tape and goes to the model only at its rework, on the Loong tapes' 36 trials whose
 #     rework follows a product that read (data/exp/keeppages_dry.py; every other trial replays as it ran): the
 #     head-to-head's 40 (single 10, genet 6), its calibration (single 2, genet 1), the 12 fresh (genet 3) and the 54
-#     (genet 3, genet-reads 11). Then the judge on the 36. One y, about $0.35.
+#     (genet 3, genet-reads 11). Then the judge on the 36. One y, about $0.35 as first planned.
+#     On 11 November the fresh step stopped at its $0.11 cap after one trial, which cost $0.058: a rework that keeps its
+#     pages went on reading, and each call carried them all. Its cap and those of the steps after it were raised, the
+#     bars unchanged; the fresh step runs again whole. About $0.80 in all, $0.21 of it spent before the stop.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
@@ -345,7 +348,7 @@ elif [ "$mode" = rereads ]; then
 elif [ "$mode" = splitrule ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.70 with the judge on Sonnet (caps \$2.90)"
 elif [ "$mode" = keeppages ]; then
-  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35 with the judge on Sonnet (caps \$0.97)"
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.60 more with the judge on Sonnet (caps \$1.51 in all)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -942,8 +945,9 @@ if [ "$mode" = keeppages ]; then
   echo ">>> A rework that keeps its pages, on $model: when the verifier fails a product, the rework brief carries what the"
   echo "    product's call read, so the rework reads again only what is missing. Each trial replays from its tape and goes"
   echo "    to the model only at its rework: the 36 Loong trials whose rework follows a product that read. Then the judge"
-  echo "    on the 36. About \$0.35, each step stopping itself (caps \$0.15, \$0.13, \$0.03, \$0.03, \$0.11, \$0.05, \$0.27,"
-  echo "    and \$0.20 for the judge)."
+  echo "    on the 36. About \$0.80 in all, each step stopping itself (caps \$0.15, \$0.13, \$0.03, \$0.03, \$0.30, \$0.12,"
+  echo "    \$0.50, and \$0.25 for the judge). Steps that finished are not run again; the fresh step, stopped at its first"
+  echo "    cap, runs again whole."
   echo "    Written before it ran: the 36 take at most 5,497,118 tokens (6,116,108 as taped), right on at least 7 of them"
   echo "    (7 as taped), and wrong finishes up by at most half the right gained. The full bars are at the top of this script."
   read -r -p "Run it now? [y/N]: " go
@@ -963,11 +967,11 @@ if [ "$mode" = keeppages ]; then
     $limits --ids loong-f396c611,loong-8bc4a2b9 </dev/null
   held h2h-keeps-calib-genet 0.03 compare $loong --which calibration --strategies genet --replay data/tapes/h2h-calib-genet.jsonl \
     $limits --ids loong-f396c611 </dev/null
-  held h2h-keeps-fresh-genet 0.11 compare $loong --which fresh --strategies genet --replay data/tapes/h2h-fresh-plain.jsonl \
+  held h2h-keeps-fresh-genet 0.30 compare $loong --which fresh --strategies genet --replay data/tapes/h2h-fresh-plain.jsonl \
     $limits --ids loong-c9506966,loong-af2ba1aa,loong-197ead69 </dev/null
-  held h2h-keeps-rest-genet 0.05 compare $loong --which rest --strategies genet --replay data/tapes/h2h-split-today.jsonl \
+  held h2h-keeps-rest-genet 0.12 compare $loong --which rest --strategies genet --replay data/tapes/h2h-split-today.jsonl \
     $limits --ids loong-96942bc4,loong-0b59de4d,loong-ed234f29 </dev/null
-  held h2h-keeps-rest-reads 0.27 compare $loong --which rest --strategies genet-reads --replay data/tapes/h2h-split-reads.jsonl \
+  held h2h-keeps-rest-reads 0.50 compare $loong --which rest --strategies genet-reads --replay data/tapes/h2h-split-reads.jsonl \
     $limits --ids loong-05a8ab3a,loong-44b5d8c0,loong-5b14133c,loong-8ee4e095,loong-926878f8,loong-a62d61a2,loong-70d2f3da,loong-7d75bfc7,loong-ed234f29,loong-80bea483,loong-c87acb6c </dev/null
   name=h2h-keeps-judged
   if [ -f "data/compare/$name.json" ]; then
@@ -980,7 +984,7 @@ if [ "$mode" = keeppages ]; then
       --results data/compare/h2h-keeps-calib-single.json --results data/compare/h2h-keeps-calib-genet.json \
       --results data/compare/h2h-keeps-fresh-genet.json --results data/compare/h2h-keeps-rest-genet.json \
       --results data/compare/h2h-keeps-rest-reads.json \
-      --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-spend 0.20 \
+      --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-spend 0.25 \
       --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
       | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
   fi

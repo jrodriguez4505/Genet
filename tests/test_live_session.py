@@ -539,11 +539,11 @@ KEEPS = [  # name, sample, team, tape, the trials whose rework follows a product
      "loong-612f5816,loong-9fd8f0e0,loong-1192a01e,loong-5a035018,loong-12588c71,loong-053361f2", "0.13"),
     ("h2h-keeps-calib-single", "calibration", "single", "h2h-calib-genet", "loong-f396c611,loong-8bc4a2b9", "0.03"),
     ("h2h-keeps-calib-genet", "calibration", "genet", "h2h-calib-genet", "loong-f396c611", "0.03"),
-    ("h2h-keeps-fresh-genet", "fresh", "genet", "h2h-fresh-plain", "loong-c9506966,loong-af2ba1aa,loong-197ead69", "0.11"),
-    ("h2h-keeps-rest-genet", "rest", "genet", "h2h-split-today", "loong-96942bc4,loong-0b59de4d,loong-ed234f29", "0.05"),
+    ("h2h-keeps-fresh-genet", "fresh", "genet", "h2h-fresh-plain", "loong-c9506966,loong-af2ba1aa,loong-197ead69", "0.30"),
+    ("h2h-keeps-rest-genet", "rest", "genet", "h2h-split-today", "loong-96942bc4,loong-0b59de4d,loong-ed234f29", "0.12"),
     ("h2h-keeps-rest-reads", "rest", "genet-reads", "h2h-split-reads",
      "loong-05a8ab3a,loong-44b5d8c0,loong-5b14133c,loong-8ee4e095,loong-926878f8,loong-a62d61a2,loong-70d2f3da,"
-     "loong-7d75bfc7,loong-ed234f29,loong-80bea483,loong-c87acb6c", "0.27"),
+     "loong-7d75bfc7,loong-ed234f29,loong-80bea483,loong-c87acb6c", "0.50"),
 ]
 KEEPS_FILES = ("data/tapes/h2h-loong-genet.jsonl", "data/tapes/h2h-calib-genet.jsonl", "data/tapes/h2h-fresh-plain.jsonl",
                "data/tapes/h2h-split-today.jsonl", "data/tapes/h2h-split-reads.jsonl", "data/compare/h2h-calib-judged.json",
@@ -558,7 +558,7 @@ def test_the_keep_pages_run_goes_to_the_model_only_at_the_rework_and_needs_a_y(t
     assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "keeppages") and _calls(log) == []
     out = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
     *steps, judge, readout = _calls(log)
-    assert "on claude-haiku-5-5" in out and "about $0.35" in out and "Done." in out and KEY not in out
+    assert "on claude-haiku-5-5" in out and "about $0.60 more" in out and "Done." in out and KEY not in out
     assert "at most 5,497,118 tokens" in out and len(steps) == 7 == len(KEEPS)
     assert sum(len(ids.split(",")) for *_, ids, _ in KEEPS) == 36
     for call, (name, sample, team, tape, ids, cap) in zip(steps, KEEPS):
@@ -571,7 +571,7 @@ def test_the_keep_pages_run_goes_to_the_model_only_at_the_rework_and_needs_a_y(t
         assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
         assert call.endswith(f"key={KEY}")
     assert "h2h-judge " in judge and all(f"--results data/compare/{s[0]}.json " in judge for s in KEEPS)
-    assert "--model claude-sonnet-5-5" in judge and "--max-spend 0.20 " in judge
+    assert "--model claude-sonnet-5-5" in judge and "--max-spend 0.25 " in judge
     assert "--record data/tapes/h2h-keeps-judged.jsonl" in judge and readout.startswith("args=-I -")
     # Done once, nothing is paid for twice.
     again = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
