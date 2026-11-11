@@ -474,6 +474,10 @@ def main(argv: list[str] | None = None) -> int:
                           "sample holds (6 comparison, 6 clustering), or the rest: every planned question none of those holds")
     p_c.add_argument("--ids", default=None,
                      help="with --benchmark: only these questions of the sample, by task id (loong-1a2b3c4d), comma separated")
+    p_c.add_argument("--pad-notes", type=_whole(1000), default=None, metavar="CHARS",
+                     help="generated questions only: grow each company's note to at least this many characters with "
+                          "neutral sections, the questions and figures unchanged, so a question's files can pass a real "
+                          "call limit. Off by default")
     p_c.add_argument("--page-chars", type=_whole(1000), default=None,
                      help="read long files a page of this many characters at a time (read:PATH@N). Off by default")
     p_c.add_argument("--max-seconds", type=_finite(1, strict=False), default=600.0,
@@ -841,11 +845,14 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if args.ids and not args.benchmark:
         raise InvariantError("COMPARE", "--ids picks questions of a --benchmark sample")
     try:
+        if args.pad_notes and args.benchmark:
+            raise ValueError("--pad-notes grows generated questions' notes, not a benchmark's documents")
         if args.benchmark:
             suite = _benchmark_suite(args)
         else:
             suite = build_suite(seed=args.seed, per_family=args.per_family, families=families,
-                                entities=args.entities, distractors=args.distractors, filed=args.filed)
+                                entities=args.entities, distractors=args.distractors, filed=args.filed,
+                                pad=args.pad_notes or 0)
     except (ValueError, OSError) as e:
         raise InvariantError("COMPARE", str(e)) from None
     trials = len(suite.tasks) * len(strategies) * args.repeat
@@ -870,6 +877,9 @@ def cmd_compare(args: argparse.Namespace) -> int:
     elif args.page_chars is not None or args.max_seconds != 600.0:
         config |= {"page_chars": args.page_chars, "max_seconds": args.max_seconds}
         bench_keys = ("page_chars", "max_seconds")
+    if args.pad_notes:
+        config["pad_notes"] = args.pad_notes
+        bench_keys = (*bench_keys, "pad_notes")
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
     if args.max_spend is not None:

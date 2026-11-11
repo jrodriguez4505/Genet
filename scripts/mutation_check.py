@@ -191,6 +191,15 @@ M = [
     ("cli.py", "compare does not hand kept pages to its trials", '"rework_keeps": args.rework_keeps},', '"rework_keeps": False},'),
     ("cli.py", "then-live arms kept pages on another switch's words", "if args.rework_reads else KEEP_ARM", "if args.rework_reads else REWORK_ARM"),
     ("checks.py", "the gap pattern matches nothing", '    found = GAP_SAID.search(claim or "")', "    found = None"),
+    # Long notes for a test at a real call limit (build_suite's pad, compare --pad-notes).
+    ("suite.py", "padding is drawn from the suite's own stream", 'rng = random.Random(f"{seed}-pad-{key}")', "rng = random.Random(seed)"),
+    ("suite.py", "a note is left short", "    while size < target:\n", "    while size < target // 4:\n"),
+    ("suite.py", "a note loses its own paragraphs", "    for para in own:\n        padding.insert(rng.randint(0, len(padding)), para)\n", ""),
+    ("suite.py", "a padded sentence names a quarter's sales", '    "Freight costs per shipment rose about {k}% on fuel surcharges.",', '    "Freight costs per shipment rose about {k}% on fuel surcharges.",\n    "Q3 sales held at ${m} million in the region.",'),
+    ("suite.py", "the suite is never padded", "    if pad:\n        corpus = {name: _pad(text, name, seed, pad)", "    if False:\n        corpus = {name: _pad(text, name, seed, pad)"),
+    ("cli.py", "compare ignores --pad-notes", "                                pad=args.pad_notes or 0)", "                                pad=0)"),
+    ("cli.py", "the padding is not on the record", '        config["pad_notes"] = args.pad_notes\n', ""),
+    ("cli.py", "a benchmark is padded", "        if args.pad_notes and args.benchmark:\n            raise", "        if False:\n            raise"),
     # Two arms with their noise (taskorg.paired, `taskorg paired`).
     ("paired.py", "the sign test counts the larger side", "    k = min(gained, lost)\n", "    k = max(gained, lost)\n"),
     ("paired.py", "the sign test is one-sided", "    return min(1.0, 2 * sum(comb(n, i)", "    return min(1.0, sum(comb(n, i)"),

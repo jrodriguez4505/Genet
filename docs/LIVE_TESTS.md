@@ -1292,6 +1292,32 @@ The Loong financial questions are used up, so a clean test needs more questions:
 
 The bars set before the run hold as written: the rule stays off by default until the operator decides.
 
+## 11 November 2026: does splitting still win at a real call limit? The plan, written before the run
+
+**Why.** The firmest result so far is the 7 and 8 November sweep. With every call capped at 8,000 tokens, one agent was right on 1 of 12, and every split and Genet on 8 to 11 (p at most 0.01). But 8,000 is our own limit, set so the work would not fit one call at small scale; the model takes far more. And each note there is about 2,000 characters, so the limit bit on twenty notes together, not on any one note. So the result may say only that one agent cannot see twenty notes through an 8,000-token window. On Loong, at a 100,000 limit with reads paged, one agent never ran short of room.
+
+**The test.** `bash scripts/team_runs.sh scale`, one y.
+- **Questions:** the sweep's own 12, on seeds 113 and 114: 20 companies and 6 look-alikes a question.
+- **Notes:** each grown to about 30,000 characters with neutral sections (`compare --pad-notes`). The questions, the figures and every paragraph of each note are as they were. No padded sentence names revenue, sales, churn or a quarter. A question's notes come to about 270,000 tokens.
+- **Limits:** Loong's: 100,000 tokens a call, reads paged at 16,000 characters, 6 tool rounds. One agent may search as well as read, and has room to.
+- **Arms:** one agent, 4 parts, and Genet, on Haiku 5.5.
+- **Cost:** about $1 to $4, with a cap of $2.50 for each seed. An agent that searches costs the bottom of that range, and one that reads every page costs the top.
+- **Checked for free:** on the simulated model, every arm runs to its end. It reads every page, at 1.1 to 1.3 million tokens a trial.
+
+| The bar, written before the run | Needed |
+|---|---|
+| 4 parts against one agent | more right finishes, beyond noise (`taskorg paired`, p under 0.05) |
+| Genet against one agent | more right finishes, beyond noise |
+
+Reported with no bar:
+- wrong finishes, stops and tokens a question for each arm;
+- how one agent read (pages and searches), and its largest call;
+- where Genet split.
+
+**What it means.** If both bars hold, splitting still wins when the work passes a real limit, and the sweep's result was not an artifact of the 8,000 limit. If one agent copes, the sweep showed only what an 8,000 window cannot hold.
+
+**What it cannot show.** The questions are generated, and a sum or a ranking over 20 companies is the case most suited to splitting. Real documents are not padded with neutral sections.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.

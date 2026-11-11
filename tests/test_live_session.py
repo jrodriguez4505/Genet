@@ -584,6 +584,26 @@ def test_the_keep_pages_run_needs_its_tapes(tmp_path: Path):
     assert "Missing data/tapes/h2h-loong-genet.jsonl" in out and _calls(log) == []
 
 
+def test_the_scale_run_asks_the_sweeps_questions_at_a_real_limit_and_needs_a_y(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "scale") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "scale")
+    *steps, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $1 to $4" in out and "Done." in out and KEY not in out
+    assert len(steps) == 2
+    for call, seed in zip(steps, (113, 114)):
+        # The sweep's questions, notes grown past a 100,000 limit, paged reads; live from the start.
+        assert "compare" in call and "--adapter anthropic" in call and "--max-spend 2.50 " in call
+        assert f"--seed {seed} " in call and "--families aggregate,breadth --per-family 3 --entities 20 --distractors 6" in call
+        assert "--pad-notes 30000 --context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000" in call
+        assert "--tool-rounds 6 --strategies single,split-4,genet" in call and "--replay" not in call
+        assert f"--record data/tapes/scale-s{seed}.jsonl" in call and f"--out data/compare/scale-s{seed}.json" in call
+        assert call.endswith(f"key={KEY}")
+    assert readout.startswith("args=- ")  # the readout, through Python's stdin
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "scale")
+    assert again.count("already done") == 2 and len(_calls(log)) == 4
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

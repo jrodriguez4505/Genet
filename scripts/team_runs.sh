@@ -303,6 +303,20 @@
 #     bars unchanged; the fresh step runs again whole. About $0.80 in all, $0.21 of it spent before the stop.
 #     Ran 11 November, $0.58 in all: tokens 6,116,108 to 7,154,697, right 7 to 6, wrong 19 to 21. All three bars
 #     missed, so the switch stays off (docs/LIVE_TESTS.md).
+#   bash scripts/team_runs.sh scale   does splitting still win at a real call limit? The 7-8 November sweep's 12
+#     questions (seeds 113 and 114, 20 companies, 6 look-alikes): one agent right on 1 of 12 at an 8,000-token call
+#     limit, every split 8 to 11 (p at most 0.01). But 8,000 is our own limit, and its notes are 2,000 characters each:
+#     the limit bit on the 20 notes together. Here the same questions and figures, each note grown to 30,000 characters
+#     with neutral sections (compare --pad-notes), so a question's notes come to about 270,000 tokens; the call limit
+#     is Loong's 100,000, reads are paged at 16,000 characters, and one agent may search. One agent, 4 parts and Genet,
+#     on Haiku 5.5. Two steps, one y, about $1 to $4 (caps $2.50 each).
+#     Before the run, free: offline on the simulated model, every arm runs to its end (it reads every page: about 1.1
+#     to 1.3 million tokens a trial, the top of the estimate).
+#     The bars, written before the run (taskorg paired against one agent, right finishes):
+#     - 4 parts beat one agent beyond noise (p under 0.05).
+#     - Genet beats one agent beyond noise.
+#     Reported with no bar: wrong finishes, stops and tokens a question for each; how one agent read (pages, searches)
+#     and its largest call; where Genet split. If one agent copes here, the sweep's result was the 8,000 limit's.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
@@ -323,8 +337,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages|scale]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -351,6 +365,8 @@ elif [ "$mode" = splitrule ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.70 with the judge on Sonnet (caps \$2.90)"
 elif [ "$mode" = keeppages ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.60 more with the judge on Sonnet (caps \$1.51 in all)"
+elif [ "$mode" = scale ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1 to \$4 in all (caps \$2.50 for each of 2 seeds)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -454,7 +470,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ] || [ "$mode" = scale ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -1038,6 +1054,47 @@ print(f"the 40, pages kept: single {per(kept('h2h-loong-judged', 'single', ['mai
 EOF
   echo
   echo "Done. Results: data/compare/h2h-keeps-*.json   Tapes, what went to the model: data/tapes/h2h-keeps-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = scale ]; then
+  echo
+  echo ">>> Does splitting still win at a real call limit, on $model: the sweep's 12 questions with each note grown to"
+  echo "    30,000 characters, a 100,000-token call limit and paged reads. One agent, 4 parts and Genet, two seeds. About"
+  echo "    \$1 to \$4: an agent that searches costs the bottom of that, one that reads every page the top. Each seed stops"
+  echo "    itself before \$2.50."
+  echo "    Written before it ran: 4 parts, and Genet, each beat one agent on right finishes beyond noise. The full bars"
+  echo "    are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  for seed in 113 114; do
+    held "scale-s$seed" 2.50 compare --seed "$seed" --families aggregate,breadth --per-family 3 --entities 20 \
+      --distractors 6 --pad-notes 30000 --context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 \
+      --tool-rounds 6 --strategies single,split-4,genet </dev/null
+  done
+  "$PY" - <<'EOF'
+import json
+from taskorg.paired import exact_right, exact_wrong, paired
+rows = [r | {"q": f"{s}-{r['task_id']}"} for s in (113, 114) for r in json.load(open(f"data/compare/scale-s{s}.json"))["results"]]
+arm = lambda s: {r["q"]: r for r in rows if r["strategy"] == s}
+for s in ("single", "split-4", "genet"):
+    rs = list(arm(s).values())
+    print(f"  {s:<8} {len(rs)} questions: right {sum(map(exact_right, rs))}, wrong {sum(map(exact_wrong, rs))}, "
+          f"stopped {sum(r['status'] != 'complete' for r in rs)}, {sum(r['tokens'] for r in rs) / len(rs):,.0f} tokens a question, "
+          f"split {sum((r['workers'] or 0) > 0 for r in rs)}")
+bars = []
+for s in ("split-4", "genet"):
+    p = paired(arm("single"), arm(s), right=exact_right, wrong=exact_wrong)
+    print("\n".join("  " + line for line in p.lines("one agent", s)))
+    bars.append((s, p.right.gained > p.right.lost and not p.right.noise, p.right.p))
+for s, held, p in bars:
+    print(f"bar: {s} beats one agent beyond noise (p {p:.3f}) -> {'holds' if held else 'MISSES'}")
+EOF
+  echo
+  echo "Done. Results: data/compare/scale-s*.json   Tapes, what went to the model: data/tapes/scale-s*.jsonl"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then
