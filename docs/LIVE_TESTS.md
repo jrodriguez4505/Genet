@@ -1292,7 +1292,9 @@ The Loong financial questions are used up, so a clean test needs more questions:
 
 The bars set before the run hold as written: the rule stays off by default until the operator decides.
 
-## 11 November 2026: does splitting still win at a real call limit? The plan, written before the run
+## 11 November 2026: does splitting still win at a real call limit?
+
+### The plan, written before the run
 
 **Why.** The firmest result so far is the 7 and 8 November sweep. With every call capped at 8,000 tokens, one agent was right on 1 of 12, and every split and Genet on 8 to 11 (p at most 0.01). But 8,000 is our own limit, set so the work would not fit one call at small scale; the model takes far more. And each note there is about 2,000 characters, so the limit bit on twenty notes together, not on any one note. So the result may say only that one agent cannot see twenty notes through an 8,000-token window. On Loong, at a 100,000 limit with reads paged, one agent never ran short of room.
 
@@ -1317,6 +1319,29 @@ Reported with no bar:
 **What it means.** If both bars hold, splitting still wins when the work passes a real limit, and the sweep's result was not an artifact of the 8,000 limit. If one agent copes, the sweep showed only what an 8,000 window cannot hold.
 
 **What it cannot show.** The questions are generated, and a sum or a ranking over 20 companies is the case most suited to splitting. Real documents are not padded with neutral sections.
+
+### The result, 11 November
+
+Run on Haiku 5.5 as planned. Spend was $2.30: $1.09 for seed 113 and $1.22 for seed 114.
+
+| The sweep's 12 questions, notes past a 100,000 limit | Right | Finished wrong | Stopped | Tokens a question |
+|---|---|---|---|---|
+| One agent | 6 | 1 | 5 | 590,511 |
+| 4 parts | 4 | 1 | 7 (2 on a right answer) | 510,578 |
+| Genet | 4 | 0 | 8 (1 on a right answer) | 524,726 |
+
+| The bar, written before the run | Result | |
+|---|---|---|
+| 4 parts beat one agent beyond noise | right 6 to 4 (+1 / -3), p 0.62 | **misses** |
+| Genet beats one agent beyond noise | right 6 to 4 (+2 / -4), p 0.69 | **misses** |
+
+Tokens a question are within noise too: 4 parts -79.9k (-204.5k to +47.6k), Genet -65.8k (-202.4k to +75.6k).
+
+**How one agent coped.** It searched, from 103 to 140 times for each family of questions on each seed, and read what the searches pointed to. Its largest call was 80,745 tokens, inside the limit. The parts read page by page and hardly searched; their largest call was 74,646. Every stop in every arm was the verifier's.
+
+**Free check:** the split rule (`genet-reads`) replayed on these tapes does what Genet did on all 12 trials. A page of each named note does not fit, so it plans and splits, as it should.
+
+**What it means.** At the 8,000 limit, one agent was right on 1 of 12 and every split on 8 to 11. At a real limit, with the same questions, notes coming to nearly three times the limit and search at hand, one agent did as well as the splits. Within noise, it did better. So the sweep's result was the 8,000 window's: splitting paid where one agent could not see the material, not wherever the material passed one call. No result so far shows splitting improving accuracy at a real limit, and the gates' reason to split, that the named files do not fit one call, did not pay here either.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

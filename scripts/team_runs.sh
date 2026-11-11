@@ -317,6 +317,8 @@
 #     - Genet beats one agent beyond noise.
 #     Reported with no bar: wrong finishes, stops and tokens a question for each; how one agent read (pages, searches)
 #     and its largest call; where Genet split. If one agent copes here, the sweep's result was the 8,000 limit's.
+#     Ran 11 November, $2.30: right one agent 6, 4 parts 4, Genet 4 of 12 (stopped 5, 7, 8), within noise; both bars
+#     missed. One agent searched and coped (largest call 80,745). The sweep's result was the 8,000 limit's.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
