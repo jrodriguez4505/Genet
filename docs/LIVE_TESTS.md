@@ -1343,6 +1343,25 @@ Tokens a question are within noise too: 4 parts -79.9k (-204.5k to +47.6k), Gene
 
 **What it means.** At the 8,000 limit, one agent was right on 1 of 12 and every split on 8 to 11. At a real limit, with the same questions, notes coming to nearly three times the limit and search at hand, one agent did as well as the splits. Within noise, it did better. So the sweep's result was the 8,000 window's: splitting paid where one agent could not see the material, not wherever the material passed one call. No result so far shows splitting improving accuracy at a real limit, and the gates' reason to split, that the named files do not fit one call, did not pay here either.
 
+**Why the runs stopped.** Every stop was the verifier's, and it was mostly right to stop them:
+- **15 of the 20 stopped products said themselves they were not finished.** They gave "a partial sum of 15 of 20 companies", "unresolved" or "not determined", or had no answer line.
+- **2 were wrong answers it caught.**
+- **3 were right answers it turned down,** because the product's own support was shaky: it cited a look-alike's file (`pinecrest-energies.md` for Pinecrest Energy), or said itself that the year was unconfirmed.
+
+What stopped the agents was settling all 20 companies in long notes. They could not tell look-alike names apart, could not choose between a figure and a near one from another year, and would not count an undated line. With short notes at 64,000 the same questions scored 11 or 12 of 12 for every arm, so this is the long notes, not the number of agents.
+
+**What splitting bought: time.** Parts run side by side. Here is the time a question against one agent, with `taskorg/paired.py`'s sign test and bootstrap range:
+
+| Time a question | Against one agent | Faster, slower on | p |
+|---|---|---|---|
+| This run, 4 parts | -38.4s on 97s, -40% (-51.3 to -25.7) | 12, 0 | under 0.001 |
+| This run, Genet | -32.9s, -34% (-45.4 to -19.9) | 11, 1 | 0.006 |
+| The sweep at 8,000, 4 parts | -31.1s on 66s, -47% (-51.2 to -7.2) | 10, 2 | 0.04 |
+| The sweep at 64,000, 4 parts | -28.7s on 50s, -57% (-34.3 to -23.1) | 12, 0 | under 0.001 |
+| The Loong head-to-head, Genet | +5.3s on 20s, +27% (+1.5 to +8.9) | 10, 30 | 0.002 |
+
+On large work, splitting finished sooner, with accuracy within noise of one agent's. On Loong's smaller work, Genet's planning call and merge made it slower.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.
