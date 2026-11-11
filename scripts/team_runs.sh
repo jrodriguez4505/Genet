@@ -290,6 +290,24 @@
 #     difference of 3 or 4 can be noise.
 #     Ran 10 November, $1.31: right 24 to 28, wrong finishes 24 to 24, tokens a question 65,133 to 72,614. The third
 #     bar missed, so the rule stays off by default (docs/LIVE_TESTS.md).
+#   bash scripts/team_runs.sh keeppages   a rework that keeps its pages (--rework-keeps), on Haiku 5.5. When the verifier
+#     fails a product, the rework brief today starts without what the product's call read, so one agent's rework reads
+#     the same pages again: on the split rule's 54, two such trials took 343k and 703k tokens. With the switch on, the
+#     rework brief carries what that call read, as far as one call has room with a page to spare.
+#     Each trial replays from its tape and goes to the model only at its rework, on the Loong tapes' 36 trials whose
+#     rework follows a product that read (data/exp/keeppages_dry.py; every other trial replays as it ran): the
+#     head-to-head's 40 (single 10, genet 6), its calibration (single 2, genet 1), the 12 fresh (genet 3) and the 54
+#     (genet 3, genet-reads 11). Then the judge on the 36. One y, about $0.35.
+#     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
+#     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
+#     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
+#     - Tokens: the 36 take at most 5,497,118, the rework's 2,475,963 cut by at least a quarter.
+#     - Right on at least 7 of the 36, as many as taped.
+#     - Wrong finishes rise by at most half the right finishes gained.
+#     Reported with no bar: stops; each tape; the split rule's three bars on the 54 with kept pages in both arms; the
+#     40's single and Genet with kept pages, beside CrewAI. The 54's two long reworks suggested the switch, so the 54 are
+#     in-sample for it; the other 22 trials' reworks were not looked at before.
+#     If all three hold, kept pages go to the default, on the operator's go-ahead.
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.
@@ -300,8 +318,8 @@
 set -u
 mode="${1:-all}"
 case "$mode" in
-  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule) ;;
-  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule]. Nothing was run."; exit 1 ;;
+  all|followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages) ;;
+  *) echo "Usage: bash scripts/team_runs.sh [followup|independent|size|wide|crew|fixes|second|next|merges|heldout|refine|whole|rerun|gaprule|aside|gapcheck|sonnet|sonnettwo|agents|cache|mixed|opus|sonnetsweep|headtohead|wording|samenote|rereads|splitrule|keeppages]. Nothing was run."; exit 1 ;;
 esac
 cd "$(dirname "$0")/.." || exit 1
 PY="${PYTHON:-.venv/bin/python}"
@@ -326,6 +344,8 @@ elif [ "$mode" = rereads ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.25 with the judge on Sonnet (caps \$0.67)"
 elif [ "$mode" = splitrule ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$1.70 with the judge on Sonnet (caps \$2.90)"
+elif [ "$mode" = keeppages ]; then
+  echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35 with the judge on Sonnet (caps \$0.97)"
 elif [ "$mode" = wording ]; then
   echo "  1) claude-haiku-5-5    \$0.10 / \$0.50   about \$0.35, then about \$1.25 with the judge on Sonnet (caps \$3.10)"
 elif [ "$mode" = cache ]; then
@@ -429,7 +449,7 @@ if r["calls"] == 0 or r["code"] in ("LIVE", "CRASH") or not r["correct"]:
 EOF
 fi
 
-if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ]; then
+if [ "$mode" = heldout ] || [ "$mode" = refine ] || [ "$mode" = whole ] || [ "$mode" = rerun ] || [ "$mode" = gaprule ] || [ "$mode" = aside ] || [ "$mode" = gapcheck ] || [ "$mode" = sonnet ] || [ "$mode" = sonnettwo ] || [ "$mode" = agents ] || [ "$mode" = cache ] || [ "$mode" = mixed ] || [ "$mode" = opus ] || [ "$mode" = sonnetsweep ] || [ "$mode" = headtohead ] || [ "$mode" = wording ] || [ "$mode" = samenote ] || [ "$mode" = rereads ] || [ "$mode" = splitrule ] || [ "$mode" = keeppages ]; then
   # Names with no time in them: a run that is cut off finds what finished, and a run done once is not paid for twice.
   held() {  # name, cap, the subcommand, its words. Ends the script unless this run finished.
     local name=$1 cap=$2 sub=$3
@@ -908,6 +928,110 @@ print(f"bar: tokens a question {tok_t:,.0f} -> {tok_r:,.0f}, fewer -> {'holds' i
 EOF
   echo
   echo "Done. Results: data/compare/h2h-split-*.json   Tapes, what went to the model: data/tapes/h2h-split-*.jsonl"
+  exit 0
+fi
+if [ "$mode" = keeppages ]; then
+  H=data/h2h
+  for f in "$H/loong-questions/loong.jsonl" "$H/loong-docs/doc/financial" data/tapes/h2h-loong-genet.jsonl \
+           data/tapes/h2h-calib-genet.jsonl data/tapes/h2h-fresh-plain.jsonl data/tapes/h2h-split-today.jsonl \
+           data/tapes/h2h-split-reads.jsonl data/compare/h2h-loong-judged.json data/compare/h2h-calib-judged.json \
+           data/compare/h2h-fresh-plain-judged.json data/compare/h2h-split-judged.json; do
+    [ -e "$f" ] || { echo "Missing $f (docs/HEAD_TO_HEAD.md). Nothing was run."; exit 1; }
+  done
+  echo
+  echo ">>> A rework that keeps its pages, on $model: when the verifier fails a product, the rework brief carries what the"
+  echo "    product's call read, so the rework reads again only what is missing. Each trial replays from its tape and goes"
+  echo "    to the model only at its rework: the 36 Loong trials whose rework follows a product that read. Then the judge"
+  echo "    on the 36. About \$0.35, each step stopping itself (caps \$0.15, \$0.13, \$0.03, \$0.03, \$0.11, \$0.05, \$0.27,"
+  echo "    and \$0.20 for the judge)."
+  echo "    Written before it ran: the 36 take at most 5,497,118 tokens (6,116,108 as taped), right on at least 7 of them"
+  echo "    (7 as taped), and wrong finishes up by at most half the right gained. The full bars are at the top of this script."
+  read -r -p "Run it now? [y/N]: " go
+  case "$go" in
+    y|Y|yes|Yes|YES) ;;
+    *) echo "Not run."; exit 0 ;;
+  esac
+  command -v caffeinate >/dev/null 2>&1 && caffeinate -i -w $$ >/dev/null 2>&1 &
+  # The settings the tapes were recorded with, so every request before the rework is the tape's own.
+  limits="--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6 --rework-keeps --then-live"
+  loong="--benchmark loong --questions $H/loong-questions/loong.jsonl --docs $H/loong-docs/doc/financial"
+  held h2h-keeps-main-single 0.15 compare $loong --which main --strategies single --replay data/tapes/h2h-loong-genet.jsonl \
+    $limits --ids loong-83cac46c,loong-7b279316,loong-612f5816,loong-41b01b58,loong-751c3613,loong-1192a01e,loong-d29b8b36,loong-5a035018,loong-12588c71,loong-053361f2 </dev/null
+  held h2h-keeps-main-genet 0.13 compare $loong --which main --strategies genet --replay data/tapes/h2h-loong-genet.jsonl \
+    $limits --ids loong-612f5816,loong-9fd8f0e0,loong-1192a01e,loong-5a035018,loong-12588c71,loong-053361f2 </dev/null
+  held h2h-keeps-calib-single 0.03 compare $loong --which calibration --strategies single --replay data/tapes/h2h-calib-genet.jsonl \
+    $limits --ids loong-f396c611,loong-8bc4a2b9 </dev/null
+  held h2h-keeps-calib-genet 0.03 compare $loong --which calibration --strategies genet --replay data/tapes/h2h-calib-genet.jsonl \
+    $limits --ids loong-f396c611 </dev/null
+  held h2h-keeps-fresh-genet 0.11 compare $loong --which fresh --strategies genet --replay data/tapes/h2h-fresh-plain.jsonl \
+    $limits --ids loong-c9506966,loong-af2ba1aa,loong-197ead69 </dev/null
+  held h2h-keeps-rest-genet 0.05 compare $loong --which rest --strategies genet --replay data/tapes/h2h-split-today.jsonl \
+    $limits --ids loong-96942bc4,loong-0b59de4d,loong-ed234f29 </dev/null
+  held h2h-keeps-rest-reads 0.27 compare $loong --which rest --strategies genet-reads --replay data/tapes/h2h-split-reads.jsonl \
+    $limits --ids loong-05a8ab3a,loong-44b5d8c0,loong-5b14133c,loong-8ee4e095,loong-926878f8,loong-a62d61a2,loong-70d2f3da,loong-7d75bfc7,loong-ed234f29,loong-80bea483,loong-c87acb6c </dev/null
+  name=h2h-keeps-judged
+  if [ -f "data/compare/$name.json" ]; then
+    echo "== $name: already done"
+  else
+    [ -f "data/tapes/$name.jsonl" ] && mv "data/tapes/$name.jsonl" "data/tapes/$name-cut-$stamp.jsonl"
+    echo
+    echo "== $name (Sonnet 5.5, Loong's own judge prompt)"
+    "$PY" -m taskorg.cli h2h-judge --results data/compare/h2h-keeps-main-single.json --results data/compare/h2h-keeps-main-genet.json \
+      --results data/compare/h2h-keeps-calib-single.json --results data/compare/h2h-keeps-calib-genet.json \
+      --results data/compare/h2h-keeps-fresh-genet.json --results data/compare/h2h-keeps-rest-genet.json \
+      --results data/compare/h2h-keeps-rest-reads.json \
+      --questions "$H/loong-questions/loong.jsonl" --model claude-sonnet-5-5 --price-in 2 --price-out 10 --max-spend 0.20 \
+      --record "data/tapes/$name.jsonl" --out "data/compare/$name.json" 2>&1 \
+      | tee "data/compare/$name.log" | grep --line-buffered -E "^\| |^judge|^saved"
+  fi
+  [ -f "data/compare/$name.json" ] || { echo "$name did not finish, so nothing more was run."; exit 1; }
+  "$PY" -I - <<'EOF'
+import json
+right = lambda r: (r.get("judge_score") or 0) >= 80 and r["status"] == "complete"
+wrong = lambda r: r["status"] == "complete" and not right(r)
+load = lambda name: json.load(open(f"data/compare/{name}.json"))["results"]
+# Each step, and the judged run it replays: the trials as taped.
+TAPED = {"main-single": "h2h-loong-judged", "main-genet": "h2h-loong-judged", "calib-single": "h2h-calib-judged",
+         "calib-genet": "h2h-calib-judged", "fresh-genet": "h2h-fresh-plain-judged", "rest-genet": "h2h-split-judged",
+         "rest-reads": "h2h-split-judged"}
+step = lambda r: next(k for k in TAPED if r["source"].endswith(f"h2h-keeps-{k}.json"))
+new = load("h2h-keeps-judged")
+was = {k: {(r["strategy"], r["task_id"]): r for r in load(f)} for k, f in TAPED.items()}
+old = [was[step(r)][(r["strategy"], r["task_id"])] for r in new]
+def line(rows):
+    rows = list(rows)
+    stopped = [r for r in rows if r["status"] != "complete"]
+    return (f"{len(rows)} trials: right {sum(map(right, rows))}, wrong {sum(map(wrong, rows))}, stopped {len(stopped)}"
+            f" ({sum((r.get('judge_score') or 0) >= 80 for r in stopped)} on a right answer), {sum(r['tokens'] for r in rows):,} tokens")
+print(f"  as taped     {line(old)}")
+print(f"  pages kept   {line(new)}")
+for k in TAPED:
+    mine = [r for r in new if step(r) == k]
+    print(f"    {k:<12} as taped {line(was[k][(r['strategy'], r['task_id'])] for r in mine)}")
+    print(f"    {'':<12} kept     {line(mine)}")
+gained = sum(map(right, new)) - sum(map(right, old))
+tok = sum(r["tokens"] for r in new)
+a, b, c = tok <= 5_497_118, sum(map(right, new)) >= 7, sum(map(wrong, new)) - sum(map(wrong, old)) <= gained / 2
+print(f"bar: tokens {sum(r['tokens'] for r in old):,} -> {tok:,}, at most 5,497,118 -> {'holds' if a else 'MISSES'}")
+print(f"bar: right {sum(map(right, old))} -> {sum(map(right, new))}, at least 7 -> {'holds' if b else 'MISSES'}")
+print(f"bar: wrong {sum(map(wrong, old))} -> {sum(map(wrong, new))}, up by at most half of {gained} -> {'holds' if c else 'MISSES'}")
+# Reported with no bar: the runs these trials belong to, with kept pages where a rework kept them.
+def kept(name, strategy, steps):
+    swap = {r["task_id"]: r for r in new if step(r) in steps and r["strategy"] == strategy}
+    return [swap.get(r["task_id"], r) for r in load(name) if r["strategy"] == strategy]
+def per(rows):
+    return f"right {sum(map(right, rows))}, wrong {sum(map(wrong, rows))}, {sum(r['tokens'] for r in rows) / len(rows):,.0f} tokens a question"
+today, rule = kept("h2h-split-judged", "genet", ["rest-genet"]), kept("h2h-split-judged", "genet-reads", ["rest-reads"])
+print(f"the 54, pages kept (in-sample): Genet as it is {per(today)}; under the split rule {per(rule)}")
+g = sum(map(right, rule)) - sum(map(right, today))
+print(f"  the split rule's bars: right +{g} (at least 2), wrong {sum(map(wrong, rule)) - sum(map(wrong, today)):+} (at most half of"
+      f" {g}), tokens {'fewer' if sum(r['tokens'] for r in rule) < sum(r['tokens'] for r in today) else 'not fewer'}")
+crew = [r for r in load("h2h-loong-judged") if r["strategy"] == "crewai"]
+print(f"the 40, pages kept: single {per(kept('h2h-loong-judged', 'single', ['main-single']))}; "
+      f"Genet {per(kept('h2h-loong-judged', 'genet', ['main-genet']))}; CrewAI {per(crew)}")
+EOF
+  echo
+  echo "Done. Results: data/compare/h2h-keeps-*.json   Tapes, what went to the model: data/tapes/h2h-keeps-*.jsonl"
   exit 0
 fi
 if [ "$mode" = sonnetsweep ]; then

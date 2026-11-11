@@ -148,6 +148,12 @@ GAP_MISS = "the product says it left out something the goal asks about"
 REWORK_ARM = "You may read the workspace's files for this rework"
 REWORK_READS = (f" {REWORK_ARM}: where the verifier names a figure that was not read or not confirmed, read it, and "
                 "answer from what you read.")
+# A rework that keeps its pages (--rework-keeps): the failed product's last call held what its tool rounds returned, and
+# the rework brief starts without it, so a single agent's rework reads the same pages again. On the 54 of 10 November,
+# two trials whose rework read the filings again took 343k and 703k tokens. With this on, the rework brief carries what
+# that call held, as far as one call has room. These words open it, and arm --then-live.
+KEEP_ARM = "What you read for the last product, kept for this rework"
+KEEP_NOTE = f"[{KEEP_ARM}. Read again only what the verifier names that is not here.]"
 # What a call is told when a round of tools returned more than it can carry.
 ROUND_CUT = ("[{n} more tool requests not run: this call has no room for what they return. Work from what is above, "
              "and name anything still missing rather than guess.]")
@@ -300,6 +306,7 @@ class Engine:
         cards: bool = False,
         gap_check: bool = False,
         rework_reads: bool = False,
+        rework_keeps: bool = False,
         max_workers: int = MAX_WORKERS,
     ):
         self.store = store
@@ -341,6 +348,9 @@ class Engine:
         # A rework after a merge may read the workspace, as a single agent's rework can. Off by default: it changes the
         # rework brief and its tools, and what a rework may spend.
         self.rework_reads = rework_reads
+        # A rework carries what the failed product's call read (_keep_pages). Off by default: it changes the rework
+        # brief, and it stays off until a test shows it saves tokens and loses no answers.
+        self.rework_keeps = rework_keeps
         # The most sub-agents a run may staff: 4 unless a measured sweep (compare's split-N) names another.
         if not 1 <= int(max_workers) <= MAX_PARTS:
             raise ValueError(f"max_workers must be 1 to {MAX_PARTS}, got {max_workers!r}")
@@ -610,11 +620,12 @@ class Engine:
         return art
 
     def _act(self, run: Run, brief: Brief, slot: Slot | None = None, *, reserve: int | None = None,
-             toolbox: Toolbox | None = None) -> Artifact:
+             toolbox: Toolbox | None = None, returned: list[str] | None = None) -> Artifact:
         """A call plus tool rounds. Allowed tools run, results come back in the next brief.
 
         reserve: calls that must be left afterwards (the verifier's), so tool rounds stop in time.
         toolbox: a sub-agent's own, open only at its share of the workspace.
+        returned: given a list, gets what each round returned, which the last call held: for a rework that keeps it.
         """
         toolbox = toolbox or self.toolbox
         rounds = self.max_tool_rounds
@@ -648,6 +659,8 @@ class Engine:
                 ran.append((req, out, held))
             for req, out, _ in ran:
                 results.append(out)
+                if returned is not None:
+                    returned.append(out)
                 with self._lock:
                     run._record("tool", {
                         "slot": slot.id if slot else brief.slot_function,
@@ -1013,8 +1026,10 @@ class Engine:
             })
         return self._brief(run, "verifier", extra=extra, mode="verify")
 
-    def _verify(self, run: Run, product: Artifact, *, adapt: bool) -> tuple[Artifact, bool]:
-        """Check the product. On a failed check, change the method once if the tier and budget allow."""
+    def _verify(self, run: Run, product: Artifact, *, adapt: bool, held: list[str] | None = None) -> tuple[Artifact, bool]:
+        """Check the product. On a failed check, change the method once if the tier and budget allow.
+
+        held: what the product's call read, which a rework under --rework-keeps carries."""
         lead = run.state.lead_id
         check = self._act(run, self._verifier_brief(run, product))
         verified = _verifier_accepts(check, run, product)
@@ -1036,7 +1051,7 @@ class Engine:
             run.request_replan(f"verifier did not pass: {reason[:160]}; misses: {', '.join(misses) or 'none named'}")
             run.answer_review(lead, "replan", "CHANGE_METHOD", f"rework the product to meet: {'; '.join(run.state.success_criteria)}")
             reads = self._rework_reads(run)
-            product = self._act(run, self._brief(
+            product = self._act(run, self._keep_pages(run, self._brief(
                 run, "lead",
                 extra=(
                     REWORK_HEAD + (rework_said(reason) if self.rework_reason or said else "")
@@ -1044,7 +1059,7 @@ class Engine:
                     + f" Last product: {product.claim[:400]}"
                 ),
                 mode="rework",
-            ), reserve=1)
+            ), held), reserve=1)
             run.accept_artifact(product)
             # The reworked product replaces the last one everywhere the verifier looks.
             self.store.remember_working(run.id, "product", product.claim)
@@ -1061,6 +1076,28 @@ class Engine:
             run.mark_stop_rule_failed("verifier")
             run.halt("verifier did not PASS named success criteria", code="VERIFY")
         return product, verified
+
+    def _keep_pages(self, run: Run, brief: Brief, held: list[str] | None) -> Brief:
+        """With --rework-keeps, the rework brief carries what the failed product's call read, so the rework reads again
+        only what is missing. Repeats count once. Where one call has no room for all of it, with a page to spare for
+        what the verifier named, the oldest is left out first. Off, or with nothing read, the brief is as before.
+        What it kept is on the record."""
+        if not self.rework_keeps or not held:
+            return brief
+        kept = list(dict.fromkeys(held))
+
+        def keeping(pages: list[str]) -> Brief:
+            return replace(brief, packet=f"{brief.packet}\n{TOOL_RESULTS}\n{KEEP_NOTE}\n\n" + "\n\n".join(pages))
+
+        b = run.budget
+        if b and b.max_tokens_per_call:
+            with self._lock:
+                room = b.max_tokens_per_call - self._reply_room(run) - (self._page_tokens() or 0)
+            while kept and self.adapter.estimate_tokens(keeping(kept)) > room:
+                kept.pop(0)
+        with self._lock:
+            run._record("rework_keeps", {"held": len(held), "kept": len(kept), "chars": sum(len(k) for k in kept)})
+        return keeping(kept) if kept else brief
 
     def _gap(self, run: Run, product: Artifact) -> str:
         """With the gap check on, the sentence in which the product says it left something out; else empty. Recorded."""
@@ -1218,6 +1255,7 @@ class Engine:
         added: list[Slot] = []
         failed: list[str] = []
         reported: dict[str, str] = {}
+        held: list[str] = []  # what the product's call read, for a rework that keeps it
         if split:
             run.set_method(lead, "sub-agents: " + ", ".join(v.subtask.channel_id for v in legal), axes or ["parallel", "fan_in"])
             split_context = run.state.context
@@ -1232,16 +1270,16 @@ class Engine:
                 extra += cover
             else:
                 run.switch_skill(lead, lead, "reason", "merge sub-agent results")
-            product = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"), reserve=1)
+            product = self._act(run, self._brief(run, "lead", extra=extra, mode="integrate"), reserve=1, returned=held)
         else:
             skill = self._single_agent_skill(verdicts)
             run.set_method(lead, f"single agent: {skill}", axes or ["sequential"])
             run.switch_skill(lead, lead, skill, "a single agent does the work")
-            product = self._act(run, self._brief(run, "lead", extra="WORK. Do the work yourself, as a single agent.", mode="work"), reserve=1)
+            product = self._act(run, self._brief(run, "lead", extra="WORK. Do the work yourself, as a single agent.", mode="work"), reserve=1, returned=held)
         run.accept_artifact(product)
         self.store.remember_working(run.id, "product", product.claim)
 
-        product, verified = self._verify(run, product, adapt=True)
+        product, verified = self._verify(run, product, adapt=True, held=held)
         reason = self._account(verdicts, added, failed, reported)
         question = self._close(run, product, operator_question, "KEEP_ROSTER", reason, f"workers={len(added)}; goal={run.state.goal}")
         return LoopResult(

@@ -531,6 +531,59 @@ def test_the_split_rule_run_needs_the_questions(tmp_path: Path):
     assert "Missing data/h2h/loong-questions/loong.jsonl" in out and _calls(log) == []
 
 
+KEEPS = [  # name, sample, team, tape, the trials whose rework follows a product that read (keeppages_dry.py), cap
+    ("h2h-keeps-main-single", "main", "single", "h2h-loong-genet",
+     "loong-83cac46c,loong-7b279316,loong-612f5816,loong-41b01b58,loong-751c3613,loong-1192a01e,loong-d29b8b36,"
+     "loong-5a035018,loong-12588c71,loong-053361f2", "0.15"),
+    ("h2h-keeps-main-genet", "main", "genet", "h2h-loong-genet",
+     "loong-612f5816,loong-9fd8f0e0,loong-1192a01e,loong-5a035018,loong-12588c71,loong-053361f2", "0.13"),
+    ("h2h-keeps-calib-single", "calibration", "single", "h2h-calib-genet", "loong-f396c611,loong-8bc4a2b9", "0.03"),
+    ("h2h-keeps-calib-genet", "calibration", "genet", "h2h-calib-genet", "loong-f396c611", "0.03"),
+    ("h2h-keeps-fresh-genet", "fresh", "genet", "h2h-fresh-plain", "loong-c9506966,loong-af2ba1aa,loong-197ead69", "0.11"),
+    ("h2h-keeps-rest-genet", "rest", "genet", "h2h-split-today", "loong-96942bc4,loong-0b59de4d,loong-ed234f29", "0.05"),
+    ("h2h-keeps-rest-reads", "rest", "genet-reads", "h2h-split-reads",
+     "loong-05a8ab3a,loong-44b5d8c0,loong-5b14133c,loong-8ee4e095,loong-926878f8,loong-a62d61a2,loong-70d2f3da,"
+     "loong-7d75bfc7,loong-ed234f29,loong-80bea483,loong-c87acb6c", "0.27"),
+]
+KEEPS_FILES = ("data/tapes/h2h-loong-genet.jsonl", "data/tapes/h2h-calib-genet.jsonl", "data/tapes/h2h-fresh-plain.jsonl",
+               "data/tapes/h2h-split-today.jsonl", "data/tapes/h2h-split-reads.jsonl", "data/compare/h2h-calib-judged.json",
+               "data/compare/h2h-fresh-plain-judged.json", "data/compare/h2h-split-judged.json")
+
+
+def test_the_keep_pages_run_goes_to_the_model_only_at_the_rework_and_needs_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    (tmp_path / "data/tapes").mkdir()
+    for f in KEEPS_FILES:
+        (tmp_path / f).write_text("")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "keeppages") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
+    *steps, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.35" in out and "Done." in out and KEY not in out
+    assert "at most 5,497,118 tokens" in out and len(steps) == 7 == len(KEEPS)
+    assert sum(len(ids.split(",")) for *_, ids, _ in KEEPS) == 36
+    for call, (name, sample, team, tape, ids, cap) in zip(steps, KEEPS):
+        # Each tape with the settings it was recorded under, the switch on, and live only where it changes a rework.
+        assert "compare" in call and "--adapter anthropic" in call and f"--max-spend {cap} " in call
+        assert "--benchmark loong " in call and f"--which {sample} " in call and f"--strategies {team} " in call
+        assert f"--replay data/tapes/{tape}.jsonl " in call and f"--ids {ids}" in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--rework-keeps --then-live" in call and "--rework-reads" not in call and "--gap-check" not in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        assert call.endswith(f"key={KEY}")
+    assert "h2h-judge " in judge and all(f"--results data/compare/{s[0]}.json " in judge for s in KEEPS)
+    assert "--model claude-sonnet-5-5" in judge and "--max-spend 0.20 " in judge
+    assert "--record data/tapes/h2h-keeps-judged.jsonl" in judge and readout.startswith("args=-I -")
+    # Done once, nothing is paid for twice.
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
+    assert again.count("already done") == 8 and len(_calls(log)) == 10
+
+
+def test_the_keep_pages_run_needs_its_tapes(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
+    assert "Missing data/tapes/h2h-loong-genet.jsonl" in out and _calls(log) == []
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

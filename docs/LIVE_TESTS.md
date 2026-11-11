@@ -1101,7 +1101,58 @@ Leave those two out and the other 25 of the kept 27 take 56,455 tokens as it is 
 
 **What follows.** The plan said the rule goes to the default only if all three bars hold, and one missed. So the rule stays off by default, as `--split-policy reads`. The largest single call was 69,244 tokens of the 100,000 allowed, so one agent still did not run out of room.
 
-The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes, and `h2h-split-today`, `h2h-split-reads` and `h2h-split-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+### A rework that keeps its pages: the plan, written before the run
+
+**Why.** The split rule missed its token bar on two trials, and both went the same way. The verifier turned down a first answer, and the rework started from a brief that held the verifier's reason and the last product, but none of what the first attempt had read. So the agent read the filings again: 343k tokens on one trial and 703k on the other. Across the Loong tapes, the trials whose rework follows a product that read spent 40% of their tokens from the rework on.
+
+**The switch.** `--rework-keeps`, off by default.
+- The rework brief carries what the failed product's call read, each result once.
+- It keeps what fits one call, with a page to spare for what the verifier named. Where all of it does not fit, the oldest is left out first; where none fits, the brief is as before.
+- A rework after a merge that read nothing is unchanged.
+- The kept results open with a note whose first words arm `--then-live`.
+
+**Checked for free** (`data/exp/keeppages_dry.py` and `data/exp/keeppages_share.py`, each strategy replayed on its own):
+- **Off:** every trial on the paged tapes replays as it ran, with no request missing. The one exception is a HotpotQA trial under Genet that comes out 5 tokens different, and the code before the change gives the same 5: two strategies on that tape share a taped reply.
+- **On:** the only trials that change are those whose rework follows a product that read, and they change at the rework. That is 36 trials on the Loong tapes and 7 on HotpotQA.
+- **Rehearsed** against a stand-in endpoint that answers a rework at once: each of the 36 goes to the model at its rework and nowhere else, with 2 requests each. Answered that way, the 36 would take 5,079,781 tokens.
+
+| The 36, as taped | Trials | Right, wrong, stopped | Tokens | From the rework on |
+|---|---|---|---|---|
+| The head-to-head's 40, single | 10 | 0, 7, 3 | 1,262,275 | 497,886 |
+| The 40, Genet | 6 | 1, 2, 3 | 1,055,822 | 423,202 |
+| Its calibration, single | 2 | 0, 1, 1 | 208,356 | 81,576 |
+| Its calibration, Genet | 1 | 0, 1, 0 | 465,612 | 51,817 |
+| The 12 fresh, Genet | 3 | 0, 2, 1 | 1,053,088 | 361,245 |
+| The 54, Genet as it is | 3 | 1, 2, 0 | 328,263 | 154,704 |
+| The 54, under the split rule | 11 | 5, 4, 2 | 1,742,692 | 905,533 |
+| All | 36 | 7, 19, 10 | 6,116,108 | 2,475,963 |
+
+Of the 10 that stopped, 6 stopped on a right answer.
+
+**The live test.** `bash scripts/team_runs.sh keeppages`, one y.
+- **Steps:** each tape and strategy replayed on its own up to the rework, then live, on the 36 alone (`--ids`), with the head-to-head's model and limits. Then Sonnet 5.5 judges the 36.
+- **Cost:** about $0.35. The caps are $0.15, $0.13, $0.03, $0.03, $0.11, $0.05 and $0.27, and $0.20 for the judge.
+
+| The bar, written before the run | Needed |
+|---|---|
+| Tokens | the 36 take at most 5,497,118: the rework's 2,475,963 cut by at least a quarter |
+| Right | at least 7 of the 36, as many as taped |
+| Wrong finishes | up by at most half the right finishes gained |
+
+Reported with no bar:
+- stops;
+- each tape;
+- the split rule's three bars on the 54, with kept pages in both arms;
+- the 40's single and Genet with kept pages, beside CrewAI.
+
+If all three hold, kept pages go to the default on the operator's go-ahead.
+
+**What it cannot show.**
+- The 54's two long reworks suggested the switch, so its 14 trials are in-sample. The other 22 trials' reworks were not looked at before.
+- A rework drawn again can differ by chance as well as by the switch, and there is one live draw against one taped draw.
+- HotpotQA's 7 are left out: they are short, and they are scored by exact match, not by the judge.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes, `h2h-split-today`, `h2h-split-reads` and `h2h-split-judged`, and the `h2h-keeps-*` tapes once that run is made. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
