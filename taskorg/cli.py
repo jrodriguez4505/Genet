@@ -664,7 +664,7 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
                        "it went")
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
-        _genet_split(recorded, config)
+        _as_recorded(recorded, config)
         config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}
 
         def factory():
@@ -705,18 +705,29 @@ def _model_prices(raw: list[str]) -> dict[str, tuple[float, float]]:
     return out
 
 
-def _genet_split(recorded: dict, config: dict) -> None:
-    """The split policy compare's genet replays under: the tape's. Since 11 November genet splits under the split rule
-    ("reads"); before, under "measured". The rule acts only on paged reads, so only a paged run names it, and a paged
-    tape from before names nothing. Its genet replays as it ran, and the run's config says so."""
+# Settings a run names only where they act, each with what a tape from before it was named ran under, and the note.
+AS_BEFORE = {
+    # Since 11 November genet splits under the split rule ("reads"); it acts only on paged reads.
+    "genet_split": ("measured", "genet split under the {was} policy, as it did before 11 November"),
+    # Since 11 November the quote check reads zero-width characters as space; only a benchmark's files hold them.
+    "quote_spaces": (False, "quote check read zero-width characters as text, as it did before 11 November"),
+}
+
+
+def _as_recorded(recorded: dict, config: dict) -> None:
+    """A replay runs as its tape did. A tape from before a setting was named names nothing, and ran under what came
+    before; the replay takes that, says so, and its config records it."""
     from .compare import stderr
 
-    if "genet_split" not in config or not recorded:
+    if not recorded:
         return
-    was = recorded.get("genet_split", "measured")
-    if was != config["genet_split"]:
-        config["genet_split"] = was
-        stderr(f"note: the tape's genet split under the {was} policy, as it did before 11 November; it replays so")
+    for key, (before, note) in AS_BEFORE.items():
+        if key not in config:
+            continue
+        was = recorded.get(key, before)
+        if was != config[key]:
+            config[key] = was
+            stderr(f"note: the tape's {note.format(was=was)}; it replays so")
 
 
 def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, code: str):
@@ -741,7 +752,7 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
                                    f"the environment gives {first.model}, {first.effort}")
     rounds = h.get("round_reply_tokens") or 0
     recorded = h.get(header_key)
-    _genet_split(recorded if isinstance(recorded, dict) else {}, config)
+    _as_recorded(recorded if isinstance(recorded, dict) else {}, config)
     config |= {"tape": str(args.replay), "replayed": h.get("adapter"), "model": h.get("model"), "then_live": True,
                "live_tape": str(args.record)}
     first.round_reply_tokens = rounds
@@ -899,6 +910,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
         bench_keys = (*bench_keys, "pad_notes")
     if config.get("page_chars") is not None:
         config["genet_split"] = SPLIT_DEFAULT  # the rule acts only on paged reads, so only a paged run names it
+    if args.benchmark:
+        config["quote_spaces"] = True  # a benchmark's files can hold zero-width spaces; generated notes do not
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
     if args.max_spend is not None:
@@ -932,7 +945,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
             verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
                     "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
                     "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check,
-                    "rework_reads": args.rework_reads, "rework_keeps": args.rework_keeps},
+                    "rework_reads": args.rework_reads, "rework_keeps": args.rework_keeps,
+                    "quote_spaces": config.get("quote_spaces", True)},
             page_chars=args.page_chars,
             genet_split=config.get("genet_split"),
         )

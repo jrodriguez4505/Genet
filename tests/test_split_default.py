@@ -12,7 +12,7 @@ import re
 
 from taskorg import cli
 from taskorg.anthropic_live import AnthropicAdapter
-from taskorg.cli import _genet_split, main
+from taskorg.cli import _as_recorded, main
 
 from test_anthropic_tape import MODEL, Client, _msg, _sim_answer
 from test_rework_reads import _Haiku
@@ -32,14 +32,14 @@ def test_a_paged_run_names_the_policy_and_an_unpaged_one_does_not(capsys):
 
 def test_a_paged_tape_from_before_replays_its_genet_under_measured(capsys):
     config = {"genet_split": "reads"}
-    _genet_split({"strategies": ["genet"], "page_chars": 8000}, config)
+    _as_recorded({"strategies": ["genet"], "page_chars": 8000}, config)
     assert config["genet_split"] == "measured" and "split under the measured policy" in capsys.readouterr().err
     for recorded in ({"genet_split": "reads"}, {}):  # a tape that names the rule, or one with no compare settings
         config = {"genet_split": "reads"}
-        _genet_split(recorded, config)
+        _as_recorded(recorded, config)
         assert config == {"genet_split": "reads"} and capsys.readouterr().err == ""
     unpaged: dict = {}
-    _genet_split({"strategies": ["genet"]}, unpaged)
+    _as_recorded({"strategies": ["genet"]}, unpaged)
     assert unpaged == {}
 
 

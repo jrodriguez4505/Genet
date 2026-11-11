@@ -476,6 +476,8 @@ The kernel picks the files from the run's record and the product's text. The aut
 
 With sources on, the kernel also checks, in code, that every evidence quote is in a file its evidence line cites, and tells the verifier which are not. A file named inside the quote does not count as cited. Quotes of the tool's own words, of a search query, or of a member's report are not checked. Over all 885 products on the Claude tapes, it flags 6, and each is a quote the cited files do not hold. The verdict stays the verifier's, and the criteria checks above still apply.
 
+Since 11 November the check reads zero-width characters as space. Loong's 2024 filings put a zero-width space after many figures, and a model's quote leaves it out, so 31 of the 190 flags on the Loong tapes were false for that alone. Two of the seven right answers the verifier turned down under the split rule had only such flags ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). A benchmark run's config names the check (`quote_spaces`). A benchmark tape from before names nothing, and replays under the check as it was.
+
 `layered` became the default after its live run (29 October, [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). It caught every look-alike error at about 3% more tokens on a 20-company task, where `full` caught every planted error at about a quarter more. A run with no workspace has nothing to open, so its verifier's request is unchanged. `--verify-sources none --verify-view shared` sends the verifier's request as it was before v0.7.0, which tapes recorded before then need to replay.
 
 ## Diagnose

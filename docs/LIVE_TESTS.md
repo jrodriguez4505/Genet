@@ -1374,7 +1374,7 @@ So on Loong the rework is about even. Whether it pays depends on what a wrong an
 - 20 products were flagged only falsely;
 - all of them were on the 2024 filings.
 
-Two of the 7 right products the verifier failed had only such flags. The other three flagged quotes were reworded tables ("General and administrative | 10,135 | 12,975"), which the check is right to flag. The bug is not fixed yet: a fix changes what the verifier is told, so a tape that holds such a flag would have to replay under the old check.
+Two of the 7 right products the verifier failed had only such flags. The other three flagged quotes were reworded tables ("General and administrative | 10,135 | 12,975"), which the check is right to flag. **Fixed the same day,** on the operator's go-ahead: the check reads zero-width characters as space. A fix changes what the verifier is told, so a benchmark run's config names the check (`quote_spaces`). A benchmark tape from before names nothing, and replays under the check as it was. Whether the fix changes the rework on Loong is not yet measured.
 
 ## 11 November 2026: does splitting still win at a real call limit?
 

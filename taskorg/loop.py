@@ -307,6 +307,7 @@ class Engine:
         gap_check: bool = False,
         rework_reads: bool = False,
         rework_keeps: bool = False,
+        quote_spaces: bool = True,
         max_workers: int = MAX_WORKERS,
     ):
         self.store = store
@@ -352,6 +353,9 @@ class Engine:
         # A rework carries what the failed product's call read (_keep_pages). Off by default: it changes the rework
         # brief, and it stays off until a test shows it saves tokens and loses no answers.
         self.rework_keeps = rework_keeps
+        # The kernel's quote check reads zero-width characters as space (checks.misquoted); False is the check as it
+        # was before 11 November, for tapes from then.
+        self.quote_spaces = quote_spaces
         # The most sub-agents a run may staff: 4 unless a measured sweep (compare's split-N) names another.
         if not 1 <= int(max_workers) <= MAX_PARTS:
             raise ValueError(f"max_workers must be 1 to {MAX_PARTS}, got {max_workers!r}")
@@ -1000,7 +1004,7 @@ class Engine:
             return self._brief(run, "verifier", extra=extra, mode="verify")
         names = self.toolbox.shown_files()
         picks = checks.pick(run, product, names, self.verify_sources, sample=self.verify_sample)
-        flagged = checks.misquoted(self.toolbox, product, names)
+        flagged = checks.misquoted(self.toolbox, product, names, zero_width=self.quote_spaces)
         if flagged:
             extra += "\nKERNEL CHECK: these evidence quotes are not in the files they cite:\n" + "\n".join(f"- {f}" for f in flagged)
         blocks = [checks.source_block(self.toolbox, name, why) for name, why in picks]
