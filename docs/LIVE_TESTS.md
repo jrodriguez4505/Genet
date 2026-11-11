@@ -1311,6 +1311,33 @@ Reported with no bar:
 
 If all three hold, the rule goes to the default on the operator's go-ahead.
 
+**Drawn again: the result.** Ran 11 November, $1.18: Genet $0.42, the rule $0.44, the judge $0.32. This time Genet split on 24 of the 54; the rule split on none.
+
+| Where Genet split | Questions | Right | Wrong | Time a question | Tokens a question |
+|---|---|---|---|---|---|
+| The first draw | 27 | 9 to 13 (+4 / -0), p 0.12 | 12 to 13, p 1.00 | 29.7s to 19.3s, -35%; faster on 23, p under 0.001 | -12.3k (-34.7k to +8.4k) |
+| The second draw | 24 | 7 to 11 (+4 / -0), p 0.12 | 12 to 13, p 1.00 | 26.9s to 20.2s, -25%; faster on 17, p 0.06 | +11.2k (-7.7k to +33.4k) |
+| Both draws | 51 | **16 to 24 (+8 / -0), p 0.008** | 24 to 26 (+5 / -3), p 0.73 | **28.4s to 19.7s, -31% (-12.1s to -5.1s); faster on 40, p under 0.001** | -1.3k (-16.3k to +13.8k) |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Right | the rule has more, beyond noise | 16 to 24, +8 / -0, p 0.008: **holds** |
+| Wrong finishes | up by at most half the right gained (4) | 24 to 26, up 2: **holds** |
+| Time a question | the rule is faster, beyond noise | -31%, faster on 40 of 51, p under 0.001: **holds** |
+
+All three hold. Each draw on its own gave the same +4 / -0. On every question where the two arms differed on right, the rule was the one that was right: 8 times, against none.
+
+**Where the gain comes from.** Genet stopped on 11 of the 51 questions where it split; the rule stopped on 1. Of Genet's 11 stops, the rule got 5 right and 5 wrong. Of Genet's 24 wrong finishes, the rule got 3 right. All 16 of Genet's right finishes stayed right. So the rule's extra wrong finishes are Genet's stops become answers, and they are fewer than its extra right ones.
+
+Reported with no bar:
+- **All 54 in each draw.** Right 49 to 56 (+10 / -3), p 0.09, within noise; wrong 46 to 48. The second draw alone: right 25 to 28 (+5 / -2), p 0.45. The rule acts on under half the questions, so over all 54 its gain is diluted below the noise.
+- **Where Genet kept one agent** (57 questions over the two draws), both arms work as one agent: right 33 to 32, wrong 22 to 22.
+- **Tokens a question.** No difference beyond noise, where Genet split (-1.3k) or over all 108 (+8.7k, -5.2k to +25.3k). The -21.6k reported above leaned on the 13 in-sample questions. Out of sample, it is gone.
+
+**What it means.** On Loong's financial questions, where Genet would split the work, one agent reading page by page is right more often and finishes about a third sooner, at about the same tokens. It changes nothing where Genet keeps one agent. Where a page of each file does not fit, as in the scale test below, it plans and splits as Genet does: there it replayed as Genet on 12 of 12.
+
+The bars set before the run all hold. The rule goes to the default on the operator's go-ahead.
+
 ## 11 November 2026: does splitting still win at a real call limit?
 
 ### The plan, written before the run

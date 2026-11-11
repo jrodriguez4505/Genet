@@ -331,6 +331,9 @@
 #     - Time a question: the rule is faster, beyond noise.
 #     Reported with no bar: the second draw alone; all 54 in each draw; tokens a question. If all three hold, the rule
 #     goes to the default on the operator's go-ahead.
+#     Ran 11 November, $1.18. Genet split on 24 of the 54 this time. Both draws, the 51 where Genet split: right 16 to
+#     24 (+8 / -0, p 0.008), wrong 24 to 26, 31% sooner (faster on 40 of 51, p under 0.001), tokens -1.3k (within
+#     noise). All three bars hold. Over all 54 in each draw, right 49 to 56, p 0.09, within noise.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
