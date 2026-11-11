@@ -1351,7 +1351,30 @@ The bars set before the run all hold. The rule goes to the default on the operat
 - **Under the rule:** every rework follows one agent's product, and 20 of 24 end in an answer: 9 right, 11 wrong.
 - **Stopping instead of reworking:** under the rule, this would give up 9 right finishes to avoid 11 wrong ones, and save about 13,100 tokens a question. On the synthetic tapes, the rework fixed 35 wrong products for 2 it broke.
 
-So on Loong the rework is about even. Whether it pays depends on what a wrong answer costs against no answer, so it stays as it is. Grading the 24 failed products would show how often the verifier turned down a right one (about $0.10 on the Sonnet judge).
+So on Loong the rework is about even. Whether it pays depends on what a wrong answer costs against no answer, so it stays as it is.
+
+**The failed products, judged** (11 November, $0.06; `bash scripts/team_runs.sh firstjudge`). `data/exp/first_products.py` took the 24 products from the replays, and the judge scored the 19 with an answer line, with Loong's own prompt. Of the 24, the judge scored 7 right (80 or more) and 12 not right; 5 had no answer line.
+
+| When the verifier failed it | Products | Then right | Then wrong | Then stopped |
+|---|---|---|---|---|
+| Right | 7 | 5 | 0 | 2 |
+| Not right, or no answer | 17 | 4 | 11 | 2 |
+
+- **The verifier turned down a right answer about 3 times in 10,** and the rework gave 5 of the 7 back. It turned none of them wrong.
+- **The rework's wrong finishes** are wrong products the verifier had caught: 11 of 17 went back out wrong.
+- **Why the 7 were failed:**
+  - In 5, the kernel's quote check had flagged a quote as not in its file.
+  - In 2, the ANSWER line was not last.
+  - In 1, the product named additional paid-in capital for "capital surplus".
+
+  Some had more than one reason.
+
+**A bug this found.** Loong's 2024 filings put a zero-width space (U+200B) after many figures. A model's quote leaves it out, and the kernel's quote check did not read it as a space, so a quote that is in the file was flagged as not in it. The tapes were replayed with it read as a space (`data/exp/zero_width.py`, every trial as recorded):
+- 31 of the 190 flags on the Loong tapes were false for this reason alone;
+- 20 products were flagged only falsely;
+- all of them were on the 2024 filings.
+
+Two of the 7 right products the verifier failed had only such flags. The other three flagged quotes were reworded tables ("General and administrative | 10,135 | 12,975"), which the check is right to flag. The bug is not fixed yet: a fix changes what the verifier is told, so a tape that holds such a flag would have to replay under the old check.
 
 ## 11 November 2026: does splitting still win at a real call limit?
 

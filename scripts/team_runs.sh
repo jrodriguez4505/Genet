@@ -343,6 +343,9 @@
 #     by Sonnet 5.5 with Loong's own prompt, as every Loong score; 5 have none and score 0 with no call. One y, about
 #     $0.06, stopping itself at $0.25. Reported with no bar, and it changes nothing by itself: how often the verifier
 #     turned down a right answer, and what the rework made of right and wrong ones.
+#     Ran 11 November, $0.06: 7 of the 24 right, 12 not, 5 with no answer line. The rework ended the 7 right ones 5 right
+#     and 2 stopped, and the 17 others 4 right, 11 wrong and 2 stopped. Two of the 7 were failed only on quote flags that
+#     are false: the 2024 filings carry zero-width spaces the kernel's quote check did not read as space.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
