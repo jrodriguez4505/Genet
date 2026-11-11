@@ -145,6 +145,9 @@ class Assessment:
 # "reads" judges a proposal as "measured" does. Its difference is before any plan (Engine._one_agent_reads): with
 # paged reads, when one agent reading a page of each file can hold what it needs, there is no planning call.
 SPLIT_POLICIES = ("measured", "stated", "reads")
+# The default since 11 November 2026. Where Genet split on Loong, two draws of 54 questions: right 16 to 24 (+8 / -0,
+# p 0.008), wrong 24 to 26, 31% sooner (docs/LIVE_TESTS.md). Before, "measured"; tapes from then replay under it.
+SPLIT_DEFAULT = "reads"
 
 
 def _need(open_: list[Assessment], policy: str, declared: bool, material, context_limit: int | None,

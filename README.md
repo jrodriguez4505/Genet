@@ -127,13 +127,13 @@ The could-we gate counts calls, not tokens. A split can pass it under a token bu
 
 That second check makes the gate measurable rather than rhetorical. The lead can no longer split work just by giving a reason. `--split-policy stated` restores the old behavior, where the lead's named reasons are enough; it is kept for comparison. Fan-outs the operator names with the `fanout` command count as declared.
 
-`--split-policy reads` (off by default; compare's `genet-reads`) is `measured` with one more check, before the plan. With paged reads (`--page-chars`), one agent reads a long file a page at a time and keeps what it found, so what it must hold is about a page of each file, not the files. When a page of each file the goal names fits the gates' share of one call, there is no planning call and the lead works alone from the start, as one agent does. When it does not fit, the lead plans and the gates judge the plan as under `measured`. Unpaged work is measured as before. On the CrewAI head-to-head's 40 Loong questions it kept every question to one agent: right 22 against 20, but finished wrong 15 against 12. On every synthetic tape it changed nothing. On 54 Loong questions no earlier run used (`bash scripts/team_runs.sh splitrule`), it again kept every question to one agent. Right rose from 24 to 28, all on the 27 that Genet split, and finished wrong stayed at 24. Tokens a question rose from 65,133 to 72,614, because of two long trials. One of the three bars set before the run missed, so the rule stayed off by default. But the rule changes only the questions Genet splits, so a second draw of the 54 (`bash scripts/team_runs.sh splitagain`) was read there, with bars written first. Over both draws, on the 51 questions where Genet split:
+`--split-policy reads`, the split rule, is the default since 11 November 2026 (compare's `genet`; `genet-measured` is Genet as it was before). It is `measured` with one more check, before the plan. With paged reads (`--page-chars`), one agent reads a long file a page at a time and keeps what it found, so what it must hold is about a page of each file, not the files. When a page of each file the goal names fits the gates' share of one call, there is no planning call and the lead works alone from the start, as one agent does. When it does not fit, the lead plans and the gates judge the plan as under `measured`. Unpaged work is measured as before. On the CrewAI head-to-head's 40 Loong questions it kept every question to one agent: right 22 against 20, but finished wrong 15 against 12. On every synthetic tape it changed nothing. On 54 Loong questions no earlier run used (`bash scripts/team_runs.sh splitrule`), it again kept every question to one agent. Right rose from 24 to 28, all on the 27 that Genet split, and finished wrong stayed at 24. Tokens a question rose from 65,133 to 72,614, because of two long trials. One of the three bars set before the run missed, so the rule stayed off by default. But the rule changes only the questions Genet splits, so a second draw of the 54 (`bash scripts/team_runs.sh splitagain`) was read there, with bars written first. Over both draws, on the 51 questions where Genet split:
 - right rose from 16 to 24 (+8 / -0, p 0.008);
 - finished wrong rose from 24 to 26;
 - it finished 31% sooner (p under 0.001);
 - tokens were about the same.
 
-All three bars held. Where Genet keeps one agent, the rule changes nothing, and where a page of each file does not fit, it splits as Genet does. It is still off by default; turning it on is the operator's call ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)).
+All three bars held. Where Genet keeps one agent, the rule changes nothing, and where a page of each file does not fit, it splits as Genet does. So it became the default ([docs/LIVE_TESTS.md](docs/LIVE_TESTS.md)). Without paged reads it is `measured`, so `taskorg run`, which does not page, works as before. Every live result before 11 November is Genet under `measured`. A paged tape from then names no policy, and its `genet` replays under `measured`, as it ran; the replay says so, and its results record it.
 
 When the plan no longer fits, request a replan and change the method. `KEEP_ROSTER` is illegal on a replan request; use `CHANGE_METHOD` or `REVISE_GOAL`.
 
@@ -209,7 +209,7 @@ Every run command takes these flags:
 - `--exists FILE`: the file's name covers a channel.
 - `--criteria TEXT`: the product must show this.
 - `--isolate`: the sub-tasks must not share a context, which is a declared reason to fan out.
-- `--split-policy measured|stated|reads`: what "should we" accepts (default `measured`). `reads` skips the plan when one agent reading a page of each file fits.
+- `--split-policy reads|measured|stated`: what "should we" accepts (default `reads`, which is `measured` with paged reads' rule; without paged reads the two are the same). `reads` skips the plan when one agent reading a page of each file fits.
 - `--tier`, plus budget overrides: `--max-calls`, `--max-tokens`, `--max-seconds`, `--max-tokens-per-call`.
 - `--abort CRITERION`: `forecast_short` (the default), `parts_failed:N`, or `none`. Naming one replaces the default (see [The shared situation](#the-shared-situation)).
 - `--main-effort CHANNEL`: the part the goal depends on most; the gates judge it first.
@@ -228,7 +228,8 @@ Each run starts with clean working memory, even when you reuse a run id. Runs sa
 |---|---|
 | `single` | One agent works the task. No planning call. |
 | `always` | Crew style: the lead always decomposes, and every sub-task gets a worker, up to the cap. |
-| `genet` | The lead proposes sub-agents and the gates judge them, with the measured "should we". |
+| `genet` | The lead proposes sub-agents and the gates judge them, with the measured "should we". With paged reads, under the split rule (the default since 11 November): when a page of each file fits one call, no planning call and one agent. |
+| `genet-measured` | Genet before 11 November: the measured "should we" with no split rule. `genet-reads` names the rule, as its runs did, and is the same as `genet`. |
 | `genet-stated` | Same, but the lead's stated reasons are enough. Add it with `--strategies single,always,genet,genet-stated`. |
 | `genet-cards` | Same as `genet`, with the members table in the lead's plan brief (`--cards`). |
 | `always-told` | Same as `always`, with the size notes `genet`'s lead gets. No gates. |
@@ -529,7 +530,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 | Sub-agent | A worker with an isolated context and one channel. | `worker` slot with a `channel_id` |
 | Sub-task | A part of the work with a stated reason to run separately. | `Subtask`, `subtask:<channel>@<skill>=<failure>` |
 | Gates | Admission control for sub-agents. | `gates.assess()`, `GateRecord` |
-| Split policy | What counts as a reason to fan out: measured (default), stated, or reads (measured, with no plan when one agent reading a page of each file fits). | `Engine(split_policy=...)`, `--split-policy` |
+| Split policy | What counts as a reason to fan out: reads (default since 11 November: measured, with no plan when one agent reading a page of each file fits), measured, or stated. | `Engine(split_policy=...)`, `--split-policy` |
 | Skill | A role brief plus a tool allowlist. | `Slot.skill`, `SKILLS`, `Run.switch_skill()` |
 | Goal | What the run must deliver, with success criteria and a done-when condition. | `goal`, `success_criteria`, `done_when` |
 | Method | The current plan. Its moves are recorded as labels; design part 9 would have the kernel run them. | `RunState.method`, `axes` |

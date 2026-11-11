@@ -15,7 +15,7 @@ from . import checks, members, situation
 from .budget import Budget
 from .cues import fire_auto_cues
 from .errors import InvariantError
-from .gates import LEAD_COVERS, PART_TOO_BIG, SPLIT_POLICIES, Assessment, Subtask, _could_we, assess
+from .gates import LEAD_COVERS, PART_TOO_BIG, SPLIT_DEFAULT, SPLIT_POLICIES, Assessment, Subtask, _could_we, assess
 from .memory_store import MemoryStore
 from .run import Run
 from .models import MAX_WORKERS, SKILL_TOOLS, SKILLS, Artifact, Delta, Slot, Status
@@ -292,7 +292,7 @@ class Engine:
         toolbox: Toolbox | None = None,
         parallel: bool = True,
         max_tool_rounds: int = 2,
-        split_policy: str = "measured",
+        split_policy: str = SPLIT_DEFAULT,
         isolation_required: bool = False,
         fit_fraction: float = 0.5,
         lessons: bool = True,
@@ -317,8 +317,9 @@ class Engine:
         self.parallel = parallel
         self.max_tool_rounds = max(0, int(max_tool_rounds))  # negative rounds would make a worker cost less than one call
         # "Should we" for the lead's proposals: "measured" needs declared isolation or
-        # material that does not fit one context; "stated" accepts the lead's reasons. "reads" is "measured", with
-        # no planning call when one agent reading a page of each file can hold what it needs (_one_agent_reads).
+        # material that does not fit one context; "stated" accepts the lead's reasons. "reads", the default, is
+        # "measured", with no planning call when one agent reading a page of each file can hold what it needs
+        # (_one_agent_reads). Without paged reads the two are the same.
         if split_policy not in SPLIT_POLICIES:
             raise ValueError(f"split_policy must be one of {SPLIT_POLICIES}, got {split_policy!r}")
         self.split_policy = split_policy

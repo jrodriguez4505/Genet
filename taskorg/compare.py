@@ -166,7 +166,8 @@ class FixedSplit(AlwaysSplit):
 SWEEP = (2, 4, 10, 20)
 CACHE_WRITE, CACHE_READ = 1.25, 0.1  # of the input price, for prompt cache writes (five-minute entries) and reads  # the parts compare's split-N strategies use
 
-# genet uses the measured "should we"; genet-stated accepts the lead's reasons, for comparison.
+# genet uses the default split policy, the split rule ("reads"), since 11 November; genet-measured is genet as it was
+# before, genet-reads the rule by name (as its runs named it), and genet-stated accepts the lead's reasons.
 BASELINES = ("single", "always")
 STRATEGIES: dict[str, Callable[..., Engine]] = {
     "single": SingleAgent,
@@ -175,6 +176,7 @@ STRATEGIES: dict[str, Callable[..., Engine]] = {
     "genet": Engine,
     "genet-stated": functools.partial(Engine, split_policy="stated"),
     "genet-reads": functools.partial(Engine, split_policy="reads"),
+    "genet-measured": functools.partial(Engine, split_policy="measured"),
     "genet-cards": functools.partial(Engine, cards=True),
 } | {f"split-{n}": functools.partial(FixedSplit, parts=n) for n in SWEEP}
 
@@ -224,10 +226,12 @@ def run_trial(
     store_root: Path | None = None,
     verify: dict | None = None,
     page_chars: int | None = None,
+    genet_split: str | None = None,
 ) -> TrialResult:
     """One task under one strategy. verify: the verifier's view, sources and rule (Engine's verify_view,
     verify_sources and verify_note), the same for every strategy. page_chars: read long files a page at a
-    time (Toolbox); a benchmark question's files are in its own workspace under corpus_dir."""
+    time (Toolbox); a benchmark question's files are in its own workspace under corpus_dir. genet_split: the split
+    policy genet runs under, when not the default (a replay of a tape from before the default changed)."""
     with tempfile.TemporaryDirectory() as tmp:
         store = MemoryStore(store_root or Path(tmp))
         run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=task.purpose or PURPOSE,
@@ -241,7 +245,10 @@ def run_trial(
         if task.filed:
             # Parts already done: the run's world covers them, as --exists does for a live run.
             run.world = World(existing_channels=[slug(n) for n in task.filed])
-        engine = STRATEGIES[strategy](
+        make = STRATEGIES[strategy]
+        if strategy == "genet" and genet_split:
+            make = functools.partial(Engine, split_policy=genet_split)
+        engine = make(
             store, adapter=adapter, budget=budget,
             toolbox=Toolbox(roots=[corpus_dir / task.workspace if task.workspace else corpus_dir], page_chars=page_chars),
             max_tool_rounds=tool_rounds, **(verify or {}),
@@ -308,6 +315,7 @@ def run_comparison(
     stop_when: Callable[[list[TrialResult]], str] | None = None,
     verify: dict | None = None,
     page_chars: int | None = None,
+    genet_split: str | None = None,
 ) -> list[TrialResult]:
     """Every task under every strategy, interleaved so drift in the endpoint hits all strategies alike.
 
@@ -327,7 +335,7 @@ def run_comparison(
                                 progress(f"stopped after {len(results)} of {total} trials: {reason}")
                             return results
                         res = run_trial(task, strategy, adapter_factory(), root, budget=budget_factory(), tool_rounds=tool_rounds,
-                                        repeat=r, verify=verify, page_chars=page_chars)
+                                        repeat=r, verify=verify, page_chars=page_chars, genet_split=genet_split)
                         results.append(res)
                         if progress:
                             mark = "ok " if res.correct else ("~  " if res.answer_right else "x  ")

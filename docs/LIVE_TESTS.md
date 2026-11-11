@@ -1338,6 +1338,8 @@ Reported with no bar:
 
 The bars set before the run all hold. The rule goes to the default on the operator's go-ahead.
 
+**Made the default, 11 November**, on the operator's go-ahead. `--split-policy` defaults to `reads`, and compare's `genet` is the rule; `genet-measured` is Genet as every earlier run had it. A paged tape from before names no policy, and its `genet` replays under `measured`, as it ran.
+
 ## 11 November 2026: does splitting still win at a real call limit?
 
 ### The plan, written before the run

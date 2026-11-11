@@ -1,5 +1,6 @@
-"""When to split (--split-policy reads; compare's genet-reads). Under "measured" the gates admit a split when the goal's
-files do not fit one call. With paged reads one agent reads a long file a page at a time and keeps what it found, so
+"""When to split (--split-policy reads, the default since 11 November; compare's genet, and genet-reads by name). Under
+"measured" (compare's genet-measured, genet's policy before) the gates admit a split when the goal's files do not fit
+one call. With paged reads one agent reads a long file a page at a time and keeps what it found, so
 under "reads" its need counts a page of each file: when that fits, there is no planning call and the lead works alone,
 as one agent does. When it does not, the lead plans and the gates judge the plan as today. Unpaged work is measured
 as it was, so every synthetic tape replays as it ran."""
@@ -13,7 +14,7 @@ import pytest
 from taskorg import compare
 from taskorg.budget import Budget
 from taskorg.cli import _add_run_args, _engine
-from taskorg.gates import SPLIT_POLICIES, Subtask, assess
+from taskorg.gates import SPLIT_DEFAULT, SPLIT_POLICIES, Subtask, assess
 from taskorg.loop import Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.suite import Suite, Task
@@ -21,9 +22,9 @@ from taskorg.suite import Suite, Task
 from bench_fake import BenchFake
 
 
-def test_the_policy_is_named_and_measured_stays_the_default(tmp_path):
-    assert SPLIT_POLICIES == ("measured", "stated", "reads")
-    assert Engine(MemoryStore(tmp_path)).split_policy == "measured"
+def test_the_policy_is_named_and_the_rule_is_the_default(tmp_path):
+    assert SPLIT_POLICIES == ("measured", "stated", "reads") and SPLIT_DEFAULT == "reads"
+    assert Engine(MemoryStore(tmp_path)).split_policy == "reads"
     with pytest.raises(ValueError, match="split_policy"):
         Engine(MemoryStore(tmp_path), split_policy="pages")
 
@@ -87,20 +88,23 @@ def test_where_one_agent_reading_pages_fits_genet_reads_works_alone_as_one_agent
     # Three files of about 15,750 tokens each at a 40,000-token call: genet splits them (test_head_to_head), but a
     # page of each is about 10,600 against a room of 20,000.
     task, root = _question(tmp_path)
-    genet, _, _ = _trial(task, root, "genet", 40_000)
+    genet, _, _ = _trial(task, root, "genet-measured", 40_000)
     reads, briefs, rule = _trial(task, root, "genet-reads", 40_000)
     single, alone, _ = _trial(task, root, "single", 40_000)
+    now, as_now, _ = _trial(task, root, "genet", 40_000)
     assert genet.workers == 3
     assert reads.workers == 0 and reads.proposed == 0 and reads.refused == 0
     assert not any(b.mode == "plan" for b in briefs)
     assert rule == [{"policy": "reads", "files": 3, "page_tokens": 3535, "need": 10_605, "room": 20_000, "plan": False}]
     # Request for request what one agent does, so a tape of one agent replays it.
     assert _seen(briefs) == _seen(alone) and (reads.answer, reads.tokens, reads.calls) == (single.answer, single.tokens, single.calls)
+    # genet is the rule now: request for request what genet-reads does.
+    assert _seen(as_now) == _seen(briefs) and (now.answer, now.workers, now.tokens) == (reads.answer, 0, reads.tokens)
 
 
 def test_where_a_page_of_each_file_does_not_fit_genet_reads_plans_and_splits_as_genet_does(tmp_path):
     task, root = _question(tmp_path, n_files=12)  # 12 pages of 3,535 against a room of 20,000
-    genet, as_genet, _ = _trial(task, root, "genet", 40_000)
+    genet, as_genet, _ = _trial(task, root, "genet-measured", 40_000)
     reads, briefs, rule = _trial(task, root, "genet-reads", 40_000)
     assert [b.mode for b in briefs][:1] == ["plan"] and reads.workers == genet.workers == 4
     assert rule == [{"policy": "reads", "files": 12, "page_tokens": 3535, "need": 42_420, "room": 20_000, "plan": True}]
@@ -110,7 +114,7 @@ def test_where_a_page_of_each_file_does_not_fit_genet_reads_plans_and_splits_as_
 
 def test_unpaged_genet_reads_is_genet_request_for_request(tmp_path):
     task, root = _question(tmp_path, chars=6_000)
-    genet, as_genet, _ = _trial(task, root, "genet", 4_000, page_chars=None)
+    genet, as_genet, _ = _trial(task, root, "genet-measured", 4_000, page_chars=None)
     reads, briefs, rule = _trial(task, root, "genet-reads", 4_000, page_chars=None)
     # Sub-agents run side by side, so their briefs come in either order.
     assert rule == [] and genet.workers == 3 and sorted(_seen(briefs)) == sorted(_seen(as_genet))
@@ -124,10 +128,10 @@ def test_the_rule_needs_a_call_limit_to_measure_against(tmp_path):
 
 
 def test_compare_and_run_take_the_rule(tmp_path):
-    e = compare.STRATEGIES["genet-reads"](MemoryStore(tmp_path))
-    assert type(e) is Engine and e.split_policy == "reads"
-    assert compare.STRATEGIES["genet"](MemoryStore(tmp_path)).split_policy == "measured"
+    for name, policy in (("genet", "reads"), ("genet-reads", "reads"), ("genet-measured", "measured")):
+        e = compare.STRATEGIES[name](MemoryStore(tmp_path))
+        assert type(e) is Engine and e.split_policy == policy
     p = argparse.ArgumentParser()
     _add_run_args(p, id="r", goal="g", purpose="p", done_when="d", context="c")
-    assert _engine(p.parse_args(["--split-policy", "reads"]), MemoryStore(tmp_path / "s")).split_policy == "reads"
-    assert _engine(p.parse_args([]), MemoryStore(tmp_path / "s")).split_policy == "measured"
+    assert _engine(p.parse_args(["--split-policy", "measured"]), MemoryStore(tmp_path / "s")).split_policy == "measured"
+    assert _engine(p.parse_args([]), MemoryStore(tmp_path / "s")).split_policy == "reads"

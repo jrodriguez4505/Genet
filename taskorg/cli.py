@@ -9,7 +9,7 @@ from .budget import Budget
 from .checks import AUTHOR_RULES, SOURCES, VIEWS
 from .errors import InvariantError
 from .factory import new_run
-from .gates import SPLIT_POLICIES, Subtask, World
+from .gates import SPLIT_DEFAULT, SPLIT_POLICIES, Subtask, World
 from .live import pick_adapter
 from .loop import Engine
 from .memory_store import MemoryStore
@@ -91,10 +91,10 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
                    help="the sub-tasks must not share a context (a declared reason to fan out)")
     p.add_argument("--no-lessons", action="store_true",
                    help="do not write lessons from a failed run to the shared guidelines")
-    p.add_argument("--split-policy", default="measured", choices=list(SPLIT_POLICIES),
-                   help="measured: fan out only for declared isolation or material that does not fit one context; "
-                        "stated: the lead's named reasons are enough; reads: measured, with no planning call when one "
-                        "agent reading a page of each file can hold what it needs")
+    p.add_argument("--split-policy", default=SPLIT_DEFAULT, choices=list(SPLIT_POLICIES),
+                   help="reads (default): measured, with no planning call when one agent reading a page of each file "
+                        "can hold what it needs; measured: fan out only for declared isolation or material that does "
+                        "not fit one context; stated: the lead's named reasons are enough")
     p.add_argument("--verify-view", default="independent", choices=list(VIEWS),
                    help="what the verifier sees: shared (every note), independent (not the author's notes)")
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
@@ -664,6 +664,7 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
                        "it went")
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
+        _genet_split(recorded, config)
         config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}
 
         def factory():
@@ -704,6 +705,20 @@ def _model_prices(raw: list[str]) -> dict[str, tuple[float, float]]:
     return out
 
 
+def _genet_split(recorded: dict, config: dict) -> None:
+    """The split policy compare's genet replays under: the tape's. Since 11 November genet splits under the split rule
+    ("reads"); before, under "measured". The rule acts only on paged reads, so only a paged run names it, and a paged
+    tape from before names nothing. Its genet replays as it ran, and the run's config says so."""
+    from .compare import stderr
+
+    if "genet_split" not in config or not recorded:
+        return
+    was = recorded.get("genet_split", "measured")
+    if was != config["genet_split"]:
+        config["genet_split"] = was
+        stderr(f"note: the tape's genet split under the {was} policy, as it did before 11 November; it replays so")
+
+
 def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, code: str):
     """--then-live: each trial replays its tape until the switch being measured changes a rework (the gap check sends a
     product back, a rework after a merge may read, or a rework keeps what was read), then goes to the model. The live
@@ -725,6 +740,8 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
         raise InvariantError(code, f"--then-live needs the tape's model and effort ({h.get('model')}, {h.get('effort')}); "
                                    f"the environment gives {first.model}, {first.effort}")
     rounds = h.get("round_reply_tokens") or 0
+    recorded = h.get(header_key)
+    _genet_split(recorded if isinstance(recorded, dict) else {}, config)
     config |= {"tape": str(args.replay), "replayed": h.get("adapter"), "model": h.get("model"), "then_live": True,
                "live_tape": str(args.record)}
     first.round_reply_tokens = rounds
@@ -880,6 +897,8 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if args.pad_notes:
         config["pad_notes"] = args.pad_notes
         bench_keys = (*bench_keys, "pad_notes")
+    if config.get("page_chars") is not None:
+        config["genet_split"] = SPLIT_DEFAULT  # the rule acts only on paged reads, so only a paged run names it
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
     if args.max_spend is not None:
@@ -915,6 +934,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
                     "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check,
                     "rework_reads": args.rework_reads, "rework_keeps": args.rework_keeps},
             page_chars=args.page_chars,
+            genet_split=config.get("genet_split"),
         )
     finally:
         if recorder:

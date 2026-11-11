@@ -133,13 +133,17 @@ def test_a_task_runs_in_its_own_workspace_with_its_own_words(tmp_path):
 
 
 def test_genet_stays_single_where_the_files_fit_and_splits_where_they_do_not(tmp_path):
+    # The gates under "measured", genet's policy before 11 November (genet-measured). Under the split rule, genet's
+    # default since, a page of each of these files fits, so it plans neither time (test_split_reads).
     files = {f"q/{n}.txt": ("figure line\n" * 3000) for n in ("alpha", "beta", "gamma")}
     task = Task(id="q", family="f", question="Which is largest?", answer="rehearsal", kind="text", workspace="q",
                 context="The files: alpha.txt, beta.txt, gamma.txt.", purpose="End with ANSWER: <x>", done_when="ANSWER")
     suite = Suite(seed=0, companies={}, tasks=[task], corpus=files)
     root = suite.write_corpus(tmp_path / "c")
-    big = compare.run_trial(task, "genet", BenchFake(), root, budget=compare.comparison_budget(40, 40_000), page_chars=8000)
-    roomy = compare.run_trial(task, "genet", BenchFake(), root, budget=compare.comparison_budget(40, 400_000), page_chars=8000)
+    big = compare.run_trial(task, "genet-measured", BenchFake(), root, budget=compare.comparison_budget(40, 40_000),
+                            page_chars=8000)
+    roomy = compare.run_trial(task, "genet-measured", BenchFake(), root, budget=compare.comparison_budget(40, 400_000),
+                              page_chars=8000)
     assert big.workers == 3 and big.refused == 0
     assert roomy.workers == 0 and roomy.refused == 3
 
