@@ -690,6 +690,31 @@ def test_the_fixed_quote_run_waits_while_memory_is_short_and_stops_keeping_what_
     assert "Waiting for memory" not in out and len(_calls(log)) == 4
 
 
+def test_the_marked_view_goes_live_at_every_trials_first_check_in_four_steps(tmp_path: Path):
+    log, env = _quotes_tree(tmp_path, GENET_MEMORY_FLOOR="0")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "markedreview") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "markedreview")
+    *steps, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.75" in out and "Done." in out and KEY not in out
+    assert len(steps) == 4
+    asked = []
+    for call, (part, tape) in zip(steps, (("1a", "h2h-split-reads"), ("1b", "h2h-split-reads"), ("2a", "h2h-split2-reads"),
+                                          ("2b", "h2h-split2-reads"))):
+        assert "compare" in call and "--max-spend 0.30 " in call and "--which rest " in call and "--strategies genet-reads " in call
+        assert f"--replay data/tapes/{tape}.jsonl " in call and "--marked-review --then-live" in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert f"--record data/tapes/h2h-marked-{part}.jsonl" in call and f"--out data/compare/h2h-marked-{part}.json" in call
+        asked.append(call.split("--ids ")[1].split(" ")[0].split(","))
+    # Each draw's two halves are the 54, once each.
+    assert len(asked[0]) == len(asked[1]) == 27 and asked[0] == asked[2] and asked[1] == asked[3]
+    assert len(set(asked[0] + asked[1])) == 54
+    assert all(f"--results data/compare/h2h-marked-{s}.json" in judge for s in ("1a", "1b", "2a", "2b"))
+    assert "--max-spend 0.60 " in judge and "--record data/tapes/h2h-marked-judged.jsonl" in judge
+    assert readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "markedreview")
+    assert again.count("already done") == 5 and len(_calls(log)) == 7
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")
