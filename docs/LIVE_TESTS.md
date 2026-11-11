@@ -1273,6 +1273,25 @@ What does not hold:
 
 From now on a readout gives each difference with its noise, and a bar names a difference beyond noise, not a count.
 
+### The split rule, where it acts
+
+The split rule's bars were set on all 54 questions, but it changes only the questions Genet splits. On the ones Genet keeps to one agent, both arms are one agent, and they differ only by Genet's planning call and the draw of each reply. Read on the questions Genet split:
+
+| Where Genet split | Questions | Right | Wrong | Tokens a question |
+|---|---|---|---|---|
+| The 54, new questions | 27 | 9 to 13 (+4 / -0), p 0.12 | 12 to 13, p 1.00 | -12.3k (-34.7k to +8.4k) |
+| The 40, which suggested the rule | 13 | 4 to 7 (+3 / -0), p 0.25 | 4 to 6, p 0.50 | -40.9k (-83.0k to -1.3k) |
+| Both | 40 | **13 to 20 (+7 / -0), p 0.02** | 16 to 19, p 0.45 | **-21.6k (-42.2k to -2.2k)** |
+| Where Genet kept one agent, both | 54 | 31 to 30, p 1.00 | 20 to 20, p 1.00 | +13.9k (-9.5k to +44.2k) |
+
+On every question where the two arms differed, one agent was the one right: 7 times, against none. Its extra wrong finishes are Genet's stops become answers: Genet stopped on 11 of the 40.
+
+The pooled result includes the 13 questions that suggested the rule, so it is not a clean test. The new questions alone point the same way but are within noise.
+
+The Loong financial questions are used up, so a clean test needs more questions: other kinds of Loong question, or the 54 drawn again. At the rate seen, about 108 split questions would put a 5-to-1 split beyond noise.
+
+The bars set before the run hold as written: the rule stays off by default until the operator decides.
+
 ## 31 August and 1 September 2026: v0.1 on xAI
 
 All 13 runs used v0.1 through the `live` adapter against xAI's endpoint. The 1 September runs used `grok-4.20-0309-non-reasoning`; the 31 August run files do not record the model name. Every run file still loads with today's code.
