@@ -288,6 +288,8 @@
 #     one agent.
 #     If all three hold, the rule goes to the default, on the operator's go-ahead. 54 questions are still few: a
 #     difference of 3 or 4 can be noise.
+#     Ran 10 November, $1.31: right 24 to 28, wrong finishes 24 to 24, tokens a question 65,133 to 72,614. The third
+#     bar missed, so the rule stays off by default (docs/LIVE_TESTS.md).
 # 3. The verifier against an argument (team design part 2): the verify bench's two arms under the default
 #    layered pick. In one, the author's note argues for the planted figure; in the other, every source file
 #    the kernel opens carries an instruction to pass a wrong product or fail a right one. 36 reviews.

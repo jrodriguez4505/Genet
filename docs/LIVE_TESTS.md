@@ -1063,7 +1063,45 @@ If all three hold, the rule goes to the default on the operator's go-ahead. Even
 
 **What it cannot show.** No task here has files larger than a page that one agent must read whole. There the rule could keep to one agent work that one agent cannot hold. That case is untested.
 
-The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+### When to split: the result, 10 November
+
+Run on Haiku 5.5 as planned, with Sonnet 5.5 judging. Spend was $1.31: $0.49 for each arm and $0.33 for the judge's 98 calls. Replayed from the tapes with no key, each arm gives all 54 trials as they ran, serving 457 and 257 replies, with none missing. As predicted, the rule kept all 54 to one agent. Genet as it is split 27 of them.
+
+| The 54 of 10 November | Right | Finished wrong | Stopped | Tokens a question |
+|---|---|---|---|---|
+| Genet as it is | 24 | 24 | 6 | 65,133 |
+| Under the rule | 28 | 24 | 2 | 72,614 |
+| Of those, the 27 Genet split: as it is | 9 | 12 | 6 | 72,125 |
+| The 27, under the rule | 13 | 13 | 1 | 59,821 |
+| The 27 Genet kept to one agent: as it is | 15 | 12 | 0 | 58,140 |
+| The 27, under the rule | 15 | 11 | 1 | 85,408 |
+
+| The bar, written before the run | Needed | Result | |
+|---|---|---|---|
+| Right | at least 2 more | 24 to 28 | holds |
+| Wrong finishes | up by at most half of the 4 gained | 24 to 24 | holds |
+| Tokens a question | fewer | 65,133 to 72,614 | **misses** |
+
+By Loong's levels, as right, finished wrong and stopped (no bar):
+
+| Level | Genet as it is | Under the rule |
+|---|---|---|
+| Spotlight, 7 | 7, 0, 0 | 7, 0, 0 |
+| Comparison, 15 | 10, 2, 3 | 11, 3, 1 |
+| Clustering, 23 | 6, 16, 1 | 8, 14, 1 |
+| Chain, 9 | 1, 6, 2 | 2, 7, 0 |
+
+**Where the gain came from.** All 4 extra right answers came on the questions Genet split: 9 right there as it is, 13 under the rule. This is the head-to-head's pattern on new questions: on the 13 of the 40 that Genet split, it got 4 right, and one agent got 7.
+
+**Why tokens rose.** The rule took away the planning call and, where Genet split, the sub-agents: 457 calls fell to 257, and the median trial fell from 50,040 tokens to 41,812. The mean rose because of two trials. In each, the verifier turned down the first answer, and the lead began again and read the filings a second time:
+- `loong-44b5d8c0`, a spotlight question: 20,885 tokens as it is, 342,747 under the rule. Both arms got it right.
+- `loong-7d75bfc7`, a clustering question: 137,530 as it is, finished wrong; 703,083 under the rule, stopped at the check.
+
+Leave those two out and the other 25 of the kept 27 take 56,455 tokens as it is and 50,407 under the rule. But the bar was tokens a question over all 54, and it misses. On the 27 kept to one agent, the verifier turned down a first answer in 7 trials under the rule and in 3 as it is. With 27 trials, that is too few to tell from chance.
+
+**What follows.** The plan said the rule goes to the default only if all three bars hold, and one missed. So the rule stays off by default, as `--split-policy reads`. The largest single call was 69,244 tokens of the 100,000 allowed, so one agent still did not run out of room.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes, and `h2h-split-today`, `h2h-split-reads` and `h2h-split-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 
