@@ -81,6 +81,18 @@ class BenchmarkError(ValueError):
     """A benchmark file that is not what the head-to-head was planned on."""
 
 
+# A row's id names its question's folder in the corpus. Held to letters, digits, - and _: an id of "/../.." would put
+# the question's files outside the corpus, with a name and text the row chooses.
+_ROW_ID = re.compile(r"[A-Za-z0-9_-]{1,8}")
+
+
+def _workspace(prefix: str, row: dict) -> str:
+    head = str(row.get("id", ""))[:8]
+    if not _ROW_ID.fullmatch(head):
+        raise BenchmarkError(f"a question's id must start with letters, digits, - or _, got {head!r}")
+    return f"{prefix}-{head}"
+
+
 def read_jsonl(path: str | Path) -> list[dict]:
     rows = []
     with open(path, encoding="utf-8") as fh:
@@ -96,7 +108,9 @@ def read_jsonl(path: str | Path) -> list[dict]:
 # --- Loong ---
 
 def _filing_names(docs_dir: str | Path) -> list[str]:
-    return sorted(p.name for p in Path(docs_dir).iterdir() if p.suffix == ".txt")
+    # Plain files only. A link would bring a file from outside the folder into a workspace, the model's requests and
+    # the tape; a pipe would hang the load.
+    return sorted(p.name for p in Path(docs_dir).iterdir() if p.suffix == ".txt" and not p.is_symlink() and p.is_file())
 
 
 def _matches(row: dict, doc: str, names: list[str]) -> list[str]:
@@ -172,8 +186,8 @@ def loong_files(row: dict, docs_dir: str | Path) -> list[tuple[str, Path]]:
 
 
 def loong_task(row: dict, docs_dir: str | Path) -> tuple[Task, dict[str, str]]:
+    ws = _workspace("loong", row)
     files = loong_files(row, docs_dir)
-    ws = f"loong-{row['id'][:8]}"
     task = Task(
         id=ws, family=f"loong-{LEVEL_NAMES[row['level']]}", question=row["question"].strip(),
         answer=row["answer"] if isinstance(row["answer"], str) else json.dumps(row["answer"], ensure_ascii=False),
@@ -218,18 +232,19 @@ def judge_prompt(question: str, gold: str, predicted: str) -> str:
 
 
 def judge_score(text: str) -> float | None:
-    """The score in a judge's reply, read as Loong reads it: [[n]], else [n]."""
+    """The score in a judge's reply, in Loong's forms: [[n]], else [n]. The last one in the reply: the judge quotes the
+    answer before it rates it, so an answer that writes [[100]] would otherwise score itself."""
     for pattern in _SCORE:
-        m = pattern.search(text or "")
-        if m:
-            return float(m.group(1))
+        found = pattern.findall(text or "")
+        if found:
+            return float(found[-1])
     return None
 
 
 # --- HotpotQA ---
 
 def hotpot_task(row: dict) -> tuple[Task, dict[str, str]]:
-    ws = f"hotpot-{row['id'][:8]}"
+    ws = _workspace("hotpot", row)
     corpus, seen = {}, set()
     for title, sentences in zip(row["context"]["title"], row["context"]["sentences"]):
         name = slug(title)[:60] or "untitled"

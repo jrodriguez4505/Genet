@@ -95,6 +95,9 @@ def check_base_url(base_url: str) -> str:
         parts.port  # raises ValueError on a port that is not a number
     except ValueError as e:
         raise InvariantError("LIVE", f"model base URL is not a valid URL: {e}") from None
+    if parts.username is not None or parts.password is not None:
+        # Named, not shown: http.client would put it in an error's text, and from there in a tape and a saved run.
+        raise InvariantError("LIVE", "model base URL must not carry a login before its host")
     if host and parts.scheme == "https":
         return base_url
     if host and parts.scheme == "http" and (_is_loopback(host) or os.environ.get("TASKORG_MODEL_ALLOW_HTTP") == "1"):
@@ -152,6 +155,17 @@ class _DeadlineHTTPS(urllib.request.HTTPSHandler):
 
 
 _OPENER = urllib.request.build_opener(_NoRedirect, _DeadlineHTTP, _DeadlineHTTPS)
+# Plain http is allowed to this machine, so that the key and the brief never cross a network in clear text. urllib
+# would still hand such a request to a proxy named in the environment or the system settings, so plain http goes direct.
+def _direct_opener():
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect, _DeadlineHTTP, _DeadlineHTTPS)
+
+
+_DIRECT = _direct_opener()
+
+
+def _opener_for(url: str):
+    return _DIRECT if url.lower().startswith("http://") else _OPENER
 
 
 def _read_capped(resp, limit: int, deadline: float) -> bytes:
@@ -258,6 +272,11 @@ def _extract_json(text: str) -> dict[str, Any]:
     return data
 
 
+# What one reply may hand the kernel to check. The brief asks for at most 5 evidence lines, and the most on the tapes is
+# 10, of 480 characters: the quote check runs over each, against each file's name, so the count is held in code.
+EVIDENCE_ITEMS, EVIDENCE_CHARS = 64, 2_000
+
+
 def artifact_from_model(data: dict[str, Any], brief: Brief) -> Artifact:
     forbidden = {"roster", "set_roster", "spawn", "slots", "complete", "halt"}
     allowed = {
@@ -287,7 +306,7 @@ def artifact_from_model(data: dict[str, Any], brief: Brief) -> Artifact:
         requests = [requests]
     art = Artifact(
         claim=claim,
-        evidence=[str(x) for x in evidence],
+        evidence=[str(x)[:EVIDENCE_CHARS] for x in evidence[:EVIDENCE_ITEMS]],
         uncertainty=str(data.get("uncertainty") or "unspecified"),
         channel_id=channel,
         context_update=str(data.get("context_update") or ""),
@@ -341,6 +360,9 @@ class LiveAdapter(ModelAdapter):
                 "LIVE",
                 "set TASKORG_MODEL_BASE, TASKORG_MODEL_KEY and TASKORG_MODEL_NAME for the live adapter",
             )
+        if any(c <= " " or c == "\x7f" for c in key):
+            # A key with a line break in it (a two-line key file) fails in http.client, whose error quotes the header.
+            raise InvariantError("LIVE", "TASKORG_MODEL_KEY holds a space, a line break or a control character")
         timeout, models = env_timeout(30), env_models()
         raw_param = os.environ.get("TASKORG_MODEL_MAX_TOKENS_PARAM", "").strip() or MAX_REPLY_PARAM
         return cls(base, key, model, timeout=timeout, models=models,
@@ -375,7 +397,7 @@ class LiveAdapter(ModelAdapter):
         # One deadline for the whole exchange; _deadline_connection enforces it.
         req.deadline, req.timers = time.monotonic() + self.timeout, []
         try:
-            with _OPENER.open(req, timeout=self.timeout) as resp:
+            with _opener_for(url).open(req, timeout=self.timeout) as resp:
                 data = _read_capped(resp, MAX_RESPONSE_BYTES, req.deadline)
         except urllib.error.HTTPError as e:
             if 300 <= e.code < 400:
@@ -388,7 +410,10 @@ class LiveAdapter(ModelAdapter):
         except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException, ValueError) as e:
             if time.monotonic() >= req.deadline:
                 raise InvariantError("LIVE", "model endpoint too slow: the response did not finish within the timeout") from e
-            raise InvariantError("LIVE", f"model endpoint failed: {type(e).__name__}: {e}") from e
+            # http.client's own errors quote the header or the host they refused, which may hold the key or a password,
+            # and this text goes to a tape and a saved run: those are named, not quoted.
+            quoted = isinstance(e, (http.client.HTTPException, ValueError)) and not isinstance(e, OSError)
+            raise InvariantError("LIVE", f"model endpoint failed: {type(e).__name__}" + ("" if quoted else f": {e}")) from e
         finally:
             for timer in req.timers:
                 timer.cancel()

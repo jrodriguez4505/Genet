@@ -523,7 +523,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 503 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 625 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 
@@ -557,7 +557,7 @@ This Genet is software, not the playwright.
 
 ## Status
 
-v0.12.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with checks on Sonnet 5.5 and Opus 5.5, and Genet has met CrewAI on public questions; what they show is under [What the live runs show](#what-the-live-runs-show) and in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). Not a cloud platform.
+v0.13.0 kernel. Invariants and the bench are covered by tests. The comparison and the concept experiments have run on Claude Haiku 5.5, with checks on Sonnet 5.5 and Opus 5.5, and Genet has met CrewAI on public questions; what they show is under [What the live runs show](#what-the-live-runs-show) and in [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md). Not a cloud platform.
 
 The policy head (`policy.py`, `imitate.py`, `rl.py`, `finetune.py`) is an experiment and is not wired into runs. [ARCHITECTURE.md](ARCHITECTURE.md) maps the modules and lists the open design questions. See [COMPLETED.md](COMPLETED.md) for what is and is not claimed.
 

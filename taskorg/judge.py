@@ -45,7 +45,8 @@ def judge_rows(results: list[dict], loong_rows: list[dict], client: RawClient, m
             if progress:
                 progress(f"[{n}/{len(results)}] {res['task_id']} {res.get('strategy', '')}: {seen[pair][0]}")
         score, text = seen[pair]
+        right = score is not None and score >= RIGHT_SCORE  # a reply with no score counts as not right, and is kept
         out.append(dict(res) | {"judge_score": score, "judge_text": text,
-                                "answer_right": score >= RIGHT_SCORE, "full": score >= PERFECT,
-                                "correct": score >= RIGHT_SCORE and res.get("status") == "complete"})
+                                "answer_right": right, "full": score is not None and score >= PERFECT,
+                                "correct": right and res.get("status") == "complete"})
     return out

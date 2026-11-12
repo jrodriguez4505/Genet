@@ -171,6 +171,11 @@ class Suite:
     def write_corpus(self, root: str | Path) -> Path:
         root = Path(root)
         root.mkdir(parents=True, exist_ok=True)
+        inside = root.resolve()
+        for name in self.corpus:
+            # A name comes from a dataset or a tape: none may put its file outside the corpus.
+            if not (root / name).resolve().is_relative_to(inside) or (root / name).resolve() == inside:
+                raise ValueError(f"corpus file {name!r} is not inside the corpus folder")
         for name, text in self.corpus.items():
             (root / name).parent.mkdir(parents=True, exist_ok=True)
             (root / name).write_text(text, encoding="utf-8")

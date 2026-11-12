@@ -10,8 +10,9 @@ Please do not open a public issue. Report it privately through **Report a vulner
 - **Model output.** Tool requests, sub-task proposals and artifact fields. A model can be steered by text it reads, so a request from a model is never trusted because it looks reasonable.
 - **The workspace.** Files can carry planted instructions, and folders can be huge, unreadable or full of pipes. Tools only read, only inside the declared roots, never hidden files, and never through a symlink that leads outside or into a hidden file.
 - **Saved runs.** A file loaded with `replan`, `diagnose` or `replay` may come from someone else.
+- **Benchmark files.** A question file's ids name folders in the corpus, and a documents folder may hold links. An id is held to letters, digits, `-` and `_`, every corpus file must land inside the corpus folder, and only plain files in the documents folder are read.
 
-The limits that enforce this are listed in the README under Security. They are enforced in code, and each has a test in `tests/test_security.py` and a mutation in `scripts/mutation_check.py`.
+The limits that enforce this are listed in the README under Security. They are enforced in code, and each has a test in `tests/test_security.py` or `tests/test_security_review.py` and a mutation in `scripts/mutation_check.py`. The second file holds the fixes from an independent review on 11 November 2026, which found nothing in the model-output boundary and ten things outside it.
 
 ## What it does not cover
 

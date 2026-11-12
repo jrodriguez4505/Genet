@@ -86,6 +86,9 @@ def task_context(task: Task) -> str:
     return CONTEXT + f" Already filed and checked for this question: {done}. Their notes need no second reading."
 
 
+CREW_PROPOSALS = 64  # parts a crew's plan may name; the most on the tapes is 16
+
+
 class SingleAgent(Engine):
     """Baseline: one agent, no planning call, never splits."""
 
@@ -103,7 +106,8 @@ class AlwaysSplit(Engine):
         run.switch_skill(lead, lead, "reason", "decompose into sub-tasks for the crew")
         plan = self._act(run, self._brief(run, "lead", extra=self._plan_brief(run), mode="plan"))
         run.accept_artifact(plan)
-        return parse_proposals(plan.requests)
+        # A crew has no gates to cap what it proposes, and each part is checked against the workspace's files.
+        return parse_proposals(plan.requests)[:CREW_PROPOSALS]
 
     def _plan_brief(self, run: Run) -> str:
         return DECOMPOSE_BRIEF.format(skills="|".join(SKILLS))
