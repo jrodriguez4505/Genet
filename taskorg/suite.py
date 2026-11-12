@@ -92,6 +92,42 @@ DISTRACTORS = (
     "Guidance for {q} of FY2027 is ${v}M in sales.",
 )
 REGIONS = ("Northeast", "Midwest", "Pacific", "Gulf Coast", "Mountain West", "Mid-Atlantic")
+# Padding (build_suite's pad): notes long enough that a question's files pass a real call limit, for tests at that scale.
+# Sections of neutral sentences: no revenue, sales or churn, and no quarter, so no padded line answers a question or
+# looks like an answer. Drawn from a stream of their own, so the companies, figures, questions and each note's own
+# sentences are those of the unpadded suite; the note's own paragraphs are spread through the padding.
+PAD_HEADINGS = ("Operations review", "Facilities", "Risk factors", "Governance", "People", "Supply chain",
+                "Technology", "Customers and service", "Environment and safety", "Outlook for operations")
+PAD = (
+    "Warehouse utilization averaged {a}% across the network.",
+    "Headcount ended the period at {n}, with most hiring in operations.",
+    "Management expects procurement savings of roughly {a} basis points.",
+    "The company opened {k} new regional offices during the year.",
+    "Average fleet age stood at {k}.{a} years after the replacement program.",
+    "The safety program recorded {k} reportable incidents across all sites.",
+    "Energy use per square foot fell {a}% after the lighting retrofit.",
+    "The audit committee met {k} times and reviewed the internal control plan.",
+    "Two directors rotated off the board, and {k} new directors joined.",
+    "Employee engagement scored {a} on the annual survey.",
+    "Voluntary turnover among staff ended near {a}%, in line with the industry.",
+    "The data center migration moved {a}% of workloads to the new platform.",
+    "Cyber security testing found {k} medium findings, all since remediated.",
+    "Supplier on-time performance reached {a}% across the top {n} vendors.",
+    "Inventory turns improved to {k}.{a} after the planning changes.",
+    "The company renewed its main credit facility on similar terms.",
+    "Capital spending focused on automation in the {k} largest facilities.",
+    "Customer satisfaction surveys returned a score of {a} out of 100.",
+    "The service desk resolved {a}% of requests on first contact.",
+    "Water use fell {a}% against the prior year's baseline.",
+    "Insurance renewals closed with premiums up about {k}%.",
+    "Litigation matters were routine and not expected to be material.",
+    "Lease commitments covered {n} thousand square feet across all sites.",
+    "Training hours averaged {k}{a} per employee for the year.",
+    "The company completed {k} small process improvement projects.",
+    "Commodity exposure was hedged for roughly {a}% of expected use.",
+    "Maintenance backlog fell to {k} weeks of planned work.",
+    "Freight costs per shipment rose about {k}% on fuel surcharges.",
+)
 
 
 def slug(name: str) -> str:
@@ -172,14 +208,36 @@ def _doc(rng: random.Random, c: Company, sister: Company | None, distractors: in
     return f"# {c.name}: FY2026 operating notes\n\nRegion: {c.region}.\n\n" + "\n\n".join(paragraphs) + "\n"
 
 
+def _pad(text: str, key: str, seed: int, target: int) -> str:
+    """A note grown to at least target characters: its title and region first, then padding sections with the note's
+    own paragraphs spread through them."""
+    if len(text) >= target:
+        return text
+    rng = random.Random(f"{seed}-pad-{key}")
+    title, region, *own = text.rstrip("\n").split("\n\n")
+    padding: list[str] = []
+    size = len(text)
+    while size < target:
+        heading = f"## {rng.choice(PAD_HEADINGS)}"
+        paras = [" ".join(rng.choice(PAD).format(a=rng.randint(3, 97), n=rng.randint(80, 900), m=round(rng.uniform(2, 40), 1),
+                                                 k=rng.randint(1, 9)) for _ in range(4)) for _ in range(rng.randint(2, 4))]
+        padding += [heading, *paras]
+        size += sum(len(p) + 2 for p in [heading, *paras])
+    for para in own:
+        padding.insert(rng.randint(0, len(padding)), para)
+    return "\n\n".join([title, region, *padding]) + "\n"
+
+
 def _names(items: list[str]) -> str:
     return ", ".join(items[:-1]) + f" and {items[-1]}" if len(items) > 1 else items[0]
 
 
 def build_suite(seed: int = 7, per_family: int = 5, families: tuple[str, ...] = FAMILIES, *,
-                entities: int | None = None, distractors: int = 0, filed: int = 0) -> Suite:
+                entities: int | None = None, distractors: int = 0, filed: int = 0, pad: int = 0) -> Suite:
     """The default suite, or with the concept-experiment options. The defaults draw from the
-    random stream exactly as before, so every saved run and tape still matches its suite."""
+    random stream exactly as before, so every saved run and tape still matches its suite.
+
+    pad: grow each note to at least this many characters (_pad), with the same questions and figures."""
     scaled = entities is not None or distractors or filed
     pool, pairs = (ALL_COMPANIES, ALL_PAIRS) if scaled else (COMPANIES, PAIRS)
     if entities is not None and not 2 <= entities <= len(pool):
@@ -235,6 +293,8 @@ def build_suite(seed: int = 7, per_family: int = 5, families: tuple[str, ...] = 
             if filed and family in ("aggregate", "breadth"):
                 task.filed = {n: companies[n].revenue[q] for n in entities[:filed]}
             tasks.append(task)
+    if pad:
+        corpus = {name: _pad(text, name, seed, pad) for name, text in corpus.items()}
     return Suite(seed, companies, corpus, tasks)
 
 

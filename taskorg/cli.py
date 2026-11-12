@@ -9,7 +9,7 @@ from .budget import Budget
 from .checks import AUTHOR_RULES, SOURCES, VIEWS
 from .errors import InvariantError
 from .factory import new_run
-from .gates import Subtask, World
+from .gates import SPLIT_DEFAULT, SPLIT_POLICIES, Subtask, World
 from .live import pick_adapter
 from .loop import Engine
 from .memory_store import MemoryStore
@@ -91,9 +91,10 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
                    help="the sub-tasks must not share a context (a declared reason to fan out)")
     p.add_argument("--no-lessons", action="store_true",
                    help="do not write lessons from a failed run to the shared guidelines")
-    p.add_argument("--split-policy", default="measured", choices=["measured", "stated"],
-                   help="measured: fan out only for declared isolation or material that does not fit one context; "
-                        "stated: the lead's named reasons are enough")
+    p.add_argument("--split-policy", default=SPLIT_DEFAULT, choices=list(SPLIT_POLICIES),
+                   help="reads (default): measured, with no planning call when one agent reading a page of each file "
+                        "can hold what it needs; measured: fan out only for declared isolation or material that does "
+                        "not fit one context; stated: the lead's named reasons are enough")
     p.add_argument("--verify-view", default="independent", choices=list(VIEWS),
                    help="what the verifier sees: shared (every note), independent (not the author's notes)")
     p.add_argument("--verify-sources", default="layered", choices=list(SOURCES),
@@ -114,6 +115,9 @@ def _add_run_args(p: argparse.ArgumentParser, *, required: tuple[str, ...] = (),
     p.add_argument("--rework-reads", action="store_true",
                    help="after a merge, the lead's rework may read the workspace, as a single agent's can, to check what "
                         "the verifier named. Off by default")
+    p.add_argument("--rework-keeps", action="store_true",
+                   help="the lead's rework carries what the failed product's call read, as far as one call has room, so it "
+                        "reads again only what is missing. Off by default")
     p.add_argument("--abort", action="append", default=[], metavar="CRITERION",
                    help="stop at a decision point when this is met: forecast_short (the budget cannot finish the "
                         f"work; the default), parts_failed:N (N parts' sub-agents failed), or none. "
@@ -169,7 +173,8 @@ def _engine(args: argparse.Namespace, store: MemoryStore) -> Engine:
                   verify_view=args.verify_view, verify_sources=args.verify_sources, verify_note=MERGE_RULES[args.verify_rule],
                   rework_reason=args.rework_reason, author_note=AUTHOR_RULES[args.author_rule],
                   report_up=args.report_up,
-                  cards=args.cards, gap_check=args.gap_check, rework_reads=args.rework_reads)
+                  cards=args.cards, gap_check=args.gap_check, rework_reads=args.rework_reads,
+                  rework_keeps=args.rework_keeps)
 
 
 def _out_path(raw: str | None, default: Path) -> Path:
@@ -379,6 +384,16 @@ def main(argv: list[str] | None = None) -> int:
     p_b.add_argument("--question", default="Could a single agent have done this?")
     p_b.set_defaults(func=cmd_brief)
 
+    p_pair = sub.add_parser("paired", help="two arms of a comparison, question by question, with their noise "
+                                               "(an exact sign test on the questions where they differ, and a "
+                                               "bootstrap range for tokens)")
+    p_pair.add_argument("first", help="a compare or h2h-judge results file, then :STRATEGY if it holds more than one")
+    p_pair.add_argument("second", help="the arm to compare with the first, the same way")
+    p_pair.add_argument("--grading", choices=["judged", "exact"], default=None,
+                        help="judged: a judge score of at least 80 is right (Loong); exact: the answer key (generated "
+                             "questions, HotpotQA). By default, judged when the results carry judge scores")
+    p_pair.set_defaults(func=cmd_paired)
+
     p_replay = sub.add_parser("replay", help="print a saved run log")
     p_replay.add_argument("path")
     p_replay.set_defaults(func=cmd_replay)
@@ -440,22 +455,35 @@ def main(argv: list[str] | None = None) -> int:
     p_c.add_argument("--rework-reads", action="store_true",
                      help="after a merge, the lead's rework may read the workspace, as a single agent's can, to check what "
                           "the verifier named. Off by default")
+    p_c.add_argument("--rework-keeps", action="store_true",
+                     help="the lead's rework carries what the failed product's call read, as far as one call has room, so "
+                          "it reads again only what is missing. Off by default")
     p_c.add_argument("--price", action="append", default=[], metavar="MODEL=IN/OUT",
                      help="$ per 1M tokens for one model, input/output, for a team that mixes models; repeat for each")
     p_c.add_argument("--then-live", action="store_true",
-                     help="with --replay, --record and one of --gap-check or --rework-reads: answer from the tape until "
-                          "that switch changes a rework, then send that trial's later requests to the model "
-                          "(--adapter anthropic) and record them")
+                     help="with --replay, --record and one of --gap-check, --rework-reads, --rework-keeps, --fixed-quotes or --marked-review: "
+                          "answer from the tape until that switch changes a rework or a check, then send that trial's later "
+                          "requests to the model (--adapter anthropic) and record them")
+    p_c.add_argument("--fixed-quotes", action="store_true",
+                     help="with --then-live, on a benchmark tape from before 11 November: the quote check as fixed then "
+                          "(zero-width spaces read as space); a trial goes live at the first check the fix changes")
+    p_c.add_argument("--marked-review", action="store_true",
+                     help="with --then-live, on a tape from before 11 November: the verifier's view with the end of the "
+                          "product's text marked; a trial goes live at its first verifier call")
     p_c.add_argument("--benchmark", default=None, choices=["loong", "hotpot"],
                      help="a public benchmark's questions in place of the generated suite (docs/HEAD_TO_HEAD.md): loong needs "
                           "--questions and --docs, hotpot --questions; --families and the suite options are then not used")
     p_c.add_argument("--questions", default=None, help="the benchmark's question file (JSON lines)")
     p_c.add_argument("--docs", default=None, help="Loong's doc/financial folder")
-    p_c.add_argument("--which", default="main", choices=["main", "calibration", "fresh"],
-                     help="Loong's planned sample: 40 main questions, the 4 for calibration, or 12 fresh ones no earlier "
-                          "sample holds (6 comparison, 6 clustering)")
+    p_c.add_argument("--which", default="main", choices=["main", "calibration", "fresh", "rest"],
+                     help="Loong's planned sample: 40 main questions, the 4 for calibration, 12 fresh ones no earlier "
+                          "sample holds (6 comparison, 6 clustering), or the rest: every planned question none of those holds")
     p_c.add_argument("--ids", default=None,
                      help="with --benchmark: only these questions of the sample, by task id (loong-1a2b3c4d), comma separated")
+    p_c.add_argument("--pad-notes", type=_whole(1000), default=None, metavar="CHARS",
+                     help="generated questions only: grow each company's note to at least this many characters with "
+                          "neutral sections, the questions and figures unchanged, so a question's files can pass a real "
+                          "call limit. Off by default")
     p_c.add_argument("--page-chars", type=_whole(1000), default=None,
                      help="read long files a page of this many characters at a time (read:PATH@N). Off by default")
     p_c.add_argument("--max-seconds", type=_finite(1, strict=False), default=600.0,
@@ -627,10 +655,22 @@ def _model_source(args: argparse.Namespace, config: dict, header_key: str, code:
         recorded = player.header.get(header_key)
         recorded = recorded if isinstance(recorded, dict) else {}
         if recorded:  # A tape from before a switch does not name it, and was recorded without it.
-            recorded = {"verify_rule": "none", "rework_reason": False, "gap_check": False, "rework_reads": False} | recorded
+            recorded = {"verify_rule": "none", "rework_reason": False, "gap_check": False, "rework_reads": False,
+                        "rework_keeps": False} | recorded
         differ = [k for k in keys if k in recorded and recorded[k] != config.get(k)]
+        part = "strategies" in differ and set(config.get("strategies") or ()) <= set(recorded.get("strategies") or ())
+        if part:
+            # Some of its strategies, or all in another order: the requests are the tape's, and what may differ is
+            # which recorded reply a shared request gets, unless the tape marked each exchange with its trial.
+            differ.remove("strategies")
+            if not player.marked:
+                stderr(f"note: the tape was recorded with strategies {','.join(recorded['strategies'])} and does not mark "
+                       "which trial sent each request; where two sent the same one, a replay of some of them, or in "
+                       "another order, may be served the other's reply. Replay them all, in that order, for the run as "
+                       "it went")
         if differ:
             stderr(f"note: the tape was recorded with a different {', '.join(differ)}; expect requests it does not have")
+        _as_recorded(recorded, config)
         config |= {"tape": str(args.replay), "replayed": player.header.get("adapter"), "model": player.header.get("model")}
 
         def factory():
@@ -671,17 +711,50 @@ def _model_prices(raw: list[str]) -> dict[str, tuple[float, float]]:
     return out
 
 
+# Settings a run names only where they act, each with what a tape from before it was named ran under, and the note.
+AS_BEFORE = {
+    # Since 11 November genet splits under the split rule ("reads"); it acts only on paged reads.
+    "genet_split": ("measured", "genet split under the {was} policy, as it did before 11 November"),
+    # Since 11 November the quote check reads zero-width characters as space; only a benchmark's files hold them.
+    "quote_spaces": (False, "quote check read zero-width characters as text, as it did before 11 November"),
+    # Since 11 November the verifier's view marks where the product's text ends.
+    "review_end": (False, "verifier saw no mark where the product's text ends, as before 11 November"),
+}
+
+
+def _as_recorded(recorded: dict, config: dict) -> None:
+    """A replay runs as its tape did. A tape from before a setting was named names nothing, and ran under what came
+    before; the replay takes that, says so, and its config records it."""
+    from .compare import stderr
+
+    if not recorded:
+        return
+    for key, (before, note) in AS_BEFORE.items():
+        if key not in config:
+            continue
+        was = recorded.get(key, before)
+        if was != config[key]:
+            config[key] = was
+            stderr(f"note: the tape's {note.format(was=was)}; it replays so")
+
+
 def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, code: str):
     """--then-live: each trial replays its tape until the switch being measured changes a rework (the gap check sends a
-    product back, or a rework after a merge may read), then goes to the model. The live adapter must be the one the
-    tape was recorded with, so the requests before that point are the same."""
-    from .loop import GAP_ARM, REWORK_ARM
+    product back, a rework after a merge may read, or a rework keeps what was read), then goes to the model. The live
+    adapter must be the one the tape was recorded with, so the requests before that point are the same."""
+    from .loop import GAP_ARM, KEEP_ARM, QUOTE_ARM, REVIEW_ARM, REWORK_ARM
     from .tape import Continuing, LiveSpend, Player, Recorder
 
-    if not (args.replay and args.record and args.adapter == "anthropic" and (args.gap_check != args.rework_reads)):
-        raise InvariantError(code, "--then-live needs --replay, --record, --adapter anthropic and one of --gap-check "
-                                   "or --rework-reads")
-    arm = GAP_ARM if args.gap_check else REWORK_ARM
+    # A fix measured on a tape from before it: the setting it changed, the words that arm it, and what it is called.
+    fixes = {"fixed_quotes": ("quote_spaces", QUOTE_ARM, "the fixed quote check"),
+             "marked_review": ("review_end", REVIEW_ARM, "the verifier's view with the product's end marked")}
+    fix = next((f for f in fixes if getattr(args, f, False)), None)
+    switches = (args.gap_check, args.rework_reads, args.rework_keeps, *(getattr(args, f, False) for f in fixes))
+    if not (args.replay and args.record and args.adapter == "anthropic" and sum(map(bool, switches)) == 1):
+        raise InvariantError(code, "--then-live needs --replay, --record, --adapter anthropic and one of --gap-check, "
+                                   "--rework-reads, --rework-keeps, --fixed-quotes or --marked-review")
+    arm = (GAP_ARM if args.gap_check else REWORK_ARM if args.rework_reads else KEEP_ARM if args.rework_keeps
+           else fixes[fix][1])
     player = Player(Path(args.replay))
     h = player.header
     first = pick_adapter(args.adapter)  # fails fast with no key or model
@@ -691,6 +764,19 @@ def _continuing_source(args: argparse.Namespace, config: dict, header_key: str, 
         raise InvariantError(code, f"--then-live needs the tape's model and effort ({h.get('model')}, {h.get('effort')}); "
                                    f"the environment gives {first.model}, {first.effort}")
     rounds = h.get("round_reply_tokens") or 0
+    recorded = h.get(header_key)
+    _as_recorded(recorded if isinstance(recorded, dict) else {}, config)
+    if fix:
+        # The fix is what is measured: the tape ran as it was, and from the first brief the fix changes, the trial goes
+        # on live under the fix.
+        key, _, called = fixes[fix]
+        if config.get(key) is not False:
+            raise InvariantError(code, f"--{fix.replace('_', '-')} measures {called} against a tape from before it; "
+                                       "this tape is not one")
+        config[key] = True
+        from .compare import stderr
+
+        stderr(f"note: from the first brief the fix changes, each trial goes on live under {called}")
     config |= {"tape": str(args.replay), "replayed": h.get("adapter"), "model": h.get("model"), "then_live": True,
                "live_tape": str(args.record)}
     first.round_reply_tokens = rounds
@@ -805,17 +891,23 @@ def cmd_compare(args: argparse.Namespace) -> int:
         raise InvariantError("COMPARE", "--price needs --price-in and --price-out, for tokens no model is named for")
     if args.record and args.replay and not args.then_live:
         raise InvariantError("COMPARE", "--record or --replay, not both, unless --then-live")
+    if (args.fixed_quotes or args.marked_review) and not args.then_live:
+        raise InvariantError("COMPARE", "--fixed-quotes and --marked-review measure a fix on a tape from before it: each "
+                                        "needs --then-live")
     from .tools import PAGE_MAX
     if args.page_chars is not None and args.page_chars > PAGE_MAX:
         raise InvariantError("COMPARE", f"--page-chars is at most {PAGE_MAX:,}")
     if args.ids and not args.benchmark:
         raise InvariantError("COMPARE", "--ids picks questions of a --benchmark sample")
     try:
+        if args.pad_notes and args.benchmark:
+            raise ValueError("--pad-notes grows generated questions' notes, not a benchmark's documents")
         if args.benchmark:
             suite = _benchmark_suite(args)
         else:
             suite = build_suite(seed=args.seed, per_family=args.per_family, families=families,
-                                entities=args.entities, distractors=args.distractors, filed=args.filed)
+                                entities=args.entities, distractors=args.distractors, filed=args.filed,
+                                pad=args.pad_notes or 0)
     except (ValueError, OSError) as e:
         raise InvariantError("COMPARE", str(e)) from None
     trials = len(suite.tasks) * len(strategies) * args.repeat
@@ -826,7 +918,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         "max_calls_per_trial": args.max_calls, "context_tokens": args.context, "tool_rounds": args.tool_rounds,
         "verify_view": args.verify_view, "verify_sources": args.verify_sources, "verify_rule": args.verify_rule,
         "rework_reason": args.rework_reason, "author_rule": args.author_rule, "gap_check": args.gap_check,
-        "rework_reads": args.rework_reads,
+        "rework_reads": args.rework_reads, "rework_keeps": args.rework_keeps,
         "trials": trials, "call_ceiling": trials * args.max_calls,
     }
     # Only a benchmark run names these, so a generated-suite run's config, and its tape, read as before.
@@ -840,6 +932,14 @@ def cmd_compare(args: argparse.Namespace) -> int:
     elif args.page_chars is not None or args.max_seconds != 600.0:
         config |= {"page_chars": args.page_chars, "max_seconds": args.max_seconds}
         bench_keys = ("page_chars", "max_seconds")
+    if args.pad_notes:
+        config["pad_notes"] = args.pad_notes
+        bench_keys = (*bench_keys, "pad_notes")
+    if config.get("page_chars") is not None:
+        config["genet_split"] = SPLIT_DEFAULT  # the rule acts only on paged reads, so only a paged run names it
+    if args.benchmark:
+        config["quote_spaces"] = True  # a benchmark's files can hold zero-width spaces; generated notes do not
+    config["review_end"] = True  # every run's verifier reads a product
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
     if args.max_spend is not None:
@@ -853,7 +953,7 @@ def cmd_compare(args: argparse.Namespace) -> int:
         args, config, "compare", "COMPARE",
         ("strategies", "families", "per_family", "repeat", "seed", "entities", "distractors", "filed",
          "max_calls_per_trial", "context_tokens", "tool_rounds", "verify_view", "verify_sources", "verify_rule",
-         "rework_reason", "author_rule", "gap_check", "rework_reads") + bench_keys,
+         "rework_reason", "author_rule", "gap_check", "rework_reads", "rework_keeps") + bench_keys,
     )
     if args.corpus:
         suite.write_corpus(args.corpus)
@@ -873,8 +973,10 @@ def cmd_compare(args: argparse.Namespace) -> int:
             verify={"verify_view": args.verify_view, "verify_sources": args.verify_sources,
                     "verify_note": MERGE_RULES[args.verify_rule], "rework_reason": args.rework_reason,
                     "author_note": AUTHOR_RULES[args.author_rule], "gap_check": args.gap_check,
-                    "rework_reads": args.rework_reads},
+                    "rework_reads": args.rework_reads, "rework_keeps": args.rework_keeps,
+                    "quote_spaces": config.get("quote_spaces", True), "review_end": config["review_end"]},
             page_chars=args.page_chars,
+            genet_split=config.get("genet_split"),
         )
     finally:
         if recorder:
@@ -890,7 +992,10 @@ def cmd_compare(args: argparse.Namespace) -> int:
     if args.then_live:
         spend = factory.spend
         live = (f", ${spend.cost(args.price_in, args.price_out):.4f}" if args.price_in is not None else "")
-        print(f"live: {spend.calls} requests sent to the model after {'the gap check' if args.gap_check else 'a rework that may read'}{live}")
+        after = ("the gap check" if args.gap_check else "a rework that may read" if args.rework_reads
+                 else "a rework that keeps its pages" if args.rework_keeps
+                 else "a check the fixed quote check changes" if args.fixed_quotes else "a verifier call, its view marked")
+        print(f"live: {spend.calls} requests sent to the model after {after}{live}")
     if recorder:
         print(f"tape: {recorder.count} exchanges saved to {args.record}")
     print(f"saved {out}")
@@ -931,6 +1036,7 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
         "entities": args.entities, "distractors": args.distractors, "repeat": args.repeat, "seed": args.seed,
         "max_calls_per_review": args.max_calls, "context_tokens": args.context,
         "products": len(items), "wrong_products": sum(b.error is not None for _, _, b in items), "reviews": reviews,
+        "review_end": True,
     }
     if args.price_in is not None:
         config |= {"price_in": args.price_in, "price_out": args.price_out}
@@ -947,7 +1053,7 @@ def cmd_verify_bench(args: argparse.Namespace) -> int:
         suite.write_corpus(args.corpus)
     try:
         results = run_bench(
-            suite, factory, setups=setups, arms=arms, repeats=args.repeat,
+            suite, factory, setups=setups, arms=arms, repeats=args.repeat, review_end=config["review_end"],
             budget_factory=lambda: comparison_budget(args.max_calls, args.context),
             corpus_dir=Path(args.corpus) if args.corpus else None, progress=stderr,
             stop_when=spend_cap(args.max_spend, args.price_in, args.price_out) if args.max_spend is not None else None,
@@ -1320,6 +1426,36 @@ def cmd_policy_fit(args: argparse.Namespace) -> int:
     stub = vs_stub(rows)
     saved = str(dump(pol.head, Path(args.out)))
     print(json.dumps({"ok": True, "saved": saved, "imitation": report, "stub": stub}, indent=2))
+    return 0
+
+
+def _arm(spec: str) -> tuple[str, dict]:
+    """PATH[:STRATEGY] -> its label and question -> result. A results file of one strategy needs no name."""
+    path, _, strategy = spec.rpartition(":") if spec.rpartition(":")[0].endswith(".json") else (spec, "", "")
+    try:
+        rows = json.loads(Path(path).read_text())["results"]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise InvariantError("PAIRED", f"cannot read results from {path}: {e}") from None
+    names = sorted({r["strategy"] for r in rows})
+    if not strategy:
+        if len(names) != 1:
+            raise InvariantError("PAIRED", f"{path} holds {', '.join(names)}: name one as {path}:STRATEGY")
+        strategy = names[0]
+    if strategy not in names:
+        raise InvariantError("PAIRED", f"{path} has no strategy {strategy} (it has {', '.join(names)})")
+    return f"{Path(path).stem}:{strategy}", {(r["task_id"], r.get("repeat", 0)): r for r in rows if r["strategy"] == strategy}
+
+
+def cmd_paired(args: argparse.Namespace) -> int:
+    from .paired import exact_right, exact_wrong, judged_right, judged_wrong, paired
+
+    (first_name, first), (second_name, second) = _arm(args.first), _arm(args.second)
+    grading = args.grading or ("judged" if any("judge_score" in r for r in [*first.values(), *second.values()]) else "exact")
+    right, wrong = (judged_right, judged_wrong) if grading == "judged" else (exact_right, exact_wrong)
+    result = paired(first, second, right=right, wrong=wrong)
+    if not result.questions:
+        raise InvariantError("PAIRED", "the two arms share no question")
+    print("\n".join(result.lines(first_name, second_name)))
     return 0
 
 

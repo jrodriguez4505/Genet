@@ -1018,7 +1018,485 @@ By the rule written first, the full rerun of the 40 does not run, and the switch
 - **Reading.** This is the third change that takes away a reason to stop, after the wording note and the same-measure note. Each time, more wrong answers finished than right ones. On these runs the checker's stops mostly kept wrong answers out. Most errors behind them came from how Loong names lines, dates years and draws bands, not from what the lead could read.
 - **The tapes replay exactly.** Each live tape, joined to the tape it continued, gives all 20 trials with no request missing and the same results. The judge's tape gives the same 20 scores. The readout is `data/exp/rereads_read.py`.
 
-The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+### When to split: the plan, written before the run
+
+**Why.** Three fixes after the split each let more wrong answers finish than right ones. The loss starts earlier, in the decision to split. On the 13 of the 40 that Genet split, it was right on 4, where one agent and CrewAI each got 7. The gates admit a split when the goal's files do not fit one call, and no Loong question's filings do. But one agent reading each filing in turn never came close to running out. Its largest call on the 40 was 66,480 tokens of the 100,000 allowed. On the 13 that Genet split, its largest calls ran from 13,928 to 54,166.
+
+**The rule.** `--split-policy reads`, off by default; compare's `genet-reads`. It is `measured` with one more check, before the plan:
+- With paged reads, one agent reads a long file a page at a time and keeps what it found. So the check counts a page of each file the goal names, and compares that with the gates' share of one call.
+- When it fits, there is no planning call, and the lead works alone from the start, as one agent does.
+- When it does not fit, the lead plans, and the gates judge the plan as they do now.
+- Unpaged work is measured as before.
+
+**Checked for free** (`data/exp/splitrule_dry.py`, each strategy replayed on its own):
+- **Every synthetic tape:** 366 trials, 209 of them split, with reads not paged. The rule does what Genet did, request for request.
+- **The head-to-head's paged questions:** the 40, its 4 calibration questions and its 20 HotpotQA questions. The rule does what one agent did, request for request, with no request missing from the tapes.
+- **The resulting change on the 40:**
+
+| The 40 of 9 November | Right | Finished wrong | Stopped | Tokens a question |
+|---|---|---|---|---|
+| Genet as it is | 20 | 12 | 8 | 87,694 |
+| Under the rule | 22 | 15 | 3 | 74,697 |
+| Of those, the 13 Genet split: as it is | 4 | 4 | 5 | 105,084 |
+| The 13, under the rule | 7 | 6 | 0 | 64,167 |
+
+On the 40, the rule would hold all five head-to-head bars: right 22, at least CrewAI's 25 less 3, and wrong 15, no more than CrewAI's 15. By the standard used for the three fixes, wrong finishes rising by at most half the right gained, it misses. These are the questions that suggested the rule, so they cannot test it.
+
+**The live test.** `bash scripts/team_runs.sh splitrule`, one y.
+- **Questions:** the 54 Loong questions no earlier run used (`compare --which rest`: everything the main, calibration and fresh draws left). 7 are spotlight, 15 comparison, 23 clustering and 9 chain.
+- **Arms:** Genet as it is, and Genet under the rule, on the head-to-head's model, limits and judge.
+- **What the rule does there:** it keeps all 54 to one agent. The largest need, a page of each of 5 filings, is about 35,000 tokens, against a room of 50,000.
+- **Cost:** about $1.70 and 45 minutes. The caps are $1.50, $0.90 and $0.50 for the judge.
+
+| The bar, written before the run | Needed |
+|---|---|
+| Right | under the rule, at least 2 more of the 54 than Genet as it is |
+| Wrong finishes | up by at most half the right finishes gained |
+| Tokens a question | fewer than Genet as it is |
+
+Reported with no bar:
+- stops;
+- each of Loong's four levels;
+- the questions Genet as it is split, and those it kept to one agent.
+
+If all three hold, the rule goes to the default on the operator's go-ahead. Even 54 questions are few: a difference of 3 or 4 can be noise.
+
+**What it cannot show.** No task here has files larger than a page that one agent must read whole. There the rule could keep to one agent work that one agent cannot hold. That case is untested.
+
+### When to split: the result, 10 November
+
+Run on Haiku 5.5 as planned, with Sonnet 5.5 judging. Spend was $1.31: $0.49 for each arm and $0.33 for the judge's 98 calls. Replayed from the tapes with no key, each arm gives all 54 trials as they ran, serving 457 and 257 replies, with none missing. As predicted, the rule kept all 54 to one agent. Genet as it is split 27 of them.
+
+| The 54 of 10 November | Right | Finished wrong | Stopped | Tokens a question |
+|---|---|---|---|---|
+| Genet as it is | 24 | 24 | 6 | 65,133 |
+| Under the rule | 28 | 24 | 2 | 72,614 |
+| Of those, the 27 Genet split: as it is | 9 | 12 | 6 | 72,125 |
+| The 27, under the rule | 13 | 13 | 1 | 59,821 |
+| The 27 Genet kept to one agent: as it is | 15 | 12 | 0 | 58,140 |
+| The 27, under the rule | 15 | 11 | 1 | 85,408 |
+
+| The bar, written before the run | Needed | Result | |
+|---|---|---|---|
+| Right | at least 2 more | 24 to 28 | holds |
+| Wrong finishes | up by at most half of the 4 gained | 24 to 24 | holds |
+| Tokens a question | fewer | 65,133 to 72,614 | **misses** |
+
+By Loong's levels, as right, finished wrong and stopped (no bar):
+
+| Level | Genet as it is | Under the rule |
+|---|---|---|
+| Spotlight, 7 | 7, 0, 0 | 7, 0, 0 |
+| Comparison, 15 | 10, 2, 3 | 11, 3, 1 |
+| Clustering, 23 | 6, 16, 1 | 8, 14, 1 |
+| Chain, 9 | 1, 6, 2 | 2, 7, 0 |
+
+**Where the gain came from.** All 4 extra right answers came on the questions Genet split: 9 right there as it is, 13 under the rule. This is the head-to-head's pattern on new questions: on the 13 of the 40 that Genet split, it got 4 right, and one agent got 7.
+
+**Why tokens rose.** The rule took away the planning call and, where Genet split, the sub-agents: 457 calls fell to 257, and the median trial fell from 50,040 tokens to 41,812. The mean rose because of two trials. In each, the verifier turned down the first answer, and the lead began again and read the filings a second time:
+- `loong-44b5d8c0`, a spotlight question: 20,885 tokens as it is, 342,747 under the rule. Both arms got it right.
+- `loong-7d75bfc7`, a clustering question: 137,530 as it is, finished wrong; 703,083 under the rule, stopped at the check.
+
+Leave those two out and the other 25 of the kept 27 take 56,455 tokens as it is and 50,407 under the rule. But the bar was tokens a question over all 54, and it misses. On the 27 kept to one agent, the verifier turned down a first answer in 7 trials under the rule and in 3 as it is. With 27 trials, that is too few to tell from chance.
+
+**What follows.** The plan said the rule goes to the default only if all three bars hold, and one missed. So the rule stays off by default, as `--split-policy reads`. The largest single call was 69,244 tokens of the 100,000 allowed, so one agent still did not run out of room.
+
+### A rework that keeps its pages: the plan, written before the run
+
+**Why.** The split rule missed its token bar on two trials, and both went the same way. The verifier turned down a first answer, and the rework started from a brief that held the verifier's reason and the last product, but none of what the first attempt had read. So the agent read the filings again: 343k tokens on one trial and 703k on the other. Across the Loong tapes, the trials whose rework follows a product that read spent 40% of their tokens from the rework on.
+
+**The switch.** `--rework-keeps`, off by default.
+- The rework brief carries what the failed product's call read, each result once.
+- It keeps what fits one call, with a page to spare for what the verifier named. Where all of it does not fit, the oldest is left out first; where none fits, the brief is as before.
+- A rework after a merge that read nothing is unchanged.
+- The kept results open with a note whose first words arm `--then-live`.
+
+**Checked for free** (`data/exp/keeppages_dry.py` and `data/exp/keeppages_share.py`, each strategy replayed on its own):
+- **Off:** every trial on the paged tapes replays as it ran, with no request missing. The one exception is a HotpotQA trial under Genet that comes out 5 tokens different, and the code before the change gives the same 5: two strategies on that tape share a taped reply.
+- **On:** the only trials that change are those whose rework follows a product that read, and they change at the rework. That is 36 trials on the Loong tapes and 7 on HotpotQA.
+- **Rehearsed** against a stand-in endpoint that answers a rework at once: each of the 36 goes to the model at its rework and nowhere else, with 2 requests each. Answered that way, the 36 would take 5,079,781 tokens.
+
+| The 36, as taped | Trials | Right, wrong, stopped | Tokens | From the rework on |
+|---|---|---|---|---|
+| The head-to-head's 40, single | 10 | 0, 7, 3 | 1,262,275 | 497,886 |
+| The 40, Genet | 6 | 1, 2, 3 | 1,055,822 | 423,202 |
+| Its calibration, single | 2 | 0, 1, 1 | 208,356 | 81,576 |
+| Its calibration, Genet | 1 | 0, 1, 0 | 465,612 | 51,817 |
+| The 12 fresh, Genet | 3 | 0, 2, 1 | 1,053,088 | 361,245 |
+| The 54, Genet as it is | 3 | 1, 2, 0 | 328,263 | 154,704 |
+| The 54, under the split rule | 11 | 5, 4, 2 | 1,742,692 | 905,533 |
+| All | 36 | 7, 19, 10 | 6,116,108 | 2,475,963 |
+
+Of the 10 that stopped, 6 stopped on a right answer.
+
+**The live test.** `bash scripts/team_runs.sh keeppages`, one y.
+- **Steps:** each tape and strategy replayed on its own up to the rework, then live, on the 36 alone (`--ids`), with the head-to-head's model and limits. Then Sonnet 5.5 judges the 36.
+- **Cost:** about $0.35. The caps are $0.15, $0.13, $0.03, $0.03, $0.11, $0.05 and $0.27, and $0.20 for the judge.
+- **Caps raised, 11 November.** The fresh step stopped at its $0.11 cap after one of its three trials, which cost $0.058. The first four steps had finished, and $0.21 was spent in all. The caps of the four unfinished steps were raised to $0.30, $0.12 and $0.50, and $0.25 for the judge, with the bars unchanged. The fresh step runs again whole, and the run is now about $0.80 in all.
+
+| The bar, written before the run | Needed |
+|---|---|
+| Tokens | the 36 take at most 5,497,118: the rework's 2,475,963 cut by at least a quarter |
+| Right | at least 7 of the 36, as many as taped |
+| Wrong finishes | up by at most half the right finishes gained |
+
+Reported with no bar:
+- stops;
+- each tape;
+- the split rule's three bars on the 54, with kept pages in both arms;
+- the 40's single and Genet with kept pages, beside CrewAI.
+
+If all three hold, kept pages go to the default on the operator's go-ahead.
+
+**What it cannot show.**
+- The 54's two long reworks suggested the switch, so its 14 trials are in-sample. The other 22 trials' reworks were not looked at before.
+- A rework drawn again can differ by chance as well as by the switch, and there is one live draw against one taped draw.
+- HotpotQA's 7 are left out: they are short, and they are scored by exact match, not by the judge.
+
+### A rework that keeps its pages: the result, 11 November
+
+Run on Haiku 5.5 as planned, with Sonnet 5.5 judging the 36. Spend was $0.58:
+- $0.46 live, including $0.058 for the fresh step's first try, which stopped at its cap;
+- $0.12 for the judge's 35 calls. One trial had no answer to send.
+
+Every trial went to the model at its rework and nowhere else.
+
+| The 36 | Right | Finished wrong | Stopped | Tokens |
+|---|---|---|---|---|
+| As taped | 7 | 19 | 10 (6 on a right answer) | 6,116,108 |
+| Pages kept | 6 | 21 | 9 (5 on a right answer) | 7,154,697 |
+
+| The bar, written before the run | Needed | Result | |
+|---|---|---|---|
+| Tokens | at most 5,497,118 | 6,116,108 to 7,154,697 | **misses** |
+| Right | at least 7 | 7 to 6 | **misses** |
+| Wrong finishes | up by at most half the right gained | 19 to 21, with 1 fewer right | **misses** |
+
+By tape, as right, finished wrong and stopped, then tokens (no bar):
+
+| Trials | As taped | Pages kept |
+|---|---|---|
+| The 40, single, 10 | 0, 7, 3; 1,262,275 | 1, 7, 2; 1,390,800 |
+| The 40, Genet, 6 | 1, 2, 3; 1,055,822 | 0, 6, 0; 983,380 |
+| Calibration, single, 2 | 0, 1, 1; 208,356 | 0, 1, 1; 226,081 |
+| Calibration, Genet, 1 | 0, 1, 0; 465,612 | 0, 0, 1; 586,856 |
+| The 12 fresh, Genet, 3 | 0, 2, 1; 1,053,088 | 0, 1, 2; 1,891,387 |
+| The 54, Genet as it is, 3 | 1, 2, 0; 328,263 | 1, 2, 0; 331,877 |
+| The 54, under the split rule, 11 | 5, 4, 2; 1,742,692 | 4, 4, 3; 1,744,316 |
+
+**Why tokens rose.** The rework did not stop reading. Of its 73 calls that carried kept pages, 38 asked to read or search again. Each of those calls sent all the kept pages once more, so the rework's calls were fewer but much larger. On one fresh question, seven calls of 58,000 to 78,000 tokens each took the trial from 527,119 tokens to 845,687.
+
+The two long trials that suggested the switch went opposite ways:
+- `loong-44b5d8c0`: 342,747 tokens to 220,650. It finished right as taped, but stopped with its pages kept.
+- `loong-7d75bfc7`: 703,083 to 847,412, stopped both times.
+
+**Reported with no bar.**
+- **The 54, with kept pages in both arms:** Genet as it is was right 24 and wrong 24, at 65,200 tokens a question. Under the split rule it was right 27 and wrong 24, at 72,644. The split rule still misses its token bar.
+- **The 40, with kept pages:** one agent was right 23 and wrong 15, Genet right 19 and wrong 16. CrewAI was right 25 and wrong 15.
+
+**What follows.** All three bars missed, so `--rework-keeps` stays off by default. Pages a rework already holds do not stop Haiku reading more, and carrying them makes every further call dearer. A rework that is to cost less needs a limit on what it reads, not only what it is given.
+
+The tapes are `h2h-calib-genet`, `h2h-calib-crewai`, `h2h-calib-judged`, `h2h-loong-genet`, `h2h-loong-crewai`, `h2h-hotpot-genet`, `h2h-hotpot-crewai`, `h2h-loong-judged`, `h2h-wording-nine`, `h2h-wording-nine-judged`, `h2h-fresh-plain`, `h2h-fresh-same`, the four `h2h-rereads-*` live tapes and their judged tapes, `h2h-split-today`, `h2h-split-reads` and `h2h-split-judged`, and the `h2h-keeps-*` live tapes and `h2h-keeps-judged`. They hold SEC filing text and HotpotQA paragraphs (CC BY-SA 4.0), so they stay local until their licences are checked. The scorer is `data/exp/h2h_read.py`.
+
+## 11 November 2026: the tapes read again, no new calls
+
+Three questions about the record itself, answered from tapes and results already on disk. Nothing was sent to a model.
+
+### Does the verifier's rework pay?
+
+`data/exp/rework_audit.py` replays each tape whole, with a probe at the rework. When the lead is sent back, the probe keeps the product it is sent back with and the tokens spent so far, and the trial then runs on from the tape as it did.
+
+1,251 trials on generated questions and 324 on Loong and HotpotQA replay exactly as recorded. Another 141, on older tapes whose briefs have changed since, do not, and are left out.
+
+Generated questions have an answer key, so the product the verifier failed is graded too:
+
+| Generated questions | Trials | Reworked | Failed product was right | Then finished right | Failed product was wrong | Then fixed | Then finished wrong | Tokens from the rework on | With no rework |
+|---|---|---|---|---|---|---|---|---|---|
+| Haiku 5.5 | 873 | 129 | 23 | 16 | 106 | 29 | 2 | 8% | right -45, wrong -2 |
+| Sonnet 5.5 | 192 | 46 | 21 | 16 | 25 | 0 | 0 | 13% | right -16 |
+| Opus 5.5 | 66 | 7 | 0 | 0 | 7 | 1 | 0 | 10% | right -1 |
+| Haiku, Sonnet checking | 120 | 26 | 11 | 6 | 15 | 5 | 0 | 10% | right -11 |
+| All | 1,251 | 208 | 55 | 38 | 153 | 35 | 2 | 9% | right -73, wrong -2 |
+
+The public benchmarks are graded after the run, so here the failed product is not:
+
+| Public benchmarks, Haiku 5.5 | Trials | Reworked | After the rework: right, wrong, stopped | Tokens from the rework on | With no rework |
+|---|---|---|---|---|---|
+| Loong | 264 | 67 | 8, 26, 33 (13 on a right answer) | 13% | right -8, wrong -26 |
+| Of those, one agent or a lead alone | 162 | 36 | 7, 19, 10 | 19% | right -7, wrong -19 |
+| Of those, split | 102 | 31 | 1, 7, 23 | 4% | right -1, wrong -7 |
+| HotpotQA | 60 | 14 | 6, 5, 3 | 13% | right -6, wrong -5 |
+
+What it shows:
+- **On generated questions the rework pays.** Of 153 products the verifier rightly failed, the rework fixed 35 and let 2 through wrong. With no rework, 73 right finishes would be lost to stop 2 wrong ones, for 9% of the tokens.
+- **About half its right finishes undo the verifier's own false alarms.** 55 failed products were right, and 38 of them finished right after the rework. On Sonnet the rework fixed none of 25 wrong products; all its value was in false alarms, and on one agent it took 44% of the tokens.
+- **On Loong the rework let wrong answers through, 26 to 8.** The failed products are not graded there, so this cannot say whether the rework broke right answers or failed to fix wrong ones. Grading them would take Loong's judge on 67 products.
+- **The rework stays.** Stopping instead of reworking on work like Loong is a question for a test written before it runs; this reading only suggests it.
+
+### Replays that are exact
+
+Trials run one at a time, so a tape replayed with all its strategies, in their order, is the run as it went. The head-to-head's HotpotQA tape replays 60 of 60 that way. One strategy replayed alone could be served another's reply where both sent the same request: Genet alone on that tape came out 5 tokens off on one trial.
+
+Each exchange is now marked with the trial that sent it, and a replay serves each trial its own replies (`taskorg/tape.py`), so one strategy replays alone exactly. A tape from before the marks is served as before. `compare` says so when asked to replay only some of its strategies, or in another order.
+
+### What is noise
+
+The live comparisons are small: 12 to 54 questions an arm. `taskorg paired FIRST SECOND` (`taskorg/paired.py`) pairs two arms question by question:
+- **Right or wrong finishes:** only the questions where the arms differ count. An exact two-sided sign test on those gives how often a split at least that uneven comes from chance.
+- **Tokens a question:** the mean difference, with a 95% bootstrap range.
+
+`data/exp/noise.py` reads every comparison so far that way. p under 0.05, or a range that leaves out zero, counts as beyond noise:
+
+| Comparison | Questions | Right | Wrong | Tokens a question |
+|---|---|---|---|---|
+| Loong head-to-head, Genet against one agent | 40 | 22 to 20, p 0.69 | 15 to 12, p 0.45 | +13.0k (-7.3k to +34.1k) |
+| Genet against CrewAI | 40 | 25 to 20, p 0.12 | 15 to 12, p 0.45 | **-39.6k (-76.1k to -5.1k)** |
+| One agent against CrewAI | 40 | 25 to 22, p 0.25 | 15 to 15, p 1.00 | **-52.6k (-83.0k to -23.4k)** |
+| Split rule, the 54 | 54 | 24 to 28, p 0.22 | 24 to 24, p 1.00 | +7.5k (-15.8k to +37.1k) |
+| Split rule in-sample, the 40 | 40 | 20 to 22, p 0.69 | 12 to 15, p 0.45 | -13.0k (-34.1k to +7.3k) |
+| Kept pages | 36 | 7 to 6, p 1.00 | 19 to 21, p 0.69 | +28.9k (-2.4k to +70.1k) |
+| Rework may read | 20 | 0 to 4, p 0.12 | 3 to 9, p 0.07 | **+65.4k (+47.7k to +85.4k)** |
+| Same-measure note, Genet | 12 | 3 to 4, p 1.00 | 5 to 5, p 1.00 | **-80.5k (-167.8k to -12.8k)** |
+| Sweep at 8,000, 4 parts against one agent | 12 | **1 to 10, p 0.004** | 1 to 0, p 1.00 | -2.5k (-17.5k to +15.7k) |
+| Sweep at 8,000, 10 parts against one agent | 12 | **1 to 11, p 0.006** | 1 to 0, p 1.00 | **+10.5k (+3.2k to +19.2k)** |
+| Sweep at 8,000, 20 parts against one agent | 12 | **1 to 9, p 0.008** | 1 to 1, p 1.00 | **+43.6k (+36.3k to +52.2k)** |
+| Sweep at 8,000, Genet against one agent | 12 | **1 to 9, p 0.008** | 1 to 0, p 1.00 | 0.0k (-13.0k to +15.4k) |
+| Sweep at 64,000, 20 parts against 4 | 12 | 12 to 9, p 0.25 | 0 to 2, p 0.50 | **+59.4k (+56.8k to +62.5k)** |
+
+What holds:
+- **Splitting where one call cannot hold the work.** One agent was right on 1 of 12, while every split and Genet got 8 to 11.
+- **Tokens.** Genet and one agent used fewer than CrewAI on Loong, and parts beyond four cost more where the work fits.
+
+What does not hold:
+- **Every right or wrong difference on Loong.** CrewAI's 25, one agent's 22 and Genet's 20 cannot be told from a tie, and nor can Genet's 12 wrong against 15. "Genet missed its accuracy bar" and "where it split, it did worse" go beyond what 40 questions show.
+- **The split rule's +4, and each of the three fixes.**
+
+From now on a readout gives each difference with its noise, and a bar names a difference beyond noise, not a count.
+
+### The split rule, where it acts
+
+The split rule's bars were set on all 54 questions, but it changes only the questions Genet splits. On the ones Genet keeps to one agent, both arms are one agent, and they differ only by Genet's planning call and the draw of each reply. Read on the questions Genet split:
+
+| Where Genet split | Questions | Right | Wrong | Tokens a question |
+|---|---|---|---|---|
+| The 54, new questions | 27 | 9 to 13 (+4 / -0), p 0.12 | 12 to 13, p 1.00 | -12.3k (-34.7k to +8.4k) |
+| The 40, which suggested the rule | 13 | 4 to 7 (+3 / -0), p 0.25 | 4 to 6, p 0.50 | -40.9k (-83.0k to -1.3k) |
+| Both | 40 | **13 to 20 (+7 / -0), p 0.02** | 16 to 19, p 0.45 | **-21.6k (-42.2k to -2.2k)** |
+| Where Genet kept one agent, both | 54 | 31 to 30, p 1.00 | 20 to 20, p 1.00 | +13.9k (-9.5k to +44.2k) |
+
+On every question where the two arms differed, one agent was the one right: 7 times, against none. Its extra wrong finishes are Genet's stops become answers: Genet stopped on 11 of the 40.
+
+The pooled result includes the 13 questions that suggested the rule, so it is not a clean test. The new questions alone point the same way but are within noise.
+
+The Loong financial questions are used up, so a clean test needs more questions: other kinds of Loong question, or the 54 drawn again. At the rate seen, about 108 split questions would put a 5-to-1 split beyond noise.
+
+The bars set before the run hold as written: the rule stays off by default until the operator decides.
+
+**Time, where it acts.** On the 54, the rule finished sooner on the questions Genet split: -10.3s on 30s, or -35% (-14.9 to -5.4), faster on 23 of 27, p under 0.001. Over all 54 it was faster on 41 of 54.
+
+**Drawn again: the plan, written before the run.** `bash scripts/team_runs.sh splitagain`, one y, about $1.70.
+- **What runs:** the 54 again, both arms, with the same model, limits and judge.
+- **How it is read:** pooled with the first draw, both out of sample, on the questions Genet split in each draw.
+
+| The bar, written before the run | Needed |
+|---|---|
+| Right | the rule has more, beyond noise (p under 0.05) |
+| Wrong finishes | up by at most half the right gained |
+| Time a question | the rule is faster, beyond noise |
+
+Reported with no bar:
+- the second draw alone;
+- all 54 in each draw;
+- tokens a question.
+
+If all three hold, the rule goes to the default on the operator's go-ahead.
+
+**Drawn again: the result.** Ran 11 November, $1.18: Genet $0.42, the rule $0.44, the judge $0.32. This time Genet split on 24 of the 54; the rule split on none.
+
+| Where Genet split | Questions | Right | Wrong | Time a question | Tokens a question |
+|---|---|---|---|---|---|
+| The first draw | 27 | 9 to 13 (+4 / -0), p 0.12 | 12 to 13, p 1.00 | 29.7s to 19.3s, -35%; faster on 23, p under 0.001 | -12.3k (-34.7k to +8.4k) |
+| The second draw | 24 | 7 to 11 (+4 / -0), p 0.12 | 12 to 13, p 1.00 | 26.9s to 20.2s, -25%; faster on 17, p 0.06 | +11.2k (-7.7k to +33.4k) |
+| Both draws | 51 | **16 to 24 (+8 / -0), p 0.008** | 24 to 26 (+5 / -3), p 0.73 | **28.4s to 19.7s, -31% (-12.1s to -5.1s); faster on 40, p under 0.001** | -1.3k (-16.3k to +13.8k) |
+
+| The bar, written before the run | Needed | Result |
+|---|---|---|
+| Right | the rule has more, beyond noise | 16 to 24, +8 / -0, p 0.008: **holds** |
+| Wrong finishes | up by at most half the right gained (4) | 24 to 26, up 2: **holds** |
+| Time a question | the rule is faster, beyond noise | -31%, faster on 40 of 51, p under 0.001: **holds** |
+
+All three hold. Each draw on its own gave the same +4 / -0. On every question where the two arms differed on right, the rule was the one that was right: 8 times, against none.
+
+**Where the gain comes from.** Genet stopped on 11 of the 51 questions where it split; the rule stopped on 1. Of Genet's 11 stops, the rule got 5 right and 5 wrong. Of Genet's 24 wrong finishes, the rule got 3 right. All 16 of Genet's right finishes stayed right. So the rule's extra wrong finishes are Genet's stops become answers, and they are fewer than its extra right ones.
+
+Reported with no bar:
+- **All 54 in each draw.** Right 49 to 56 (+10 / -3), p 0.09, within noise; wrong 46 to 48. The second draw alone: right 25 to 28 (+5 / -2), p 0.45. The rule acts on under half the questions, so over all 54 its gain is diluted below the noise.
+- **Where Genet kept one agent** (57 questions over the two draws), both arms work as one agent: right 33 to 32, wrong 22 to 22.
+- **Tokens a question.** No difference beyond noise, where Genet split (-1.3k) or over all 108 (+8.7k, -5.2k to +25.3k). The -21.6k reported above leaned on the 13 in-sample questions. Out of sample, it is gone.
+
+**What it means.** On Loong's financial questions, where Genet would split the work, one agent reading page by page is right more often and finishes about a third sooner, at about the same tokens. It changes nothing where Genet keeps one agent. Where a page of each file does not fit, as in the scale test below, it plans and splits as Genet does: there it replayed as Genet on 12 of 12.
+
+The bars set before the run all hold. The rule goes to the default on the operator's go-ahead.
+
+**Made the default, 11 November**, on the operator's go-ahead. `--split-policy` defaults to `reads`, and compare's `genet` is the rule; `genet-measured` is Genet as every earlier run had it. A paged tape from before names no policy, and its `genet` replays under `measured`, as it ran.
+
+**The rework under the new default (free, from the tapes).** Both draws were replayed whole, with a probe at the rework (`data/exp/rework_default.py`): 216 of 216 trials replayed as recorded. The judge scored only final products, so what is counted is where each rework ended.
+
+| Both draws | Reworked | Then right | Then wrong | Then stopped | Tokens from the rework on |
+|---|---|---|---|---|---|
+| The rule (the default) | 24 of 108 | 9 | 11 | 4 | 1,418,776 (19%) |
+| Genet as it was | 24 of 108 | 4 | 8 | 12 | 527,078 (8%) |
+
+- **Genet as it was:** 18 of its 24 reworks followed a split, and 11 of those stopped. That is most of its stops where it split.
+- **Under the rule:** every rework follows one agent's product, and 20 of 24 end in an answer: 9 right, 11 wrong.
+- **Stopping instead of reworking:** under the rule, this would give up 9 right finishes to avoid 11 wrong ones, and save about 13,100 tokens a question. On the synthetic tapes, the rework fixed 35 wrong products for 2 it broke.
+
+So on Loong the rework is about even. Whether it pays depends on what a wrong answer costs against no answer, so it stays as it is.
+
+**The failed products, judged** (11 November, $0.06; `bash scripts/team_runs.sh firstjudge`). `data/exp/first_products.py` took the 24 products from the replays, and the judge scored the 19 with an answer line, with Loong's own prompt. Of the 24, the judge scored 7 right (80 or more) and 12 not right; 5 had no answer line.
+
+| When the verifier failed it | Products | Then right | Then wrong | Then stopped |
+|---|---|---|---|---|
+| Right | 7 | 5 | 0 | 2 |
+| Not right, or no answer | 17 | 4 | 11 | 2 |
+
+- **The verifier turned down a right answer about 3 times in 10,** and the rework gave 5 of the 7 back. It turned none of them wrong.
+- **The rework's wrong finishes** are wrong products the verifier had caught: 11 of 17 went back out wrong.
+- **Why the 7 were failed:**
+  - In 5, the kernel's quote check had flagged a quote as not in its file.
+  - In 2, the ANSWER line was not last.
+  - In 1, the product named additional paid-in capital for "capital surplus".
+
+  Some had more than one reason.
+
+**A bug this found.** Loong's 2024 filings put a zero-width space (U+200B) after many figures. A model's quote leaves it out, and the kernel's quote check did not read it as a space, so a quote that is in the file was flagged as not in it. The tapes were replayed with it read as a space (`data/exp/zero_width.py`, every trial as recorded):
+- 31 of the 190 flags on the Loong tapes were false for this reason alone;
+- 20 products were flagged only falsely;
+- all of them were on the 2024 filings.
+
+Two of the 7 right products the verifier failed had only such flags. The other three flagged quotes were reworded tables ("General and administrative | 10,135 | 12,975"), which the check is right to flag. **Fixed the same day,** on the operator's go-ahead: the check reads zero-width characters as space. A fix changes what the verifier is told, so a benchmark run's config names the check (`quote_spaces`). A benchmark tape from before names nothing, and replays under the check as it was. Whether the fix changes the rework on Loong is not yet measured.
+
+**Measuring the fix: the plan, written before the run.** Replayed under the fixed check (`data/exp/quote_diverge.py`), 11 of the split rule's 108 trials send a verifier brief the tapes do not have: 4 in the first draw and 7 in the second. `bash scripts/team_runs.sh quotefix` replays each of the 11 to that brief and goes to the model from there (`--fixed-quotes --then-live`). The other 97 are as taped. Then the judge scores the 11. About $0.15, with caps of $0.15, $0.25 and $0.15.
+
+A rehearsal with a stand-in model went live in exactly those 11, each at its verifier. The run is built to share the Mac with other work:
+- one small process at a time (a Loong replay peaks near 130 MB);
+- steps of 4 and 7 trials that are not run again once finished;
+- before each step, a wait while macOS reports memory short (`GENET_MEMORY_FLOOR`, 15% free by default).
+
+It is reported with no bar, paired with the 11 as taped. The fix stays either way.
+
+**Measuring the fix: the result.** It ran 11 November alongside another project's long job, and finished in about two minutes for $0.06: $0.013 and $0.019 live, and $0.033 for the judge. Of the 108 trials, 97 replayed as taped.
+
+| The 11, as taped against the fixed check | Right | Wrong | Stopped | Tokens |
+|---|---|---|---|---|
+| As taped | 6 | 5 | 0 | 875,357 |
+| The fixed check | 6 | 5 | 0 | 795,180 |
+
+- **No answer changed.** Right and wrong are the same on every one of the 11.
+- **Three reworks were saved.** Each had been sent back only on false flags, and now passed at the first check:
+  - one right answer, 69,483 tokens down to 19,202;
+  - one right answer, 86,216 down to 41,970;
+  - one wrong answer, 60,580 down to 20,195. The false flag had sent it back and its rework was wrong too, so the wrong answer is the same, at a third of the cost.
+- **One went the other way.** A wrong answer that had passed at once was sent back this time, from 39,790 tokens to 80,591. The changed brief drew a new reply.
+- **The other six** differ by under 15,000 tokens each.
+
+In all, 9% fewer tokens on the 11, about 7,300 a question, within noise (-23,455 to +7,628). The fix stays: it corrects the check, saves the reworks false flags caused, and changed no answer here.
+
+**The next false alarm: where the product ends** (free, from the tapes). Two of the 7 right products the verifier failed under the split rule were failed partly because "the ANSWER line is not last".
+- **On the Loong tapes,** 18 of the verifier's 173 failures (10%) say so. On the synthetic tapes, 25 of 1,197 do.
+- **The products did end with their ANSWER line.** Every failure on the Loong tapes that says so was checked against the product's own text: 26 of 28 end with it.
+- **The cause was the kernel's own layout.** In the verifier's view, the product's text is followed by the evidence it gave, then the kernel's quote check and the sources, with nothing to show where the product stops. The verifier read them as part of the product.
+
+**Fixed the same day,** on the operator's go-ahead. The view now marks where the product's text ends: `[End of the product's text. Below: the evidence it gave, then the kernel's checks and sources.]`
+
+Every run's config names the view (`review_end`), and so does the verify bench's. A tape from before names nothing, and replays under the view as it was:
+- **Loong,** the rule's second draw: 54 of 54 as recorded.
+- **The verify bench of 29 October:** 120 of 120.
+- **The agent sweep, seed 113 at 8,000:** no request missed. As before the fix, 3 or 4 of its split-2 trials come out differently from one replay to the next, a different few each time. The tape is not the cause: it holds no request twice, and no request was missed. Each of them is a split-2 trial that stops at its budget while its two parts run side by side. When one part stops the run, the other stops at its next call, so how many calls it makes first depends on thread timing, live or replayed. Each ends stopped either way, with no answer; only a call or two of tokens differs.
+
+**Measured the same day** (`bash scripts/team_runs.sh markedreview`, $0.70: $0.39 live and $0.32 for the judge). All 108 of the split rule's trials over both draws were each replayed to its first verifier call and run live from there, with the mark. Everything else was as taped, the quote check included, so what changed is the mark's.
+
+| The 108 | Right | Wrong | Stopped | Verifier calls | Its failures | Failures naming the ANSWER line's place |
+|---|---|---|---|---|---|---|
+| As taped | 56 | 48 | 4 | 132 | 28 | 4 |
+| With the mark | 57 | 47 | 4 | 125 | 20 | 1 |
+
+- **Answers: within noise.** Right +3 / -2 (p 1.00), wrong +1 / -2. Tokens a question -413 (-5,831 to +5,393).
+- **The false complaint is gone.** The one failure left that names the ANSWER line's place is of a product whose answer runs on at the end of a paragraph, not on a line of its own. That is a point about the product's form, not about the kernel's layout.
+- **The verifier failed 8 fewer products.** Every first check was drawn again, so some of that is chance.
+- **Not comparable: time.** A replayed request takes no time, so these runs are faster than the taped ones for that reason alone.
+
+The mark stays.
+
+## 11 November 2026: does splitting still win at a real call limit?
+
+### The plan, written before the run
+
+**Why.** The firmest result so far is the 7 and 8 November sweep. With every call capped at 8,000 tokens, one agent was right on 1 of 12, and every split and Genet on 8 to 11 (p at most 0.01). But 8,000 is our own limit, set so the work would not fit one call at small scale; the model takes far more. And each note there is about 2,000 characters, so the limit bit on twenty notes together, not on any one note. So the result may say only that one agent cannot see twenty notes through an 8,000-token window. On Loong, at a 100,000 limit with reads paged, one agent never ran short of room.
+
+**The test.** `bash scripts/team_runs.sh scale`, one y.
+- **Questions:** the sweep's own 12, on seeds 113 and 114: 20 companies and 6 look-alikes a question.
+- **Notes:** each grown to about 30,000 characters with neutral sections (`compare --pad-notes`). The questions, the figures and every paragraph of each note are as they were. No padded sentence names revenue, sales, churn or a quarter. A question's notes come to about 270,000 tokens.
+- **Limits:** Loong's: 100,000 tokens a call, reads paged at 16,000 characters, 6 tool rounds. One agent may search as well as read, and has room to.
+- **Arms:** one agent, 4 parts, and Genet, on Haiku 5.5.
+- **Cost:** about $1 to $4, with a cap of $2.50 for each seed. An agent that searches costs the bottom of that range, and one that reads every page costs the top.
+- **Checked for free:** on the simulated model, every arm runs to its end. It reads every page, at 1.1 to 1.3 million tokens a trial.
+
+| The bar, written before the run | Needed |
+|---|---|
+| 4 parts against one agent | more right finishes, beyond noise (`taskorg paired`, p under 0.05) |
+| Genet against one agent | more right finishes, beyond noise |
+
+Reported with no bar:
+- wrong finishes, stops and tokens a question for each arm;
+- how one agent read (pages and searches), and its largest call;
+- where Genet split.
+
+**What it means.** If both bars hold, splitting still wins when the work passes a real limit, and the sweep's result was not an artifact of the 8,000 limit. If one agent copes, the sweep showed only what an 8,000 window cannot hold.
+
+**What it cannot show.** The questions are generated, and a sum or a ranking over 20 companies is the case most suited to splitting. Real documents are not padded with neutral sections.
+
+### The result, 11 November
+
+Run on Haiku 5.5 as planned. Spend was $2.30: $1.09 for seed 113 and $1.22 for seed 114.
+
+| The sweep's 12 questions, notes past a 100,000 limit | Right | Finished wrong | Stopped | Tokens a question |
+|---|---|---|---|---|
+| One agent | 6 | 1 | 5 | 590,511 |
+| 4 parts | 4 | 1 | 7 (2 on a right answer) | 510,578 |
+| Genet | 4 | 0 | 8 (1 on a right answer) | 524,726 |
+
+| The bar, written before the run | Result | |
+|---|---|---|
+| 4 parts beat one agent beyond noise | right 6 to 4 (+1 / -3), p 0.62 | **misses** |
+| Genet beats one agent beyond noise | right 6 to 4 (+2 / -4), p 0.69 | **misses** |
+
+Tokens a question are within noise too: 4 parts -79.9k (-204.5k to +47.6k), Genet -65.8k (-202.4k to +75.6k).
+
+**How one agent coped.** It searched, from 103 to 140 times for each family of questions on each seed, and read what the searches pointed to. Its largest call was 80,745 tokens, inside the limit. The parts read page by page and hardly searched; their largest call was 74,646. Every stop in every arm was the verifier's.
+
+**Free check:** the split rule (`genet-reads`) replayed on these tapes does what Genet did on all 12 trials. A page of each named note does not fit, so it plans and splits, as it should.
+
+**What it means.** At the 8,000 limit, one agent was right on 1 of 12 and every split on 8 to 11. At a real limit, with the same questions, notes coming to nearly three times the limit and search at hand, one agent did as well as the splits. Within noise, it did better. So the sweep's result was the 8,000 window's: splitting paid where one agent could not see the material, not wherever the material passed one call. No result so far shows splitting improving accuracy at a real limit, and the gates' reason to split, that the named files do not fit one call, did not pay here either.
+
+**Why the runs stopped.** Every stop was the verifier's, and it was mostly right to stop them:
+- **15 of the 20 stopped products said themselves they were not finished.** They gave "a partial sum of 15 of 20 companies", "unresolved" or "not determined", or had no answer line.
+- **2 were wrong answers it caught.**
+- **3 were right answers it turned down,** because the product's own support was shaky: it cited a look-alike's file (`pinecrest-energies.md` for Pinecrest Energy), or said itself that the year was unconfirmed.
+
+What stopped the agents was settling all 20 companies in long notes. They could not tell look-alike names apart, could not choose between a figure and a near one from another year, and would not count an undated line. With short notes at 64,000 the same questions scored 11 or 12 of 12 for every arm, so this is the long notes, not the number of agents.
+
+**What splitting bought: time.** Parts run side by side. Here is the time a question against one agent, with `taskorg/paired.py`'s sign test and bootstrap range:
+
+| Time a question | Against one agent | Faster, slower on | p |
+|---|---|---|---|
+| This run, 4 parts | -38.4s on 97s, -40% (-51.3 to -25.7) | 12, 0 | under 0.001 |
+| This run, Genet | -32.9s, -34% (-45.4 to -19.9) | 11, 1 | 0.006 |
+| The sweep at 8,000, 4 parts | -31.1s on 66s, -47% (-51.2 to -7.2) | 10, 2 | 0.04 |
+| The sweep at 64,000, 4 parts | -28.7s on 50s, -57% (-34.3 to -23.1) | 12, 0 | under 0.001 |
+| The Loong head-to-head, Genet | +5.3s on 20s, +27% (+1.5 to +8.9) | 10, 30 | 0.002 |
+
+On large work, splitting finished sooner, with accuracy within noise of one agent's. On Loong's smaller work, Genet's planning call and merge made it slower.
 
 ## 31 August and 1 September 2026: v0.1 on xAI
 

@@ -142,7 +142,12 @@ class Assessment:
         }
 
 
-SPLIT_POLICIES = ("measured", "stated")
+# "reads" judges a proposal as "measured" does. Its difference is before any plan (Engine._one_agent_reads): with
+# paged reads, when one agent reading a page of each file can hold what it needs, there is no planning call.
+SPLIT_POLICIES = ("measured", "stated", "reads")
+# The default since 11 November 2026. Where Genet split on Loong, two draws of 54 questions: right 16 to 24 (+8 / -0,
+# p 0.008), wrong 24 to 26, 31% sooner (docs/LIVE_TESTS.md). Before, "measured"; tapes from then replay under it.
+SPLIT_DEFAULT = "reads"
 
 
 def _need(open_: list[Assessment], policy: str, declared: bool, material, context_limit: int | None,
@@ -230,7 +235,8 @@ def assess(
                            call, less part_overhead when that is known.
                            Material that cannot be measured is not a reason: a part
                            with none goes to the lead, and the others are judged alone.
-                           Under policy="stated", the named failures are enough.
+                           Under policy="stated", the named failures are enough; "reads"
+                           judges as "measured" does.
       3. could we          the budget tier allows a split; the budget pays for every
                            sub-agent plus merge and verify; the worker cap holds
 

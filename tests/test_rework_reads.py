@@ -14,7 +14,7 @@ from taskorg.budget import Budget
 from taskorg.cli import _add_run_args, _engine, main
 from taskorg.errors import InvariantError
 from taskorg.factory import new_run
-from taskorg.loop import GAP_ARM, REWORK_ARM, REWORK_HEAD, REWORK_READS, Engine
+from taskorg.loop import GAP_ARM, KEEP_ARM, REWORK_ARM, REWORK_HEAD, REWORK_READS, Engine
 from taskorg.memory_store import MemoryStore
 from taskorg.models import Artifact
 from taskorg.tape import Continuing, LiveSpend, Player, Recorder, request_key
@@ -158,8 +158,9 @@ def test_then_live_takes_one_switch_to_arm_it(tmp_path: Path, monkeypatch, capsy
                                 "compare": {}}) + "\n")
     base = ["compare", "--adapter", "anthropic", "--replay", str(tape), "--record", str(tmp_path / "l.jsonl"),
             "--then-live", "--out", str(tmp_path / "o.json"), "--per-family", "1", "--families", "lookup"]
-    for extra in ([], ["--gap-check", "--rework-reads"]):
-        assert main(base + extra) != 0 and "one of --gap-check or --rework-reads" in capsys.readouterr().out
+    for extra in ([], ["--gap-check", "--rework-reads"], ["--rework-reads", "--rework-keeps"], ["--rework-keeps", "--fixed-quotes"]):
+        assert main(base + extra) != 0
+        assert "one of --gap-check, --rework-reads, --rework-keeps, --fixed-quotes or --marked-review" in capsys.readouterr().out
     monkeypatch.setenv("TASKORG_ANTHROPIC_KEY", "sk-not-a-real-key")
     monkeypatch.setenv("TASKORG_MODEL_NAME", "claude-sonnet-5-5")
     monkeypatch.setenv("TASKORG_MODEL_EFFORT", "low")
@@ -225,7 +226,7 @@ class _Haiku:
         return {"adapter": self.name, "model": self.model, "effort": self.effort}
 
 
-@pytest.mark.parametrize("switch,arm", [("gap_check", GAP_ARM), ("rework_reads", REWORK_ARM)])
+@pytest.mark.parametrize("switch,arm", [("gap_check", GAP_ARM), ("rework_reads", REWORK_ARM), ("rework_keeps", KEEP_ARM)])
 def test_then_live_arms_on_the_words_of_the_switch_it_measures(tmp_path: Path, monkeypatch, switch, arm):
     from taskorg import cli
 
@@ -234,7 +235,8 @@ def test_then_live_arms_on_the_words_of_the_switch_it_measures(tmp_path: Path, m
                                 "compare": {}}) + "\n")
     monkeypatch.setattr(cli, "pick_adapter", lambda name: _Haiku())
     args = argparse.Namespace(replay=str(tape), record=str(tmp_path / "l.jsonl"), adapter="anthropic",
-                              gap_check=switch == "gap_check", rework_reads=switch == "rework_reads")
+                              gap_check=switch == "gap_check", rework_reads=switch == "rework_reads",
+                              rework_keeps=switch == "rework_keeps")
     factory, _, recorder = cli._continuing_source(args, {}, "compare", "COMPARE")
     try:
         assert factory().tape.arm == arm

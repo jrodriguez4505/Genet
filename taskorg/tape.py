@@ -2,9 +2,13 @@
 with no key and no spend.
 
 The tape is JSON lines. The first line describes the adapter, never its key or base URL. Each
-later line is one request and what came back: the reply text and its usage, or the error. A replay
-serves the recorded reply for the same request, so the kernel, the gates and the grading can be
-refined against real replies. A request the tape never saw, because a prompt or brief changed
+later line is one request and what came back: the reply text and its usage, or the error, and the
+trial that sent it. A replay serves the recorded reply for the same request, so the kernel, the gates
+and the grading can be refined against real replies. Two trials may send the same request, as two
+strategies that work alike do, and the model answers each in its own way: a replay serves each trial
+the replies its own run got, so one strategy replayed alone is as exact as the whole run. A tape from
+before trials were marked serves identical requests in the order they were recorded, which is exact
+only for the whole run, its strategies in their order. A request the tape never saw, because a prompt or brief changed
 since, fails as LIVE and is counted, so a refinement shows where it left the recording.
 """
 
@@ -53,26 +57,35 @@ class Recorder:
             self._file.write(line + "\n")
             self._file.flush()
 
-    def _entry(self, key: str, payload: dict, reply: str | None, usage: dict, error: dict | None, started: float) -> None:
-        self._write({"key": key, "request": payload, "reply": reply, "usage": dict(usage or {}), "error": error,
+    def _entry(self, key: str, payload: dict, reply: str | None, usage: dict, error: dict | None, started: float,
+               trial: str | None = None) -> None:
+        mark = {"trial": trial} if trial else {}
+        self._write({"key": key, **mark, "request": payload, "reply": reply, "usage": dict(usage or {}), "error": error,
                      "latency_s": round(time.perf_counter() - started, 3)})
         with self._lock:
             self.count += 1
 
     def exchange(self, adapter, payload: dict) -> str:
         key = request_key(payload, adapter.max_reply_param)
+        trial = _trial(adapter)
         started = time.perf_counter()
         try:
             text = adapter._post(payload)
         except InvariantError as e:
-            self._entry(key, payload, None, adapter.last_usage, {"code": e.code, "message": e.message}, started)
+            self._entry(key, payload, None, adapter.last_usage, {"code": e.code, "message": e.message}, started, trial)
             raise
-        self._entry(key, payload, text, adapter.last_usage, None, started)
+        self._entry(key, payload, text, adapter.last_usage, None, started, trial)
         return text
 
     def close(self) -> None:
         with self._lock:
             self._file.close()
+
+
+def _trial(adapter) -> str | None:
+    """The trial an adapter is answering for (compare.run_trial names it), if any."""
+    trial = getattr(adapter, "trial", None)
+    return trial if isinstance(trial, str) and trial else None
 
 
 def _usage_ok(usage) -> bool:
@@ -84,7 +97,8 @@ def _usage_ok(usage) -> bool:
 
 
 class Player:
-    """Serves a tape's replies by request. Identical requests get the recorded replies in order, then the last again."""
+    """Serves a tape's replies by request: to a trial the tape marked, its own replies, in order; otherwise the recorded
+    replies in order. Then the last again."""
 
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -106,9 +120,11 @@ class Player:
                     break
                 raise
             self._replies.setdefault(self._entry(entry, n), []).append(entry)
-        self._served: dict[str, int] = {}
+        self._served: dict = {}
         self._lock = threading.Lock()
         self.served = self.repeated = self.misses = 0
+        # A tape from before trials were marked is exact only replayed whole: cli says so when a replay is not.
+        self.marked = any("trial" in e for entries in self._replies.values() for e in entries)
 
     def _parse(self, line: str, n: int) -> dict:
         try:
@@ -140,6 +156,7 @@ class Player:
         ok = (
             isinstance(e.get("key"), str) and _KEY.fullmatch(e["key"])
             and _usage_ok(e.get("usage", {}))
+            and ("trial" not in e or (isinstance(e["trial"], str) and e["trial"]))
             and (
                 (isinstance(e.get("reply"), str) and error is None)
                 or (e.get("reply") is None and isinstance(error, dict) and error.get("code") in ERROR_CODES
@@ -151,18 +168,21 @@ class Player:
         e.setdefault("usage", {})
         return e["key"]
 
-    def take(self, key: str) -> dict | None:
-        """The recorded exchange for this request, in order, then the last again; None, counted, if there is none."""
+    def take(self, key: str, trial: str | None = None) -> dict | None:
+        """The recorded exchange for this request, in order, then the last again; None, counted, if there is none.
+        trial: the trial asking. Where the tape marked that trial's own exchanges, it gets those."""
         with self._lock:
             entries = self._replies.get(key)
             if not entries:
                 self.misses += 1
                 return None
-            i = self._served.get(key, 0)
-            self._served[key] = i + 1
+            own = [e for e in entries if trial and e.get("trial") == trial]
+            pool, slot = (own, (key, trial)) if own else (entries, key)
+            i = self._served.get(slot, 0)
+            self._served[slot] = i + 1
             self.served += 1
-            self.repeated += i >= len(entries)
-            return entries[min(i, len(entries) - 1)]
+            self.repeated += i >= len(pool)
+            return pool[min(i, len(pool) - 1)]
 
     @staticmethod
     def serve(adapter, entry: dict | None) -> str:
@@ -175,7 +195,7 @@ class Player:
         return entry["reply"]
 
     def exchange(self, adapter, payload: dict) -> str:
-        return self.serve(adapter, self.take(request_key(payload, adapter.max_reply_param)))
+        return self.serve(adapter, self.take(request_key(payload, adapter.max_reply_param), _trial(adapter)))
 
 
 class LiveSpend:
@@ -210,7 +230,7 @@ class Continuing:
 
     def exchange(self, adapter, payload: dict) -> str:
         if not self.armed:
-            entry = self.player.take(request_key(payload, adapter.max_reply_param))
+            entry = self.player.take(request_key(payload, adapter.max_reply_param), _trial(adapter))
             if entry is not None or self.arm not in json.dumps(payload, ensure_ascii=False):
                 return self.player.serve(adapter, entry)
             self.armed = True

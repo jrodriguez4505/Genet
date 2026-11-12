@@ -502,6 +502,219 @@ def test_the_rereads_run_needs_its_tapes(tmp_path: Path):
     assert "Missing data/tapes/h2h-loong-genet.jsonl" in out and _calls(log) == []
 
 
+def test_the_split_rule_run_puts_both_genets_on_the_rest_and_needs_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "splitrule") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitrule")
+    today, reads, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $1.70" in out and "Done." in out and KEY not in out
+    for call, (name, team, cap) in zip((today, reads), (("h2h-split-today", "genet", "1.50"),
+                                                        ("h2h-split-reads", "genet-reads", "0.90"))):
+        # Live from the start, on the questions no earlier run used, with the head-to-head's limits.
+        assert "compare" in call and "--adapter anthropic" in call and f"--max-spend {cap} " in call
+        assert "--benchmark loong " in call and "--which rest " in call and f"--strategies {team} " in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--replay" not in call and "--then-live" not in call and "--ids" not in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        assert call.endswith(f"key={KEY}")
+    assert "h2h-judge " in judge and "--results data/compare/h2h-split-today.json " in judge
+    assert "--results data/compare/h2h-split-reads.json " in judge
+    assert "--model claude-sonnet-5-5" in judge and "--max-spend 0.50 " in judge
+    assert "--record data/tapes/h2h-split-judged.jsonl" in judge and readout.startswith("args=-I -")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "splitrule")
+    assert again.count("already done") == 3 and len(_calls(log)) == 5
+
+
+def test_the_split_rule_run_needs_the_questions(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitrule")
+    assert "Missing data/h2h/loong-questions/loong.jsonl" in out and _calls(log) == []
+
+
+KEEPS = [  # name, sample, team, tape, the trials whose rework follows a product that read (keeppages_dry.py), cap
+    ("h2h-keeps-main-single", "main", "single", "h2h-loong-genet",
+     "loong-83cac46c,loong-7b279316,loong-612f5816,loong-41b01b58,loong-751c3613,loong-1192a01e,loong-d29b8b36,"
+     "loong-5a035018,loong-12588c71,loong-053361f2", "0.15"),
+    ("h2h-keeps-main-genet", "main", "genet", "h2h-loong-genet",
+     "loong-612f5816,loong-9fd8f0e0,loong-1192a01e,loong-5a035018,loong-12588c71,loong-053361f2", "0.13"),
+    ("h2h-keeps-calib-single", "calibration", "single", "h2h-calib-genet", "loong-f396c611,loong-8bc4a2b9", "0.03"),
+    ("h2h-keeps-calib-genet", "calibration", "genet", "h2h-calib-genet", "loong-f396c611", "0.03"),
+    ("h2h-keeps-fresh-genet", "fresh", "genet", "h2h-fresh-plain", "loong-c9506966,loong-af2ba1aa,loong-197ead69", "0.30"),
+    ("h2h-keeps-rest-genet", "rest", "genet", "h2h-split-today", "loong-96942bc4,loong-0b59de4d,loong-ed234f29", "0.12"),
+    ("h2h-keeps-rest-reads", "rest", "genet-reads", "h2h-split-reads",
+     "loong-05a8ab3a,loong-44b5d8c0,loong-5b14133c,loong-8ee4e095,loong-926878f8,loong-a62d61a2,loong-70d2f3da,"
+     "loong-7d75bfc7,loong-ed234f29,loong-80bea483,loong-c87acb6c", "0.50"),
+]
+KEEPS_FILES = ("data/tapes/h2h-loong-genet.jsonl", "data/tapes/h2h-calib-genet.jsonl", "data/tapes/h2h-fresh-plain.jsonl",
+               "data/tapes/h2h-split-today.jsonl", "data/tapes/h2h-split-reads.jsonl", "data/compare/h2h-calib-judged.json",
+               "data/compare/h2h-fresh-plain-judged.json", "data/compare/h2h-split-judged.json")
+
+
+def test_the_keep_pages_run_goes_to_the_model_only_at_the_rework_and_needs_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    (tmp_path / "data/tapes").mkdir()
+    for f in KEEPS_FILES:
+        (tmp_path / f).write_text("")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "keeppages") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
+    *steps, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.60 more" in out and "Done." in out and KEY not in out
+    assert "at most 5,497,118 tokens" in out and len(steps) == 7 == len(KEEPS)
+    assert sum(len(ids.split(",")) for *_, ids, _ in KEEPS) == 36
+    for call, (name, sample, team, tape, ids, cap) in zip(steps, KEEPS):
+        # Each tape with the settings it was recorded under, the switch on, and live only where it changes a rework.
+        assert "compare" in call and "--adapter anthropic" in call and f"--max-spend {cap} " in call
+        assert "--benchmark loong " in call and f"--which {sample} " in call and f"--strategies {team} " in call
+        assert f"--replay data/tapes/{tape}.jsonl " in call and f"--ids {ids}" in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--rework-keeps --then-live" in call and "--rework-reads" not in call and "--gap-check" not in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+        assert call.endswith(f"key={KEY}")
+    assert "h2h-judge " in judge and all(f"--results data/compare/{s[0]}.json " in judge for s in KEEPS)
+    assert "--model claude-sonnet-5-5" in judge and "--max-spend 0.25 " in judge
+    assert "--record data/tapes/h2h-keeps-judged.jsonl" in judge and readout.startswith("args=-I -")
+    # Done once, nothing is paid for twice.
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
+    assert again.count("already done") == 8 and len(_calls(log)) == 10
+
+
+def test_the_keep_pages_run_needs_its_tapes(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "keeppages")
+    assert "Missing data/tapes/h2h-loong-genet.jsonl" in out and _calls(log) == []
+
+
+def test_the_scale_run_asks_the_sweeps_questions_at_a_real_limit_and_needs_a_y(tmp_path: Path):
+    log, env = _held_tree(tmp_path)
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "scale") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "scale")
+    *steps, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $1 to $4" in out and "Done." in out and KEY not in out
+    assert len(steps) == 2
+    for call, seed in zip(steps, (113, 114)):
+        # The sweep's questions, notes grown past a 100,000 limit, paged reads; live from the start.
+        assert "compare" in call and "--adapter anthropic" in call and "--max-spend 2.50 " in call
+        assert f"--seed {seed} " in call and "--families aggregate,breadth --per-family 3 --entities 20 --distractors 6" in call
+        assert "--pad-notes 30000 --context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000" in call
+        assert "--tool-rounds 6 --strategies single,split-4,genet" in call and "--replay" not in call
+        assert f"--record data/tapes/scale-s{seed}.jsonl" in call and f"--out data/compare/scale-s{seed}.json" in call
+        assert call.endswith(f"key={KEY}")
+    assert readout.startswith("args=- ")  # the readout, through Python's stdin
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "scale")
+    assert again.count("already done") == 2 and len(_calls(log)) == 4
+
+
+def test_the_split_rule_runs_again_on_the_54_and_reads_both_draws(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    (tmp_path / "data/compare/h2h-split-judged.json").write_text("{}")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "splitagain") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitagain")
+    today, reads, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $1.70" in out and "Done." in out and KEY not in out
+    for call, (name, team, cap) in zip((today, reads), (("h2h-split2-today", "genet", "1.50"),
+                                                        ("h2h-split2-reads", "genet-reads", "0.90"))):
+        # A second draw, live from the start, as the first ran.
+        assert "compare" in call and f"--max-spend {cap} " in call and "--which rest " in call and f"--strategies {team} " in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--replay" not in call and f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+    assert "--results data/compare/h2h-split2-today.json " in judge and "--results data/compare/h2h-split2-reads.json " in judge
+    assert "--max-spend 0.50 " in judge and "--record data/tapes/h2h-split2-judged.jsonl" in judge and readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "splitagain")
+    assert again.count("already done") == 3 and len(_calls(log)) == 5
+
+
+def test_the_split_rule_run_again_needs_the_first_draw(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "splitagain")
+    assert "Missing data/compare/h2h-split-judged.json" in out and _calls(log) == []
+
+
+def test_the_failed_products_are_judged_once_with_a_y(tmp_path: Path):
+    log, env = _wording_tree(tmp_path)
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "firstjudge")
+    assert "Missing data/compare/h2h-first-products.json" in out and _calls(log) == []
+    (tmp_path / "data/compare/h2h-first-products.json").write_text("{}")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "firstjudge") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "firstjudge")
+    judge, readout = _calls(log)
+    assert "about $0.06" in out and "Done." in out and KEY not in out
+    # The judge alone, on Sonnet, capped and taped; no Haiku run and no smoke test.
+    assert "h2h-judge --results data/compare/h2h-first-products.json " in judge and "--model claude-sonnet-5-5" in judge
+    assert "--price-in 2 --price-out 10 --max-spend 0.25 " in judge and "--record data/tapes/h2h-first-judged.jsonl" in judge
+    assert "taskorg.cli compare" not in judge and readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "firstjudge")
+    assert again.count("already done") == 1 and len(_calls(log)) == 3
+
+
+def _quotes_tree(tmp_path: Path, **stub_env) -> tuple[Path, dict]:
+    log, env = _wording_tree(tmp_path, **stub_env)
+    for f in ("data/tapes/h2h-split-reads.jsonl", "data/tapes/h2h-split2-reads.jsonl", "data/compare/h2h-split-judged.json",
+              "data/compare/h2h-split2-judged.json"):
+        (tmp_path / f).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / f).write_text("{}")
+    return log, env
+
+
+def test_the_fixed_quote_check_goes_live_only_where_it_changes_a_check(tmp_path: Path):
+    log, env = _quotes_tree(tmp_path, GENET_MEMORY_FLOOR="0")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "quotefix") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "quotefix")
+    first, second, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.15" in out and "Done." in out and KEY not in out
+    for call, (name, tape, cap, ids) in zip((first, second), (("h2h-quotes-1", "h2h-split-reads", "0.15", "loong-05a8ab3a,loong-926878f8,loong-9dbb2495,loong-e4417f84"),
+                                                              ("h2h-quotes-2", "h2h-split2-reads", "0.25", "loong-05a8ab3a,loong-500d85cc,loong-926878f8,loong-bfe2f7f4,loong-9dbb2495,loong-c3f0bc88,loong-e4417f84"))):
+        # Each trial replays its tape to the brief the fix changes, then goes live; only the 11 that change.
+        assert "compare" in call and f"--max-spend {cap} " in call and "--which rest " in call
+        assert "--strategies genet-reads " in call and f"--replay data/tapes/{tape}.jsonl " in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert "--fixed-quotes --then-live" in call and f"--ids {ids} " in call
+        assert f"--record data/tapes/{name}.jsonl" in call and f"--out data/compare/{name}.json" in call
+    assert "--results data/compare/h2h-quotes-1.json --results data/compare/h2h-quotes-2.json " in judge
+    assert "--max-spend 0.15 " in judge and "--record data/tapes/h2h-quotes-judged.jsonl" in judge
+    assert readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "quotefix")
+    assert again.count("already done") == 3 and len(_calls(log)) == 5
+
+
+def test_the_fixed_quote_run_waits_while_memory_is_short_and_stops_keeping_what_finished(tmp_path: Path):
+    log, env = _quotes_tree(tmp_path, GENET_MEMORY_WAIT="0")
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "memory_pressure").write_text("#!/bin/bash\necho 'System-wide memory free percentage: 5%'\n")
+    (bin_ / "memory_pressure").chmod(0o755)
+    out = _session(tmp_path, env | {"PATH": f"{bin_}:{env['PATH']}"}, f"{KEY}\ny\n", "quotefix")
+    assert "Memory has stayed short (5% free, under 15%)" in out and "bash scripts/team_runs.sh quotefix" in out
+    assert _calls(log) == []
+    (bin_ / "memory_pressure").write_text("#!/bin/bash\necho 'System-wide memory free percentage: 40%'\n")
+    out = _session(tmp_path, env | {"PATH": f"{bin_}:{env['PATH']}"}, f"{KEY}\ny\n", "quotefix")
+    assert "Waiting for memory" not in out and len(_calls(log)) == 4
+
+
+def test_the_marked_view_goes_live_at_every_trials_first_check_in_four_steps(tmp_path: Path):
+    log, env = _quotes_tree(tmp_path, GENET_MEMORY_FLOOR="0")
+    assert "Not run." in _session(tmp_path, env, f"{KEY}\nn\n", "markedreview") and _calls(log) == []
+    out = _session(tmp_path, env, f"{KEY}\ny\n", "markedreview")
+    *steps, judge, readout = _calls(log)
+    assert "on claude-haiku-5-5" in out and "about $0.75" in out and "Done." in out and KEY not in out
+    assert len(steps) == 4
+    asked = []
+    for call, (part, tape) in zip(steps, (("1a", "h2h-split-reads"), ("1b", "h2h-split-reads"), ("2a", "h2h-split2-reads"),
+                                          ("2b", "h2h-split2-reads"))):
+        assert "compare" in call and "--max-spend 0.30 " in call and "--which rest " in call and "--strategies genet-reads " in call
+        assert f"--replay data/tapes/{tape}.jsonl " in call and "--marked-review --then-live" in call
+        assert "--context 100000 --max-calls 80 --max-seconds 1200 --page-chars 16000 --tool-rounds 6" in call
+        assert f"--record data/tapes/h2h-marked-{part}.jsonl" in call and f"--out data/compare/h2h-marked-{part}.json" in call
+        asked.append(call.split("--ids ")[1].split(" ")[0].split(","))
+    # Each draw's two halves are the 54, once each.
+    assert len(asked[0]) == len(asked[1]) == 27 and asked[0] == asked[2] and asked[1] == asked[3]
+    assert len(set(asked[0] + asked[1])) == 54
+    assert all(f"--results data/compare/h2h-marked-{s}.json" in judge for s in ("1a", "1b", "2a", "2b"))
+    assert "--max-spend 0.60 " in judge and "--record data/tapes/h2h-marked-judged.jsonl" in judge
+    assert readout.startswith("args=- ")
+    again = _session(tmp_path, env, f"{KEY}\ny\n", "markedreview")
+    assert again.count("already done") == 5 and len(_calls(log)) == 7
+
+
 def test_other_runs_stay_on_haiku(tmp_path: Path):
     log, env = _held_tree(tmp_path)
     out = _session(tmp_path, env, f"{KEY}\ny\n", "gaprule")

@@ -31,6 +31,7 @@ quote is in the file it cites, and tells the verifier which are not.
 
 from __future__ import annotations
 
+import functools
 import random
 import re
 from collections.abc import Iterable
@@ -242,14 +243,25 @@ def pick(run, product: Artifact, names: list[str], mode: str, *, sample: int = S
 _ESCAPED = re.compile(r"\\u([0-9a-fA-F]{4})")
 
 
-def _norm(text: str) -> str:
+# Loong's 2024 filings put a zero-width space after many figures ("0.19\u200b  $  (0.02)\u200b"). A quote leaves it out,
+# so the quote check reads these as space; before 11 November it did not, and 31 of 190 flags on the Loong tapes were
+# false for that alone.
+_ZERO_WIDTH = dict.fromkeys(map(ord, "\u200b\u200c\u200d\u2060\ufeff"), " ")
+
+
+def _norm(text: str, zero_width: bool) -> str:
     # A reply can carry a dash as the text \u2013, escaped twice; read it as the dash.
-    return " ".join(_ESCAPED.sub(lambda m: chr(int(m.group(1), 16)), text).lower().split())
+    text = _ESCAPED.sub(lambda m: chr(int(m.group(1), 16)), text)
+    if zero_width:
+        text = text.translate(_ZERO_WIDTH)
+    return " ".join(text.lower().split())
 
 
-def misquoted(toolbox, product: Artifact, names: list[str]) -> list[str]:
+def misquoted(toolbox, product: Artifact, names: list[str], *, zero_width: bool = True) -> list[str]:
     """Evidence whose quote is not in the file it cites. Checked in code, for nothing. A paraphrase is
-    flagged too, so the verifier is told and judges; the kernel does not fail the product on this alone."""
+    flagged too, so the verifier is told and judges; the kernel does not fail the product on this alone.
+    zero_width: read zero-width characters as space (False: as the check was before 11 November)."""
+    norm = functools.partial(_norm, zero_width=zero_width)
     out = []
     for item in product.evidence:
         quotes = list(_QUOTED.finditer(item))
@@ -259,12 +271,12 @@ def misquoted(toolbox, product: Artifact, names: list[str]) -> list[str]:
         # A file named inside a quote is quoted text, not a citation.
         cites = [(end, name) for start, end, name in _mentions(item, names)
                  if not any(q.start() <= start < q.end() for q in quotes)]
-        bodies = {name: _norm(text) for _, name in cites if (text := toolbox.text_of(name)) is not None}
+        bodies = {name: norm(text) for _, name in cites if (text := toolbox.text_of(name)) is not None}
         for q in quotes:
-            if any(w in _norm(q.group(1)) for w in TOOL_WORDS) or _QUERY_BEFORE.search(item[:q.start()]):
+            if any(w in norm(q.group(1)) for w in TOOL_WORDS) or _QUERY_BEFORE.search(item[:q.start()]):
                 continue
             # A quote is flagged when no file the item cites holds it; it is named by the file before it.
-            pieces = [_norm(p.strip(" .,;:")) for p in _ELLIPSIS.split(q.group(1))]
+            pieces = [norm(p.strip(" .,;:")) for p in _ELLIPSIS.split(q.group(1))]
             if not bodies or any(all(p in body for p in pieces if len(p) >= MIN_QUOTE) for body in bodies.values()):
                 continue
             before = [name for end, name in cites if end <= q.start() and name in bodies]
