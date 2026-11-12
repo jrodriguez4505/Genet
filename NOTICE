@@ -3,5 +3,10 @@ Copyright 2026 John Rodriguez
 
 This product includes software developed by John Rodriguez and contributors.
 
+This product includes the judge prompt of the Loong benchmark (LOONG_JUDGE in
+taskorg/benchmarks.py), from src/utils/prompt.py of https://github.com/MozerWang/Loong
+at commit 6d2115b, unchanged but for its three slots. Copyright 2023 Alibaba Cloud,
+licensed under the Apache License, Version 2.0.
+
 The name Genet and the project marks are not licensed under the Apache License.
 Use of those names as a product or company name requires written permission.
