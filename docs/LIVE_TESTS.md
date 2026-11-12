@@ -1412,7 +1412,7 @@ In all, 9% fewer tokens on the 11, about 7,300 a question, within noise (-23,455
 Every run's config names the view (`review_end`), and so does the verify bench's. A tape from before names nothing, and replays under the view as it was:
 - **Loong,** the rule's second draw: 54 of 54 as recorded.
 - **The verify bench of 29 October:** 120 of 120.
-- **The agent sweep, seed 113 at 8,000:** no request missed. As before the fix, 3 or 4 of its split-2 trials come out differently from one replay to the next, a different few each time. Two parts running side by side on a tape from before the trial marks can be served each other's replies.
+- **The agent sweep, seed 113 at 8,000:** no request missed. As before the fix, 3 or 4 of its split-2 trials come out differently from one replay to the next, a different few each time. The tape is not the cause: it holds no request twice, and no request was missed. Each of them is a split-2 trial that stops at its budget while its two parts run side by side. When one part stops the run, the other stops at its next call, so how many calls it makes first depends on thread timing, live or replayed. Each ends stopped either way, with no answer; only a call or two of tokens differs.
 
 **Measured the same day** (`bash scripts/team_runs.sh markedreview`, $0.70: $0.39 live and $0.32 for the judge). All 108 of the split rule's trials over both draws were each replayed to its first verifier call and run live from there, with the mark. Everything else was as taped, the quote check included, so what changed is the mark's.
 
