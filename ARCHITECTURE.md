@@ -158,7 +158,7 @@ Every model call goes through `Engine._call`:
 
 ## How it is tested
 
-- 2,450 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- About 2,450 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
 - `scripts/mutation_check.py` breaks 625 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
