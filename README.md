@@ -1,10 +1,12 @@
 # Genet
 
-[Apache-2.0](LICENSE) · Python 3.11+ · kernel, not a cloud · [Website](https://jrodriguez4505.github.io/Genet/)
+[Apache-2.0](LICENSE) · Python 3.11+ · kernel, not a cloud · [Website](https://jrodriguez4505.github.io/Genet/) · [Review brief](docs/REVIEW_BRIEF.md)
 
 One organism. Many stems.
 
 **The question is not how many agents you can run. It is whether a second one is doing new work.**
+
+Reviewing Genet? The [review brief](docs/REVIEW_BRIEF.md) takes about ten minutes: what it is, every live result with its noise, what limits those results, and where outside thoughts would help most.
 
 Genet is a policy-governed agent runtime: models propose, and code decides what runs. Agent counts have become a headline number, with products advertising hundreds of sub-agents on one task, but a count says what was spent, not what was gained. Most stacks treat headcount as capacity; Genet treats it as a cost. A task starts with one lead agent (the orchestrator). The lead may propose sub-agents, each with the skill its sub-task needs, and policy gates in code decide whether any of them run. Default is a single agent. Authority lives in the graph, not in the prompt.
 

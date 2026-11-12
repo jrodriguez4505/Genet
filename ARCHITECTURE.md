@@ -1,6 +1,7 @@
 # Architecture
 
 This page is for someone reviewing Genet's design. It covers how a run moves through the code, what each module does, the decisions behind them, and the questions still open. Other documents cover the rest:
+- the [review brief](docs/REVIEW_BRIEF.md): a ten-minute summary, with every live result and its noise;
 - the [README](README.md): use;
 - [docs/TEAM_DESIGN.md](docs/TEAM_DESIGN.md): where the team goes next, and what became of Genet's first design;
 - [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md): what the runs on Claude showed.
@@ -157,7 +158,7 @@ Every model call goes through `Engine._call`:
 
 ## How it is tested
 
-- 2,450 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
+- About 2,450 tests, with no network and no key: rules, red team, fuzzing, concurrency, security, bounds and live findings.
 - `scripts/mutation_check.py` breaks 625 rules one at a time, and a test catches each.
 - The runs on Claude are taped, so each can be replayed.
 
