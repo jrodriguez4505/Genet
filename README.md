@@ -523,7 +523,7 @@ The log is a record, not proof against tampering. A saved run is checked for its
 - **Harness validity.** The deterministic reader gets every task right under every strategy.
 - **Compatibility.** Runs saved in older formats still load.
 
-`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 607 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
+`python scripts/mutation_check.py` checks the tests themselves. It breaks one rule at a time, across 625 hand-picked mutations of the gates, roster, budget, verifier, isolation, sandbox, model-output, security, run-state and shared-situation checks, and confirms that some test fails for each. All are caught. The regular suite also checks that every mutation still matches the code, so a refactor cannot quietly retire one.
 
 ## Terms
 

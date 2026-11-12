@@ -14,6 +14,12 @@ Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: htt
 - **Exact replays.** A tape marks each exchange with its trial, so one strategy replays as exactly as the whole run. Each setting that changed is named in a run's config, and a tape from before replays under what it ran with.
 - **Noise with every comparison** (`taskorg paired`, `taskorg/paired.py`): an exact sign test on the questions where two arms differ, and a bootstrap range on tokens.
 - **A fix measured from the first request it changes** (`compare --then-live` with `--fixed-quotes` or `--marked-review`): a trial replays its tape up to that request and runs live from there.
+- **Fixes from an independent security review** (`tests/test_security_review.py`). It found nothing in the model-output boundary, and ten things outside it, one medium and nine low:
+  - a dataset row's id could put a question's files outside the corpus folder;
+  - the Anthropic SDK's `ANTHROPIC_CUSTOM_HEADERS` could replace the key Genet was given, and the raw client took any base URL;
+  - an error from `http.client` could carry a key or a URL's login into a tape, and plain http could go through a proxy;
+  - a link in Loong's documents folder was read, a judge reply with no score stopped the judge, and an answer could score itself;
+  - one reply's evidence and a crew's proposals were unbounded, and a new file ignored the umask.
 - **Long notes** (`compare --pad-notes`), so the generated questions can be asked past a real call limit. **Loong's remaining questions** (`--which rest`).
 - **Two reworks, measured and left off:** one that may read after a merge (`--rework-reads`, 9 November) and one that keeps the pages its failed product read (`--rework-keeps`).
 - **New run modes in `scripts/team_runs.sh`:** `rereads`, `splitrule`, `keeppages`, `scale`, `splitagain`, `firstjudge`, `quotefix` and `markedreview`. Those that test a change have their bars written before the run; the last three measure, with their plan written first. `quotefix` and `markedreview` wait while the machine is short of memory.

@@ -116,6 +116,7 @@ def test_the_key_is_never_copied_onto_a_redirected_request(servers, monkeypatch)
     import urllib.request
 
     monkeypatch.setattr(live, "_OPENER", urllib.request.build_opener())
+    monkeypatch.setattr(live, "_DIRECT", urllib.request.build_opener())  # the servers here are plain http on this machine
     other = servers(lambda h: None)
     first = servers(lambda h: _send(h, 302, headers=[("Location", _url(other) + "/steal")]))
     with pytest.raises(InvariantError):

@@ -27,8 +27,9 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from .anthropic_live import BASE_URL, MAX_REPLY_CEILING, TOKEN_RATIO, _describe, _sdk
+from .anthropic_live import BASE_URL, MAX_REPLY_CEILING, TOKEN_RATIO, _describe, _sdk, refuse_custom_headers
 from .errors import InvariantError
+from .live import check_base_url
 
 RAW_FORMAT = 1
 # What the reply needs at least; less room than this is a full context.
@@ -205,8 +206,10 @@ class RawClient:
         key = os.environ.get("TASKORG_ANTHROPIC_KEY", "").strip()
         if not key:
             raise InvariantError("LIVE", "set TASKORG_ANTHROPIC_KEY for live calls")
+        refuse_custom_headers()
+        # https, or plain http only to this machine, as the adapter holds its base to: the key goes with every call.
+        base = check_base_url(os.environ.get("TASKORG_ANTHROPIC_BASE", "").strip() or BASE_URL)
         sdk = _sdk()
-        base = os.environ.get("TASKORG_ANTHROPIC_BASE", "").strip() or BASE_URL
         client = sdk.Anthropic(api_key=key, base_url=base, timeout=timeout, max_retries=2,
                                http_client=sdk.DefaultHttpxClient(follow_redirects=False))
         return cls(call_limit=call_limit, sdk_client=client, **kwargs)

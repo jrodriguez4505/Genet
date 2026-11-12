@@ -45,6 +45,15 @@ def _describe(e: Exception) -> str:
     return f"Anthropic API call failed: {type(e).__name__}: {str(e)[:300]}"
 
 
+def refuse_custom_headers() -> None:
+    """The SDK adds the headers in ANTHROPIC_CUSTOM_HEADERS to every request, and an X-Api-Key or Authorization line
+    there goes out in place of, or beside, the key Genet was given. Genet's key comes from TASKORG_ANTHROPIC_KEY only,
+    so a live client is not built while that variable is set."""
+    if os.environ.get("ANTHROPIC_CUSTOM_HEADERS", "").strip():
+        raise InvariantError("LIVE", "ANTHROPIC_CUSTOM_HEADERS is set: unset it for this run. The SDK would send its "
+                                     "headers with every request, and a key among them in place of TASKORG_ANTHROPIC_KEY")
+
+
 class AnthropicAdapter(LiveAdapter):
     """Claude's Messages API. Fills artifacts only."""
 
@@ -69,6 +78,7 @@ class AnthropicAdapter(LiveAdapter):
         # cache serves at a tenth of the price. Off by default: it changes the requests, so older tapes replay without.
         self.cache = bool(cache)
         if client is None:
+            refuse_custom_headers()
             sdk = _sdk()
             # The key is passed in, so the SDK reads no credential from the environment. A model API
             # answers and does not redirect, so redirects are not followed.
