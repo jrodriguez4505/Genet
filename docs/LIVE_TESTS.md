@@ -1414,7 +1414,19 @@ Every run's config names the view (`review_end`), and so does the verify bench's
 - **The verify bench of 29 October:** 120 of 120.
 - **The agent sweep, seed 113 at 8,000:** no request missed. As before the fix, 3 or 4 of its split-2 trials come out differently from one replay to the next, a different few each time. Two parts running side by side on a tape from before the trial marks can be served each other's replies.
 
-Not yet measured live. `compare --marked-review --then-live` replays a tape from before up to each trial's first verifier call, and goes live from there.
+**Measured the same day** (`bash scripts/team_runs.sh markedreview`, $0.70: $0.39 live and $0.32 for the judge). All 108 of the split rule's trials over both draws were each replayed to its first verifier call and run live from there, with the mark. Everything else was as taped, the quote check included, so what changed is the mark's.
+
+| The 108 | Right | Wrong | Stopped | Verifier calls | Its failures | Failures naming the ANSWER line's place |
+|---|---|---|---|---|---|---|
+| As taped | 56 | 48 | 4 | 132 | 28 | 4 |
+| With the mark | 57 | 47 | 4 | 125 | 20 | 1 |
+
+- **Answers: within noise.** Right +3 / -2 (p 1.00), wrong +1 / -2. Tokens a question -413 (-5,831 to +5,393).
+- **The false complaint is gone.** The one failure left that names the ANSWER line's place is of a product whose answer runs on at the end of a paragraph, not on a line of its own. That is a point about the product's form, not about the kernel's layout.
+- **The verifier failed 8 fewer products.** Every first check was drawn again, so some of that is chance.
+- **Not comparable: time.** A replayed request takes no time, so these runs are faster than the taped ones for that reason alone.
+
+The mark stays.
 
 ## 11 November 2026: does splitting still win at a real call limit?
 

@@ -367,11 +367,14 @@
 #     (--marked-review --then-live). Only the mark differs; the quote check stays as taped, so what changes is the
 #     mark's. In four steps of 27 trials, each not run again once finished, one small process at a time, with the wait
 #     for memory before each. Then the judge on the 108. About $0.75 (caps $0.30 each step, $0.60 for the judge).
-#     As taped, 24 of the 108 trials were reworked, and 7 of the verifier's failures in the two draws said the ANSWER
-#     line was not last, each of a product that ends with it.
+#     As taped, 24 of the 108 trials were reworked. 7 of the verifier's failures on the two draws' four tapes said the
+#     ANSWER line was not last, each of a product that ends with it; 4 of those are in these 108 trials.
 #     Reported with no bar, paired with the 108 as taped: right, wrong, stops, tokens, and the verifier's failures and
 #     those that name the ANSWER line's place. The mark stays either way: it corrects the view. Every first check is
 #     drawn again, so some verdicts change by chance alone in both directions.
+#     Ran 11 November, $0.70. Right 56 -> 57 (+3 / -2), wrong 48 -> 47, stopped 4 -> 4, tokens -413 a question: all
+#     within noise. Verifier failures 28 -> 20; those naming the ANSWER line's place 4 -> 1, and the one left is of an
+#     answer that runs on in its paragraph. The mark stays.
 #     Before the run, free (data/exp/keeppages_share.py): as taped, the 36 took 6,116,108 tokens, 2,475,963 of them from
 #     the rework on, and ended right 7, wrong 19, stopped 10. Their kept reworks' first calls would come to 1,298,551.
 #     The bars, written before the run. Right is a judge score of at least 80 in a run that finished.
