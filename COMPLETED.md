@@ -2,6 +2,39 @@
 
 Apache-2.0. Public repo: https://github.com/jrodriguez4505/Genet · Website: https://jrodriguez4505.github.io/Genet/
 
+## v0.13.0 — November 2026: when to split, and what the tapes said
+
+**Why.** v0.12.0 left Genet behind CrewAI on real filings, with its losses on the questions it split. Three fixes after the split had each let more wrong answers through. Two things were left to try: the decision to split itself, and reading every small difference so far for what was noise.
+
+**Built.**
+- **The split rule** (`--split-policy reads`, now the default; `compare`'s `genet`). With paged reads, when one agent reading a page of each file can hold what the goal names in one call, there is no planning call and the lead works alone. Otherwise the lead plans and the gates judge the plan as before. `genet-measured` is Genet as it was.
+- **Two fixes to what the verifier is shown.**
+  - The kernel's quote check reads zero-width spaces as space. Loong's 2024 filings carry them after many figures, and 31 of the check's 190 flags on the Loong tapes were false for that alone.
+  - The verifier's view marks where the product's text ends. The kernel's evidence list, quote check and sources follow the product, and the verifier had read them as part of it.
+- **Exact replays.** A tape marks each exchange with its trial, so one strategy replays as exactly as the whole run. Each setting that changed is named in a run's config, and a tape from before replays under what it ran with.
+- **Noise with every comparison** (`taskorg paired`, `taskorg/paired.py`): an exact sign test on the questions where two arms differ, and a bootstrap range on tokens.
+- **A fix measured from the first request it changes** (`compare --then-live` with `--fixed-quotes` or `--marked-review`): a trial replays its tape up to that request and runs live from there.
+- **Long notes** (`compare --pad-notes`), so the generated questions can be asked past a real call limit. **Loong's remaining questions** (`--which rest`).
+- **Two reworks, measured and left off:** one that may read after a merge (`--rework-reads`, 9 November) and one that keeps the pages its failed product read (`--rework-keeps`).
+- **New run modes in `scripts/team_runs.sh`:** `rereads`, `splitrule`, `keeppages`, `scale`, `splitagain`, `firstjudge`, `quotefix` and `markedreview`. Those that test a change have their bars written before the run; the last three measure, with their plan written first. `quotefix` and `markedreview` wait while the machine is short of memory.
+
+**What the live runs showed** (10 and 11 November, about $6 in all). See [docs/LIVE_TESTS.md](docs/LIVE_TESTS.md).
+- **Every right or wrong difference on Loong so far was within noise,** CrewAI's 25 against Genet's 20 included (p 0.12). Genet's lower tokens against CrewAI were not: 39,600 fewer a question.
+- **The split rule held its three bars where it acts.** Over two draws of 54 new Loong questions, on the 51 trials where Genet had split:
+  - right rose from 16 to 24 (+8 / -0, p 0.008);
+  - finished wrong rose from 24 to 26;
+  - it finished 31% sooner, at about the same tokens.
+- **At a real call limit one agent kept up.** With the sweep's notes grown past 100,000 tokens, one agent that searched was right on 6 of 12, 4 parts on 4 and Genet on 4, within noise. The sweep's win for splitting at 8,000 was that cap's. What splitting bought beyond noise was time: 34 to 57% sooner on large work.
+- **The rework is about even on real filings.** Under the split rule, 24 of 108 trials were reworked and ended 9 right, 11 wrong and 4 stopped. The verifier had failed 7 right products of the 24.
+- **The two verifier fixes changed no answers beyond noise.** The quote fix saved three reworks that only false flags had caused. With the view marked, the verifier failed 20 products where it had failed 28, and the false "ANSWER line is not last" fell from 4 to 1.
+- **Kept pages cost more and gained nothing,** so they stay off.
+
+**Left open.**
+- Whether a wrong answer or no answer is the better end for a rework on real filings.
+- Whether the gates should count time: splitting was faster on large work and slower on small.
+- A Loong run of today's Genet beside CrewAI. The 9 November comparison is of Genet before the split rule.
+- The tapes since 6 November, which wait on a licence check before they are published.
+
 ## v0.12.0 — November 2026: how many agents, three models, and an outside comparison
 
 **Why.** Every result so far compared Genet with its own baselines, on one model, with the agent count set by Genet's own gates. Three questions were left: how many agents a task like this needs, whether the findings hold on stronger models, and how Genet does against an established framework on public questions.
