@@ -182,7 +182,8 @@ M = [
     ("cli.py", "a replay keeps today's policy", '            config[key] = was\n', ""),
     ("cli.py", "compare does not hand genet's policy on", "            genet_split=config.get(\"genet_split\"),\n", ""),
     ("cli.py", "a replay that goes live takes today's policy", "    _as_recorded(recorded if isinstance(recorded, dict) else {}, config)\n", ""),
-    ("compare.py", "a trial ignores genet's policy", '        if strategy == "genet" and genet_split:', "        if False:"),
+    ("compare.py", "a trial ignores genet's policy", '        if genet_split and strategy in DEFAULT_SPLIT:', "        if False:"),
+    ("compare.py", "genet-cards replays under today's policy", 'DEFAULT_SPLIT = ("genet", "genet-cards")', 'DEFAULT_SPLIT = ("genet",)'),
     ("compare.py", "the comparison drops genet's policy", "page_chars=page_chars, genet_split=genet_split)", "page_chars=page_chars)"),
     # The quote check reads zero-width spaces as space (11 November); benchmark tapes from before replay under the old.
     ("checks.py", "zero-width spaces are read as text", "    if zero_width:\n        text = text.translate(_ZERO_WIDTH)\n", ""),

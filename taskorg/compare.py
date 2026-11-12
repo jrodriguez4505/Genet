@@ -179,6 +179,9 @@ STRATEGIES: dict[str, Callable[..., Engine]] = {
     "genet-measured": functools.partial(Engine, split_policy="measured"),
     "genet-cards": functools.partial(Engine, cards=True),
 } | {f"split-{n}": functools.partial(FixedSplit, parts=n) for n in SWEEP}
+# The strategies whose engine takes Genet's default split policy. A replay of a tape from before the default changed
+# runs them under the policy the tape ran with (run_trial's genet_split).
+DEFAULT_SPLIT = ("genet", "genet-cards")
 
 
 @dataclass
@@ -231,7 +234,7 @@ def run_trial(
     """One task under one strategy. verify: the verifier's view, sources and rule (Engine's verify_view,
     verify_sources and verify_note), the same for every strategy. page_chars: read long files a page at a
     time (Toolbox); a benchmark question's files are in its own workspace under corpus_dir. genet_split: the split
-    policy genet runs under, when not the default (a replay of a tape from before the default changed)."""
+    policy genet and genet-cards run under, when not the default (a replay of a tape from before the default changed)."""
     with tempfile.TemporaryDirectory() as tmp:
         store = MemoryStore(store_root or Path(tmp))
         run = new_run(f"{strategy}-{task.id}-r{repeat}", goal=task.question, purpose=task.purpose or PURPOSE,
@@ -246,8 +249,8 @@ def run_trial(
             # Parts already done: the run's world covers them, as --exists does for a live run.
             run.world = World(existing_channels=[slug(n) for n in task.filed])
         make = STRATEGIES[strategy]
-        if strategy == "genet" and genet_split:
-            make = functools.partial(Engine, split_policy=genet_split)
+        if genet_split and strategy in DEFAULT_SPLIT:
+            make = functools.partial(make, split_policy=genet_split)
         engine = make(
             store, adapter=adapter, budget=budget,
             toolbox=Toolbox(roots=[corpus_dir / task.workspace if task.workspace else corpus_dir], page_chars=page_chars),

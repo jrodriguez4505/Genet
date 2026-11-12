@@ -104,3 +104,22 @@ def test_a_replay_that_goes_live_keeps_the_tapes_policy_and_records_it(tmp_path,
     recorder.close()
     assert config["genet_split"] == "measured" and "split under the measured policy" in capsys.readouterr().err
     assert json.loads((tmp_path / "l.jsonl").read_text().splitlines()[0])["compare"]["genet_split"] == "measured"
+
+
+def test_every_strategy_on_genets_default_policy_replays_under_the_tapes(tmp_path):
+    from bench_fake import BenchFake
+    from test_split_reads import _question
+
+    from taskorg import compare
+
+    task, root = _question(tmp_path)  # a page of each file fits, the files whole do not
+    budget = lambda: compare.comparison_budget(40, 40_000)
+    for strategy in compare.DEFAULT_SPLIT:
+        now = compare.run_trial(task, strategy, BenchFake(), root, budget=budget(), page_chars=8000)
+        was = compare.run_trial(task, strategy, BenchFake(), root, budget=budget(), page_chars=8000, genet_split="measured")
+        assert (now.workers, was.workers) == (0, 3), strategy
+    # Strategies that set their own policy, or split their own way, are not changed by it.
+    for strategy in ("genet-stated", "genet-reads", "single", "split-4"):
+        assert (compare.run_trial(task, strategy, BenchFake(), root, budget=budget(), page_chars=8000).workers
+                == compare.run_trial(task, strategy, BenchFake(), root, budget=budget(), page_chars=8000,
+                                     genet_split="measured").workers), strategy
